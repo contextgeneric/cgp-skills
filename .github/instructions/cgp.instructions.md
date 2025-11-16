@@ -6,6 +6,8 @@ applyTo: '**/*.rs'
 
 This guide gives you a high level overview on how to work with CGP code in Rust.
 
+# Core Concepts
+
 ## Introduction
 
 - CGP is a modular programming paradigm that provides workaround on the coherence restrictions in Rust.
@@ -129,6 +131,7 @@ impl DelegateComponent<HashProviderComponent> for Person {
 - The example `Person` struct above implements `Display`, and then delegate the implementation of `CanHash` to the `HashWithDisplay` provider.
 - This is done by implementing `DelegateComponent` with `HashProviderComponent` used as the "key", and `HashWithDisplay` used as the "value" for `Person`'s type-level table.
 - With that, `Person` now implements `CanHash` through the blanket implementation.
+- This example also demonstrates how CGP solves the hash table problem.
 
 ## Provider Trait Delegation
 
@@ -165,3 +168,191 @@ delegate_components! {
 ```
 
 - The first argument to `delegate_components!`, i.e. `Person`, designates the target type where the type-level table is defined, or which the `DelegateComponent` trait will be implemented by.
+
+- The `delegate_components!` macro also supports array syntax, in case when multiple type-level keys map to the same value. For example:
+
+```rust
+delegate_components! {
+    MyComponents {
+        [
+            FooComponent,
+            BarComponent,
+        ]:
+            FooBarProvider,
+        BazComponent:
+            BazProvider,
+    }
+}
+```
+
+is the same as:
+
+```rust
+delegate_components! {
+    MyComponents {
+        FooComponent:
+            FooBarProvider,
+        BarComponent:
+            FooBarProvider,
+        BazComponent:
+            BazProvider,
+    }
+}
+```
+
+which is eventually desugared to:
+
+```rust
+impl DelegateComponent<FooComponent> for MyComponents {
+    type Delegate = FooBarProvider;
+}
+
+impl DelegateComponent<BarComponent> for MyComponents {
+    type Delegate = FooBarProvider;
+}
+
+impl DelegateComponent<BazComponent> for MyComponents {
+    type Delegate = BazProvider;
+}
+```
+
+## Type-Level List
+
+- CGP commonly uses type-level lists, a.k.a product types, to represent a list of types.
+- A type-level list is defined as `Product![A, B, C]`, which is desugared as:
+
+```rust
+π<A, π<B, π<C, ε>>>
+```
+
+or in a human-readable form:
+
+
+```rust
+Cons<A, Cons<B, Cons<C, Nil>>>
+```
+
+- The types `Cons` and `Nil` are defined as:
+
+```rust
+pub struct π<Head, Tail>(pub Head, pub Tail);
+pub struct ε;
+pub use {ε as Nil, π as Cons};
+```
+
+- The greek alphabets like `π` and `ε` are used to shorten the representation of these types when displayed by the Rust compiler in places like error messages.
+    - Whenever possible, you should prefer the syntactic sugar forms like `Product!` or the human readable forms like `Cons`.
+
+## Type-Level Strings
+
+- CGP uses type-level strings to represent field names as types, in the form of `Symbol!("string value")`.
+- The macro desugars a type-level string like `Symbol!("abc")` into follows:
+
+```rust
+ψ<3, ζ<'a', ζ<'b', ζ<'c', ε>>>>
+```
+
+or in a readable form:
+
+```rust
+Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>
+```
+
+- The types `Symbol` and `Chars` are defined as:
+
+```rust
+pub struct ζ<const CHAR: char, Tail>(pub PhantomData<Tail>);
+pub struct ψ<const LEN: usize, Chars>(pub PhantomData<Chars>);
+pub use {ψ as Symbol, ζ as Chars};
+```
+
+- The `Chars` type is essentially a short hand for defining a type-level list of characters.
+- The `Symbol` type is used to compute the string length at compile time. This is to workaround the lack of const-generics evaluation in stable Rust.
+
+## `Index` Type
+
+- CGP supports use of type-level natural numbers through the `Index` type, a.k.a. `δ`, which is defined as:
+
+```rust
+pub struct δ<const I: usize>;
+pub use δ as Index;
+```
+
+- The `Index` type can be used to represent indices as types, such as `Index<0>`, `δ<1>`.
+
+## `HasField` Trait
+
+- The most basic use case for CGP is for dependency injection of getting values from the context.
+- This is done through the `HasField` trait, which is defined as follows:
+
+```rust
+pub trait HasField<Tag> {
+    type Value;
+
+    fn get_field(&self, _tag: PhantomData<Tag>) -> &Self::Value;
+}
+```
+
+- The `Tag` type is used to refer to a field in a struct, such as `Symbol!("name")` or `Index<0>`.
+- The `_tag` parameter with `PhantomData` type is used to assist type inference to inform the Rust compiler of the `Tag` type, in case when multiple `HasField` implementations are in scope.
+- The `HasField` trait can be automatically derived. For example:
+
+```rust
+#[derive(HasField)]
+pub struct Person {
+    pub name: String,
+    pub age: u8,
+}
+```
+
+will generate the following `HasField` impls:
+
+```rust
+impl HasField<Symbol!("name")> for Person {
+    type Value = String;
+
+    fn value(&self, _tag: PhantomData<Symbol!("name")>) -> &String {
+        &self.name
+    }
+}
+
+impl HasField<Symbol!("age")> for Person {
+    type Value = u8;
+
+    fn value(&self, _tag: PhantomData<Symbol!("age")>) -> &u8 {
+        &self.age
+    }
+}
+```
+
+- The `HasField` trait can also derived for structs with unnamed fields, and uses `Index` to refer to the field indices. For example:
+
+```rust
+#[derive(HasField)]
+pub struct Person(String);
+```
+
+will generate:
+
+```rust
+impl HasField<Index<0>> for Person {
+    type Value = String;
+
+    fn value(&self, _tag: PhantomData<Index<0>>) -> &String {
+        &self.0
+    }
+}
+```
+
+## Generic Parameters
+
+- CGP traits can also contain generic parameters, for example:
+
+```rust
+#[cgp_component(ValueDeserializer)]
+pub trait CanDeserializeValue<'de, Value> {
+    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
+    where
+        D: serde::Deserializer<'de>;
+}
+```
