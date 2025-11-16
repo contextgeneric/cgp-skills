@@ -51,6 +51,7 @@ pub trait HashProvider<Context> {
 - The new `Self` position in the provider trait will be implemented by unique and dummy provider types, which will act as the provider's name.
 - A CGP provider trait is typically named in the noun format, e.g. `SomethingDoer`. When no suitable postfix is avaiable, the `Provider` postfix is used instead, e.g. `SomethingProvider`.
 
+
 - For example, one can write a blanket implementation for `HashProvider` as follows:
 
 ```rust
@@ -73,6 +74,86 @@ pub struct HashProviderComponent;
 ```
 
 - The macro also generates blanket implementations to allow delegation of the implementation of a consumer or provider trait to a different provider, which will be explained later.
+
+## `IsProviderFor` Trait
+
+- CGP uses `IsProviderFor` as a hack to force the Rust compiler to show the appropriate error message when there is an unsatisfied dependency:
+
+```rust
+pub trait IsProviderFor<Component, Context, Params: ?Sized = ()> {}
+```
+
+- The trait is used as a dummy marker trait that can be trivially implemented, but is deliberately implemented with additional constraints to capture the dependencies to be shown in compile errors.
+
+- The earlier example provider trait definition for `HashProvider` was a simplification, the actual definition is:
+
+```rust
+pub trait HashProvider<Context>: IsProviderFor<HashProviderComponent, Context> {
+    fn hash<H: Hasher>(context: &Context, state: &mut H);
+}
+```
+
+- The first argument to `IsProviderFor` is the component name, i.e. `HashProviderComponent`. The second argument is the `Context` type. The third argument captures any additional generic parameters as a tuple.
+- When implementing a provider trait, the provider also needs to implement `IsProviderFor` with the same constraints it uses to implement the provider trait. For example:
+
+```rust
+impl<Context: Display> IsProviderFor<HashProviderComponent, Context> for HashWithDisplay {}
+```
+
+- This will ensure that if a concrete context does not implement `Display`, the error will show the missing dependency via `IsProviderFor`.
+
+## `#[cgp_provider]` Macro
+
+- The `#[cgp_provider]` macro removes the need to manually implement `IsProviderFor`, by auto generating the implementation from the provider impl.
+- The `#[cgp_new_provider]` macro has the same behavior as `#[cgp_provider]`, but also defines the provider struct automatically.
+- For example, the following:
+
+```rust
+#[cgp_new_provider]
+impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
+```
+
+is the same as:
+
+```rust
+pub struct HashWithDisplay;
+
+#[cgp_provider]
+impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
+```
+
+which is desugared to:
+
+```rust
+impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
+impl<Context: Display> IsProviderFor<HashProviderComponent, Context> for HashWithDisplay {}
+```
+
+- Whenever possible, avoid mentioning `IsProviderFor` to the user, and use the simplified provider trait definition.
+- When error messages say that `IsProviderFor` is not implemented, translate it to mean that the provider trait is not implemented.
+
+## `#[cgp_impl]` Macro
+
+- The `#[cgp_impl]` macro further simplify the definition of provider implementations, to make it look less confusing to readers.
+- For example:
+
+```rust
+#[cgp_impl(new HashWithDisplay)]
+impl<Context: Display> HashProvider for Context { ... }
+```
+
+is the same as:
+
+```rust
+#[cgp_new_provider]
+impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
+```
+
+- The `Context` parameter in `#[cgp_impl]` is in the same `Self` position as the consumer trait, to make it look like blanket implementations.
+- The provider name is specified in the attribute argument for `#[cgp_impl]`. An optional `new` keyword can be given to automatically define the provider struct.
+- Behind the scenes, the `#[cgp_impl]` macro desugars to `#[cgp_provider]` by moving the `Context` type back to the first generic parameter of the provider trait, and use the given provider name type as the `Self` type.
+
+- Whenever possible, use `#[cgp_impl]` to write and explain provider implementations. Avoid showing the user `#[cgp_provider]` or `IsProviderFor`, unless they are needed to explain the internal mechanics of CGP.
 
 ## `DelegateComponent` Trait
 
@@ -141,7 +222,7 @@ impl DelegateComponent<HashProviderComponent> for Person {
 impl<Context, Provider> HashProvider<Context> for Provider
 where
     Provider: DelegateComponent<HashProviderComponent>,
-    Provider::Delegate: HashProvider<Context>,
+    Provider::Delegate: HashProvider<Context> + IsProviderFor<HashProviderComponent, Context>,
 {
     fn hash<H: Hasher>(context: &Context, state: &mut H) {
         Context::Delegate::hash(context, state)
@@ -152,6 +233,8 @@ where
 - Essentially, this allows a provider to delegate the implementation of a provider trait to another provider.
 - The blanket implementation use `Provider` as the type-level table, and perform the same lookup using `HashProviderComponent` as the key.
 - This is useful for constructing intermediary "tables" that assemble multiple CGP providers that implement different CGP components.
+- The additional `IsProviderFor` constraint is used to forward the constraints in the provider trait implementation down the delegation chain.
+    - If possible, avoid showing the `IsProviderFor` constraint when explaining to the user the high level concepts.
 
 ## `delegate_components!` Macro
 
@@ -215,6 +298,37 @@ impl DelegateComponent<BazComponent> for MyComponents {
     type Delegate = BazProvider;
 }
 ```
+
+### `IsProviderFor` Delegation
+
+- The `delegate_components!` macro also generates the `IsProviderFor` implementation in addition to the `DelegateComponent` trait.
+
+- So given the code:
+
+```rust
+delegate_components! {
+    MyComponents {
+        FooComponent:
+            FooBarProvider,
+    }
+}
+```
+
+the full desugaring is actually:
+
+```rust
+impl DelegateComponent<FooComponent> for MyComponents {
+    type Delegate = FooBarProvider;
+}
+
+impl<Context, Params> IsProviderFor<FooComponent, Context, Params> for MyComponents
+where
+    FooBarProvider: IsProviderFor<FooComponent, Context, Params>
+{}
+```
+
+- This helps the propagation of the provider trait constraints, in case if `MyComponents` is used as a provider and used for a constraint like `MyComponents: FooProvider<MyContext>`.
+- Whenever possible, try to avoid mentioning the generation of the `IsProviderFor` implementation inside `delegate_components!`.
 
 ## Type-Level List
 
@@ -343,6 +457,169 @@ impl HasField<Index<0>> for Person {
     }
 }
 ```
+
+## Dependency Injection
+
+- CGP leverages Rust's trait system to enable dependency injection, also called impl-side dependencies.
+- The dependency injection is done in the form of constraints specified only in the `where` clause of `impl` blocks, but not in the trait definition.
+- For example, given:
+
+```rust
+#[cgp_component(Greeter)]
+pub trait CanGreet {
+    fn greet(&self);
+}
+```
+
+Using `HasField`, one can perform dependency injection to retrieve a string value from the context, and implement a `Greeter` provider as follows:
+
+```rust
+pub struct GreetHello;
+
+impl<Context> Greeter<Context> for GreetHello
+where
+    Context: HasField<Symbol!("name"), Value = String>,
+{
+    fn greet(context: &Context) {
+        println!("Hello, {}!", context.get_field(PhantomData));
+    }
+}
+```
+
+- This allows `CanGreet` to be implemented on any concrete context struct that derives `HasField` and contains a `name` field of type `String`. For example:
+
+```rust
+#[derive(HasField)]
+pub struct Person {
+    pub name: String,
+}
+
+delegate_components! {
+    Person {
+        GreeterComponent:
+            GreetHello,
+    }
+}
+```
+
+- The dependency injection technique can also be used in vanilla Rust traits with blanket implementations, such as:
+
+```rust
+pub trait CanGreet {
+    fn greet(&self);
+}
+
+impl<Context> Greeter for Context
+where
+    Context: HasField<Symbol!("name"), Value = String>,
+{
+    fn greet(&self) {
+        println!("Hello, {}!", self.get_field(PhantomData));
+    }
+}
+```
+
+- This is commonly used to hide the constraints of one implementation behind a trait interface, without using `#[cgp_component]` to enable multiple alternative implementations.
+    - This is useful to simplify the learning curve of CGP, as users can mostly work with vanilla Rust traits.
+
+## `#[cgp_auto_getter]` Macro
+
+- `#[cgp_auto_getter]` macro provides additional abstraction on top of `HasField`, so that users don't need to understand the internals of `HasField`.
+- For example, given:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName {
+    fn name(&self) -> &String;
+}
+```
+
+the macro would generate the following blanket implementation:
+
+```rust
+impl<Context> HasName for Context
+where
+    Context: HasField<Symbol!("name"), Value = String>,
+{
+    fn name(&self) -> &str {
+        self.get_field(PhantomData).as_str()
+    }
+}
+```
+
+- The `#[cgp_auto_getter]` macro generates blanket impls that use `HasField` implementations with the field name as the `Tag` type, and the return type as the `Value` type.
+- The macro supports short hand for several return types such as `&str`, to make the `name` method more ergonomic. So we can rewrite the same trait as:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName {
+    fn name(&self) -> &str;
+}
+```
+
+## Abstract Types
+
+- CGP supports abstract types by defining associated types in CGP traits. For example:
+
+```rust
+#[cgp_component(NameTypeProviderComponent)]
+pub trait HasNameType {
+    type Name;
+}
+```
+
+- The abstract type can be used in another trait interface as the super trait, such as:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName: HasNameType {
+    fn name(&name) -> &Self::Name;
+}
+```
+
+## `#[cgp_type]` Macro
+
+- CGP provides the `#[cgp_type]` macro that can be used in place of `#[cgp_component]` to define abstract type traits.
+- For example, the `HasNameType` trait can be redefined as:
+
+```rust
+#[cgp_type]
+pub trait HasNameType {
+    type Name;
+}
+```
+
+- If no provider name is given in `#[cgp_type]`, a default provider name with the type name plus `TypeProvider` postfix is used. So the above code is the same as:
+
+```rust
+#[cgp_type(NameTypeProvider)]
+pub trait HasNameType {
+    type Name;
+}
+```
+
+- `#[cgp_type]` has the same base behavior as `#[cgp_component]`, but generates additional constructs such as a blanket implementation for `UseType`:
+
+```rust
+#[cgp_impl(UseType<Name>)]
+impl<Context, Name> NameTypeProvider for Context {
+    type Name = Name;
+}
+```
+
+- The `UseType` struct is defined by CGP, which is implemented by providers that use `#[cgp_type]` as a design pattern.
+- The `UseType` pattern allows a concrete context to implement an abstract type by delegating it to `UseType`. For example:
+
+```rust
+delegate_components! {
+    Person {
+        NameTypeProviderComponent:
+            UseType<String>,
+    }
+}
+```
+
+would implement `HasNameType` for `Person` with `Name` being implemented as `String`.
 
 ## Generic Parameters
 
