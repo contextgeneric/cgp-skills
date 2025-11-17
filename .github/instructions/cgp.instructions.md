@@ -151,7 +151,9 @@ impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
 
 - The `Context` parameter in `#[cgp_impl]` is in the same `Self` position as the consumer trait, to make it look like blanket implementations.
 - The provider name is specified in the attribute argument for `#[cgp_impl]`. An optional `new` keyword can be given to automatically define the provider struct.
+- The macro also allows the use of `self` and `Self` to refer to the `Context` value and type.
 - Behind the scenes, the `#[cgp_impl]` macro desugars to `#[cgp_provider]` by moving the `Context` type back to the first generic parameter of the provider trait, and use the given provider name type as the `Self` type.
+- Behind the scenes, all references to `self` or `Self` are automatically converted by `#[cgp_impl]` back to refer to the explicit `context` or `Context`.
 
 - Whenever possible, use `#[cgp_impl]` to write and explain provider implementations. Avoid showing the user `#[cgp_provider]` or `IsProviderFor`, unless they are needed to explain the internal mechanics of CGP.
 
@@ -213,6 +215,7 @@ impl DelegateComponent<HashProviderComponent> for Person {
 - This is done by implementing `DelegateComponent` with `HashProviderComponent` used as the "key", and `HashWithDisplay` used as the "value" for `Person`'s type-level table.
 - With that, `Person` now implements `CanHash` through the blanket implementation.
 - This example also demonstrates how CGP solves the hash table problem.
+- Whenever possible, do not show the user the generated blanket implementation for the consumer trait. Instead explain using high-level concepts like table lookup.
 
 ## Provider Trait Delegation
 
@@ -235,6 +238,8 @@ where
 - This is useful for constructing intermediary "tables" that assemble multiple CGP providers that implement different CGP components.
 - The additional `IsProviderFor` constraint is used to forward the constraints in the provider trait implementation down the delegation chain.
     - If possible, avoid showing the `IsProviderFor` constraint when explaining to the user the high level concepts.
+
+- Whenever possible, do not show the user the generated blanket implementation for the provider trait. Instead explain using high-level concepts like table lookup.
 
 ## `delegate_components!` Macro
 
@@ -298,6 +303,8 @@ impl DelegateComponent<BazComponent> for MyComponents {
     type Delegate = BazProvider;
 }
 ```
+
+- Whenever possible, do not show the user the use of the `DelegateComponent` trait. Instead explain to them using high level concepts, such as that a type-level table is constructed for `MyComponents` using `delegate_components!`.
 
 ### `IsProviderFor` Delegation
 
@@ -557,6 +564,67 @@ pub trait HasName {
 }
 ```
 
+## `#[cgp_getter]` Macro
+
+- The `#[cgp_getter]` macro is an extension to `#[cgp_component]` that provides similar feature as `#[cgp_auto_getter]`, but allows the getter field to be customized through CGP.
+- For example, given:
+
+```rust
+#[cgp_getter]
+pub trait HasName {
+    fn name(&self) -> &str;
+}
+```
+
+is the same as writing:
+
+```rust
+#[cgp_component(NameGetter)]
+pub trait HasName {
+    fn name(&self) -> &str;
+}
+```
+
+but also has the following `UseField` provider implemented:
+
+```rust
+#[cgp_impl(UseField<Tag>)]
+impl<Context, Tag> NameGetter for Context
+where
+    Context: HasField<Tag, Value = String>,
+{
+    fn name(&self) -> &str {
+        self.get_field(PhantomData)
+    }
+}
+```
+
+## `UseField` Pattern
+
+- CGP defines the `UseField` type as a general target for implementing getter providers by `#[cgp_getter]`.
+- The `UseField` provider accepts a generic `Tag` parameter that represents the name of the field from the context to be used to implement the getter.
+- The `Tag` in `UseField` can use a different name as the getter method, allowing greater flexibility than `#[cgp_auto_getter]` which always require the context to have a field with the exact same name.
+- For example, one can have the following wiring:
+
+```rust
+#[derive(HasField)]
+pub struct Person {
+    pub person_name: String,
+}
+
+delegate_components! {
+    Person {
+        NameGetterComponent:
+            UseField<Symbol!("person_name")>,
+    }
+}
+```
+
+the example `UseField` provider will use the `person_name` field in `Person` to implement the `NameGetter::name`.
+
+- Whenever possible, explain the `UseField` provider by saying that it implements the getter trait by reading from the context the field name specified.
+    - For example, `Person` implements `HasName` using its `person_name` field.
+
 ## Abstract Types
 
 - CGP supports abstract types by defining associated types in CGP traits. For example:
@@ -633,3 +701,53 @@ pub trait CanDeserializeValue<'de, Value> {
         D: serde::Deserializer<'de>;
 }
 ```
+
+# General Instructions
+
+- When interacting with the user, assume that the user only has basic Rust programming experience and is not familiar with any concept in CGP.
+- You should assume that the user is not familiar with advanced Rust concepts, including generics, traits, blanket implementations, and the coherence problem.
+- You should assume that the user is not familiar with functional programming and type-level programming concepts. So try to explain concepts like type-level tables, lists, or string, using more familiar OOP concepts, such as v-table lookup.
+- Use full sentences and explain CGP concepts in ways that are approachable and engaging to beginners. You should include additional explanation for advanced concepts such as generics when applicable.
+- When the user ask to explain a specific wiring in `delegate_components!`, always lookup the definition of the components and providers to give more details in your explanation. For example, if the user asks you to explain the following code:
+
+```rust
+delegate_components! {
+    Person {
+        GretterComponent:
+            GreetHello,
+    }
+}
+```
+
+you should look up for the definitions of `GreetComponent` and `GreetHello`. This includes finding out what are the names of the consumer trait and provider trait for `GreetComponent`, and the trait or impl body.
+
+- When the user asks about the implementation details of a provider, always perform lookup on the original definition, and also the definition of all dependencies that the provider uses. For example, if the user asks you to explain the following:
+
+```rust
+#[cgp_impl(GreetHello)]
+impl<Context> Greeter for Context
+where
+    Context: HasName,
+{
+    fn greet(&self) {
+        println!("Hello, {}!", self.name());
+    }
+}
+```
+
+you should lookup for the definition of `Greeter` and `HasName`, and include the details of those definitions in your explanation.
+
+- When the user asks about how a provider is implemented for a context, also perform lookup based on the specific wiring for the context, and find out what other providers that implementation is linked to. For example, if you need to explain `GreetHello`, and you find the following wiring:
+
+```rust
+delegate_components! {
+    Person {
+        NameGetterComponent:
+            UseField<"person_name">,
+        GretterComponent:
+            GreetHello,
+    }
+}
+```
+
+then you should explain that for the `Person` context, since `NameGetterComponent` is wired to `UseField<"person_name">`, so when `println!("Hello, {}!", self.name())` is called from `GreetHello`, the value from `person_name` field will be returned from `self.name()`.
