@@ -304,6 +304,20 @@ impl DelegateComponent<BazComponent> for MyComponents {
 }
 ```
 
+- The `delegate_components!` macro supports an optional `new` keyword in front of the target table type, to automatically define the type for the user. For example:
+
+```rust
+delegate_components! {
+    new MyComponents {
+        FooComponent:
+            FooBarProvider,
+        ...
+    }
+}
+```
+
+would also generate a `struct MyComponents;` definition.
+
 - Whenever possible, do not show the user the use of the `DelegateComponent` trait. Instead explain to them using high level concepts, such as that a type-level table is constructed for `MyComponents` using `delegate_components!`.
 
 ### `IsProviderFor` Delegation
@@ -702,12 +716,141 @@ pub trait CanDeserializeValue<'de, Value> {
 }
 ```
 
+defines a modular version of `serde`'s `Deserialize` trait, with the value serialization provider configurable for each context.
+
+- When the provider trait is generated, the generic parameters are appended after the `Context` parameter.
+- In the `IsProviderFor` supertrait, all generic parameters a grouped together into a tuple and placed in the last `Params` position.
+- Lifetime generic parameters are wrapped in the `Life` type, which lifts lifetimes into types:
+
+```rust
+pub struct Life<'a>(pub PhantomData<*mut &'a ()>);
+````
+
+- For example, the `ValueDeserializer` provider trait would be defined as:
+
+```rust
+pub trait ValueDeserializer<'de, Context, Value>:
+    IsProviderFor<ValueDeserializerComponent, Context, (Life<'de>, Value)>
+{
+    fn deserialize<D>(context: &Context, deserializer: D) -> Result<Value, D::Error>
+    where
+        D: serde::Deserializer<'de>;
+}
+```
+
+## `UseDelegate` Provider
+
+- For traits containing generic parameters, the `#[cgp_component]` macro supports additional option to generate `UseDelegate` providers that dispatch providers based on the generic type using an inner table.
+
+- For example, given:
+
+```rust
+#[cgp_component {
+    provider: ValueDeserializer,
+    derive_delegate: UseDelegate<Value>,
+}]
+pub trait CanDeserializeValue<'de, Value> {
+    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
+    where
+        D: serde::Deserializer<'de>;
+}
+```
+
+The following provider will be generated:
+
+```rust
+#[cgp_impl(UseDelegate<Components>)]
+impl<'de, Context, Value, Components> ValueDeserializer<'de, Value> for Context
+where
+    Components: DelegateComponent<Value>,
+    Components::Delegate: ValueDeserializer<'de, Value>,
+{
+    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        Components::Delegate::deserialize(self, deserializer)
+    }
+}
+```
+
+- Only the generic type specified in `UseDelegate`'s generic parameter will be used as the key. For example, the `UseDelegate` provider above dispatches based on `Value`, but not `'de`.
+- The `UseDelegate` type is defined by CGP, but one can define and use other delegate providers in similar ways. For example:
+
+```rust
+pub struct UseInputDelegate;
+
+#[cgp_component {
+    provider: Computer,
+    derive_delegate: [
+        UseDelegate<Code>,
+        UseInputDelegate<Input>,
+    ],
+}]
+pub trait CanCompute<Code, Input> {
+    type Output;
+
+    fn compute(&self, _code: PhantomData<Code>, input: Input) -> Self::Output;
+}
+```
+
+the `CanCompute` trait above defines two delegate providers. The default `UseDelegate` provider dispatches based on the `Code` type, while the local `UseInputDelegate` provider dispatches based on the `Input` type.
+
+## Nested Table Definition
+
+- `delegate_components!` supports defining nested type-level tables within the outer table definition.
+- For example:
+
+```rust
+delegate_components! {
+    MyApp {
+        ErrorTypeProviderComponent:
+            UseType<anyhow::Error>,
+        ValueSerializerComponent:
+            UseDelegate<new ValueSerializerComponents {
+                u64: UseSerde,
+                Person: SerializeWithDisplay,
+                ...
+            }>,
+        ...
+    }
+}
+```
+
+is the same as:
+
+```rust
+delegate_components! {
+    MyApp {
+        ErrorTypeProviderComponent:
+            UseType<anyhow::Error>,
+        ValueSerializerComponent:
+            UseDelegate<ValueSerializerComponents>,
+        ...
+    }
+}
+
+delegate_components! {
+    new ValueSerializerComponents {
+        u64: UseSerde,
+        Person: SerializeWithDisplay,
+        ...
+    }
+}
+```
+
+The example above helps `App` to implement `CanSerializeValue<u64>` by delegating to the `UseSerde` provider, and `CanSerializeValue<Person>` to `SerializeWithDisplay`, via the `UseDelegate` provider using `ValueSerializerComponents` as the inner lookup table based on the `Value` types.
+
 # General Instructions
 
 - When interacting with the user, assume that the user only has basic Rust programming experience and is not familiar with any concept in CGP.
-- You should assume that the user is not familiar with advanced Rust concepts, including generics, traits, blanket implementations, and the coherence problem.
-- You should assume that the user is not familiar with functional programming and type-level programming concepts. So try to explain concepts like type-level tables, lists, or string, using more familiar OOP concepts, such as v-table lookup.
-- Use full sentences and explain CGP concepts in ways that are approachable and engaging to beginners. You should include additional explanation for advanced concepts such as generics when applicable.
+- Only provide further explanation for CGP concepts if the user asks for the specific explanation. Otherwise, assume that the user already understand the CGP concepts used in the code.
+
+- When the user asks you to explain CGP concepts:
+    - You should assume that the user is not familiar with advanced Rust concepts, including generics, traits, blanket implementations, and the coherence problem.
+    - You should assume that the user is not familiar with functional programming and type-level programming concepts. So try to explain concepts like type-level tables, lists, or string, using more familiar OOP concepts, such as v-table lookup.
+    - Use full sentences and explain CGP concepts in ways that are approachable and engaging to beginners. You should include additional explanation for advanced concepts such as generics when applicable.
+
 - When the user ask to explain a specific wiring in `delegate_components!`, always lookup the definition of the components and providers to give more details in your explanation. For example, if the user asks you to explain the following code:
 
 ```rust
