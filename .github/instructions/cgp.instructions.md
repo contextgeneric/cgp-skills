@@ -841,6 +841,94 @@ delegate_components! {
 
 The example above helps `App` to implement `CanSerializeValue<u64>` by delegating to the `UseSerde` provider, and `CanSerializeValue<Person>` to `SerializeWithDisplay`, via the `UseDelegate` provider using `ValueSerializerComponents` as the inner lookup table based on the `Value` types.
 
+## `CanUseComponent` Check Trait
+
+- The CGP component wiring is lazy, i.e. when a `DelegateComponent` impl is defined, the type system doesn't check whether the corresponding traits are truly implemented by a context with all transitive dependencies satisfied.
+- When a consumer trait is used with a context, but there are unsatisfied dependencies, the compiler will produce short error messages that are difficult to debug and identify the root cause.
+- To ensure that a consumer is implemented by a context, we implement check traits to assert at compile time that the wiring is complete.
+- The `CanUseComponent` trait is a check trait defined as follows:
+
+```rust
+pub trait CanUseComponent<Component, Params: ?Sized = ()> {}
+
+impl<Context, Component, Params: ?Sized> CanUseComponent<Component, Params> for Context
+where
+    Context: DelegateComponent<Component>,
+    Context::Delegate: IsProviderFor<Component, Context, Params>,
+{}
+```
+
+- `CanUseComponent` for a CGP component is automatically implemented for a context, if a context delegates the component to a provider, and the provider implements the provider trait for that context.
+- The check is done via `IsProviderFor`, to ensure that the compiler generates appropriate error messages when there is any unsatisfied constraint.
+    - Without `IsProviderFor`, Rust would conceal the indirect errors and only show that the provider trait is not implemented without providing further details.
+
+## `check_components!` Macro
+
+- The `check_components!` macro generates code that checks the CGP wiring of components using `CanUseComponent`.
+- For example, given:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName {
+    fn name(&self) -> &str;
+}
+
+#[cgp_component(Greeter)]
+pub trait CanGreet {
+    fn greet(&self);
+}
+
+#[cgp_impl(new GreetHello)]
+impl<Context> Greeter for Context
+where
+    Context: HasName,
+{
+    fn greet(&self) {
+        println!("Hello, {}!", self.name());
+    }
+}
+
+#[derive(HasField)]
+pub struct Person {
+    pub first_name: String,
+}
+
+delegate_components! {
+    Person {
+        GreeterComponent:
+            GreetHello,
+    }
+}
+```
+
+- The `Person` struct above incorrectly contains a `first_name` field, instead of the `name` field expected by `GreetHello` via `HasName`.
+- The static check is written with `check_components!` as follow:
+
+```rust
+check_components! {
+    CanUsePerson for Person {
+        GreeterComponent,
+    }
+}
+```
+
+- Behind the scenes, the macro desugars the code above to:
+
+```rust
+trait CanUsePerson<Component, Params: ?Sized>: CanUseComponent<Component, Params> {}
+impl CanUsePerson<GreeterComponent, ()> for Person {}
+```
+
+- The auxilary `CanUsePerson` trait is defined as a local alias to check the use of `CanUseComponent` with the same parameters.
+- For each `Component` listed in `check_components!`, an impl block for `CanUsePerson` is defined.
+- The example implementation `CanUsePerson<GreeterComponent, ()>` is implemented only if:
+    - `Person` implements `CanUseComponent<Component, Params>`.
+    - `Person`'s delegate for `GreeterComponent`, `GreetHello`, implements `IsProviderFor<GreeterComponent, Person, ()>`.
+    - Recall that `#[cgp_impl]` or `#[cgp_provider]` generates the implementation of `GreetHello: IsProviderFor<GreeterComponent, Person, ()>` with the same constraints required for `GreetHello` to implement `Greeter<Person>`.
+- Since the `name` field is missing, the compiler reports the error that `HasField<symbol!("name")>` is not implemented for `Person`.
+    - The root cause is often hidden among many other non-essential messages, and types such as `symbol!("name")` are expanded into their Greek alphabets form.
+
+
 # General Instructions
 
 - When interacting with the user, assume that the user only has basic Rust programming experience and is not familiar with any concept in CGP.
