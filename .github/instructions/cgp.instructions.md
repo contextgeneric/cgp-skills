@@ -928,6 +928,101 @@ impl CanUsePerson<GreeterComponent, ()> for Person {}
 - Since the `name` field is missing, the compiler reports the error that `HasField<symbol!("name")>` is not implemented for `Person`.
     - The root cause is often hidden among many other non-essential messages, and types such as `symbol!("name")` are expanded into their Greek alphabets form.
 
+## Generic Parameters in `check_components!`
+
+- `check_components!` can only be used with generic parameters. For example:
+
+```rust
+check_components! {
+    <'de> CanUseAppDerializer for App {
+        ValueDeserializerComponent: (Life<'de>, u64),
+    }
+}
+```
+
+would be desugared to:
+
+```rust
+trait CanUseAppDerializer<Component, Params: ?Sized>:
+    CanUseComponent<Component, Params>
+{
+}
+impl<'de> CanUseAppDerializer<ValueDeserializerComponent, (Life<'de>, u64)> for App {}
+```
+
+which would check for the implementation of `App: CanDeserializeValue<'de, u64>`.
+
+- The generic parameters are grouped into a tuple and placed in `Params`.
+
+## Array Syntax in `check_components!`
+
+- When we want to check the implementation of a CGP component with multiple generic parameters, we can use the array syntax to group them together. For example:
+
+```rust
+check_components! {
+    CanUseAppSerializer for App {
+        ValueSerializerComponent: [
+            u64,
+            String,
+        ],
+    }
+}
+```
+
+is the same as writing:
+
+```rust
+check_components! {
+    CanUseAppSerializer for App {
+        ValueSerializerComponent: u64,
+        ValueSerializerComponent: String,
+    }
+}
+```
+
+- We can also group by the `Component` key instead of the generic `Param`. For example:
+
+```rust
+check_components! {
+    CanUseAppSerializer for App {
+        [
+            ValueSerializerComponent,
+            AreaCalculatorComponent,
+        ]: Circle,
+    }
+}
+```
+
+- We can also group by both `Component` and `Param`. For example:
+
+```rust
+check_components! {
+    CanUseAppSerializer for App {
+        [
+            ValueSerializerComponent,
+            AreaCalculatorComponent,
+        ]: [
+            Circle,
+            Rectangle,
+        ],
+    }
+}
+```
+
+would be the same as writing:
+
+
+```rust
+check_components! {
+    CanUseAppSerializer for App {
+        ValueSerializerComponent: Circle,
+        AreaCalculatorComponent: Circle,
+        ValueSerializerComponent: Rectangle,
+        AreaCalculatorComponent: Rectangle,
+    }
+}
+```
+
 
 # General Instructions
 
