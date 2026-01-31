@@ -104,13 +104,21 @@ pub trait HashProvider<Context> {
 ```rust
 pub struct HashWithDisplay;
 
-impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
+impl<Context: Display> HashProvider<Context> for HashWithDisplay {
+    fn hash<H: Hasher>(context: &Context, state: &mut H) {
+        ...
+    }
+}
 ```
 
 - The provider name `HashWithDisplay` is defined as a local dummy struct.
 - The implementation of `HashProvider` can be generic over any `Context` type that implements `Display`.
 - The usual coherence restrictions don't apply, because the `Self` type `HashWithDisplay` is owned by the same crate.
 - This allows any number of such blanket provider trait implementations to be defined in any crate.
+
+- Note that the provider value, i.e. the `self` value, is not used anywhere in the provider trait implementation.
+    - This means that the provider struct is a type-level-only entity, with no usable value at runtime.
+    - It is a common mistake to attempt to define fields in the provider struct, and attempt to pass or access it during runtime. Such fields will not be accessible at runtime.
 
 ## Component Name
 
@@ -201,6 +209,8 @@ impl<Context: Display> HashProvider<Context> for HashWithDisplay { ... }
 - The macro also allows the use of `self` and `Self` to refer to the `Context` value and type.
 - Behind the scenes, the `#[cgp_impl]` macro desugars to `#[cgp_provider]` by moving the `Context` type back to the first generic parameter of the provider trait, and use the given provider name type as the `Self` type.
 - Behind the scenes, all references to `self` or `Self` are automatically converted by `#[cgp_impl]` back to refer to the explicit `context` or `Context`.
+
+- As previously noted, the `Self` type and `self` value inside `#[cgp_impl]` refers to the `Context` type, *not* the provider struct. There is no provider value accessible during runtime.
 
 - Whenever possible, use `#[cgp_impl]` to write and explain provider implementations. Avoid showing the user `#[cgp_provider]` or `IsProviderFor`, unless they are needed to explain the internal mechanics of CGP.
 
