@@ -1,5 +1,6 @@
 ---
-applyTo: '**/*.rs'
+name: cgp-basics
+description: Basic skills for Context-Generic Programming (CGP) in Rust
 ---
 
 # Guide to Context-Generic Programming (CGP) in Rust

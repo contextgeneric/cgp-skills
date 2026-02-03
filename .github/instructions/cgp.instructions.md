@@ -1,1 +1,0 @@
-../../instructions/cgp-guide.md
