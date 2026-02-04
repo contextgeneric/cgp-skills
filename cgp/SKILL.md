@@ -749,21 +749,21 @@ where
 ```rust
 #[derive(HasField)]
 pub struct Person {
-    pub person_name: String,
+    pub first_name: String,
 }
 
 delegate_components! {
     Person {
         NameGetterComponent:
-            UseField<Symbol!("person_name")>,
+            UseField<Symbol!("first_name")>,
     }
 }
 ```
 
-the example `UseField` provider will use the `person_name` field in `Person` to implement the `NameGetter::name`.
+the example `UseField` provider will use the `first_name` field in `Person` to implement the `NameGetter::name`.
 
 - Whenever possible, explain the `UseField` provider by saying that it implements the getter trait by reading from the context the field name specified.
-    - For example, `Person` implements `HasName` using its `person_name` field.
+    - For example, `Person` implements `HasName` using its `first_name` field.
 
 ## Abstract Types
 
@@ -810,7 +810,7 @@ pub trait HasNameType {
 
 ```rust
 #[cgp_impl(UseType<Name>)]
-impl<Context, Name> NameTypeProvider for Context {
+impl<Name> NameTypeProvider {
     type Name = Name;
 }
 ```
@@ -829,56 +829,112 @@ delegate_components! {
 
 would implement `HasNameType` for `Person` with `Name` being implemented as `String`.
 
+## Abstract Type in Getter Traits
+
+- When a getter trait contains only one getter method, it can define a local associated type and use it as the return type of the getter method. For example:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName {
+    type Name;
+
+    fn name(&self) -> &Self::Name;
+}
+```
+
+- This allows the abstract `Name` type to be automatically inferred based on the `name` field of the concrete context.
+- This approach is useful when the only purpose of the abstract type is to be used as the return type of the getter method, but not anywhere else.
+
+
+## Higher Order Providers
+
+- Higher order providers is a CGP design pattern that allows providers to accept other providers as generic parameters.
+
+- For example, with the `CanCalculateArea` trait:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea {
+    fn area(&self) -> f64;
+}
+```
+
+we can define a higher order provider `ScaledArea` as follows:
+
+```rust
+#[cgp_impl(ScaledArea<InnerCalculator>)]
+impl AreaCalculator 
+where
+    Self: HasScaleFactor,
+    InnerCalculator: AreaCalculator<Self>,
+{
+    fn area(&self) -> f64 {
+        InnerCalculator::area(self) * self.scale_factor()
+    }
+}
+```
+
+- The behavior of the inner area calculation is now determined by the `InnerCalculator` generic parameter, instead of the context.
+
+- Note that not all providers that contain generic parameters are higher order providers. They only become higher order providers when the generic parameters are used with provider trait constraints in the `where` clause.
+- For example, the following provider is not a higher order provider:
+
+```rust
+#[cgp_impl(new GetName<Tag>)]
+impl<Tag> NameGetter
+where
+    Self: HasField<Tag, Value = String>,
+{
+    fn name(&self) -> &str {
+        self.get_field(PhantomData)
+    }
+}
+```
+
+- The code above uses the `UseField` pattern, where the `Tag` type is used as the field name to access the corresponding field value via `HasField`. But since there is no constraint for `Tag` to implement any provider trait, the provider `GetName` is not a higher order provider.
+
 ## Generic Parameters
 
 - CGP traits can also contain generic parameters, for example:
 
 ```rust
-#[cgp_component(ValueDeserializer)]
-pub trait CanDeserializeValue<'de, Value> {
-    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
-    where
-        D: serde::Deserializer<'de>;
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape> {
+    fn area(&self, shape: &Shape) -> f64;
 }
 ```
 
-defines a modular version of `serde`'s `Deserialize` trait, with the value serialization provider configurable for each context.
+defines a further modularized version of the earlier `CanCalculateArea` trait, where the area calculation is done on the generic `Shape` parameter instead of the context.
 
-- When the provider trait is generated, the generic parameters are appended after the `Context` parameter.
+- When the provider trait is generated, the generic parameters are appended after the `Context` parameter. For example:
+
+```rust
+pub trait AreaCalculator<Context, Shape>: IsProviderFor<AreaCalculatorComponent, Context, Shape> {
+    fn area(context: &Context, shape: &Shape) -> f64;
+}
+```
+
 - In the `IsProviderFor` supertrait, all generic parameters a grouped together into a tuple and placed in the last `Params` position.
-- Lifetime generic parameters are wrapped in the `Life` type, which lifts lifetimes into types:
+
+- When the trait contains lifetime generic parameters, they are wrapped in the `Life` type, which lifts lifetimes into types:
 
 ```rust
 pub struct Life<'a>(pub PhantomData<*mut &'a ()>);
-````
-
-- For example, the `ValueDeserializer` provider trait would be defined as:
-
-```rust
-pub trait ValueDeserializer<'de, Context, Value>:
-    IsProviderFor<ValueDeserializerComponent, Context, (Life<'de>, Value)>
-{
-    fn deserialize<D>(context: &Context, deserializer: D) -> Result<Value, D::Error>
-    where
-        D: serde::Deserializer<'de>;
-}
 ```
 
 ## `UseDelegate` Provider
 
-- For traits containing generic parameters, the `#[cgp_component]` macro supports additional option to generate `UseDelegate` providers that dispatch providers based on the generic type using an inner table.
+- For traits containing generic parameters, the `#[cgp_component]` macro supports additional option to generate `UseDelegate` providers that dispatch providers based on the generic type using an inner type-level table.
 
 - For example, given:
 
 ```rust
 #[cgp_component {
-    provider: ValueDeserializer,
-    derive_delegate: UseDelegate<Value>,
+    provider: AreaCalculator,
+    derive_delegate: UseDelegate<Shape>,
 }]
-pub trait CanDeserializeValue<'de, Value> {
-    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
-    where
-        D: serde::Deserializer<'de>;
+pub trait CanCalculateArea<Shape> {
+    fn area(&self, shape: &Shape) -> f64;
 }
 ```
 
@@ -886,25 +942,22 @@ The following provider will be generated:
 
 ```rust
 #[cgp_impl(UseDelegate<Components>)]
-impl<'de, Context, Value, Components> ValueDeserializer<'de, Value> for Context
+impl<Shape, Components> AreaCalculator<Shape>
 where
-    Components: DelegateComponent<Value>,
-    Components::Delegate: ValueDeserializer<'de, Value>,
+    Components: DelegateComponent<Shape>,
+    Components::Delegate: AreaCalculator<Shape>,
 {
-    fn deserialize<D>(&self, deserializer: D) -> Result<Value, D::Error>
-    where
-        D: serde::Deserializer<'de>
-    {
-        Components::Delegate::deserialize(self, deserializer)
+    fn area(&self, shape: &Shape) -> f64 {
+        Components::Delegate::area(self, shape)
     }
 }
 ```
 
-- Only the generic type specified in `UseDelegate`'s generic parameter will be used as the key. For example, the `UseDelegate` provider above dispatches based on `Value`, but not `'de`.
+- Only the generic type specified in `UseDelegate`'s generic parameter will be used as the key. For example, the `UseDelegate` provider above dispatches based on `Shape` alone.
 - The `UseDelegate` type is defined by CGP, but one can define and use other delegate providers in similar ways. For example:
 
 ```rust
-pub struct UseInputDelegate;
+pub struct UseInputDelegate<Input>(pub PhantomData<Input>);
 
 #[cgp_component {
     provider: Computer,
@@ -930,12 +983,12 @@ the `CanCompute` trait above defines two delegate providers. The default `UseDel
 ```rust
 delegate_components! {
     MyApp {
-        ErrorTypeProviderComponent:
-            UseType<anyhow::Error>,
-        ValueSerializerComponent:
-            UseDelegate<new ValueSerializerComponents {
-                u64: UseSerde,
-                Person: SerializeWithDisplay,
+        AreaCalculatorComponent:
+            UseDelegate<new AreaCalculatorComponents {
+                Rectangle:
+                    RectangleArea,
+                Circle:
+                    CircleArea,
                 ...
             }>,
         ...
@@ -948,24 +1001,24 @@ is the same as:
 ```rust
 delegate_components! {
     MyApp {
-        ErrorTypeProviderComponent:
-            UseType<anyhow::Error>,
-        ValueSerializerComponent:
-            UseDelegate<ValueSerializerComponents>,
+        AreaCalculatorComponent:
+            UseDelegate<AreaCalculatorComponents>,
         ...
     }
 }
 
 delegate_components! {
-    new ValueSerializerComponents {
-        u64: UseSerde,
-        Person: SerializeWithDisplay,
+    new AreaCalculatorComponents {
+        Rectangle:
+            RectangleArea,
+        Circle:
+            CircleArea,
         ...
     }
 }
 ```
 
-The example above helps `App` to implement `CanSerializeValue<u64>` by delegating to the `UseSerde` provider, and `CanSerializeValue<Person>` to `SerializeWithDisplay`, via the `UseDelegate` provider using `ValueSerializerComponents` as the inner lookup table based on the `Value` types.
+The example above helps `MyApp` implement `CanCalculateArea<Rectangle>` by delegating to the `Rectangle` provider, and `CanCalculateArea<Circle>` to `CircleArea`, via the `UseDelegate` provider using `AreaCalculatorComponents` as the inner lookup table based on the `Shape` type.
 
 ## Check Traits
 
@@ -987,9 +1040,9 @@ pub trait CanGreet {
 }
 
 #[cgp_impl(new GreetHello)]
-impl<Context> Greeter for Context
+impl Greeter
 where
-    Context: HasName,
+    Self: HasName,
 {
     fn greet(&self) {
         println!("Hello, {}!", self.name());
@@ -1080,8 +1133,9 @@ impl CanUsePerson<GreeterComponent, ()> for Person {}
 
 ```rust
 check_components! {
-    <'de> CanUseAppDerializer for App {
-        ValueDeserializerComponent: (Life<'de>, u64),
+    CanUseMyApp for MyApp {
+        AreaCalculatorComponent:
+            Rectangle,
     }
 }
 ```
@@ -1089,14 +1143,15 @@ check_components! {
 would be desugared to:
 
 ```rust
-trait CanUseAppDerializer<Component, Params: ?Sized>:
+trait CanUseMyApp<Component, Params: ?Sized>:
     CanUseComponent<Component, Params>
 {
 }
-impl<'de> CanUseAppDerializer<ValueDeserializerComponent, (Life<'de>, u64)> for App {}
+
+impl CanUseMyApp<AreaCalculatorComponent, Rectangle> for MyApp {}
 ```
 
-which would check for the implementation of `App: CanDeserializeValue<'de, u64>`.
+which would check for the implementation of `MyApp: CanCalculateArea<Rectangle>`.
 
 - The generic parameters are grouped into a tuple and placed in `Params`.
 
@@ -1106,10 +1161,10 @@ which would check for the implementation of `App: CanDeserializeValue<'de, u64>`
 
 ```rust
 check_components! {
-    CanUseAppSerializer for App {
-        ValueSerializerComponent: [
-            u64,
-            String,
+    CanUseMyApp for MyApp {
+        AreaCalculatorComponent: [
+            Rectangle,
+            Circle,  
         ],
     }
 }
@@ -1119,9 +1174,11 @@ is the same as writing:
 
 ```rust
 check_components! {
-    CanUseAppSerializer for App {
-        ValueSerializerComponent: u64,
-        ValueSerializerComponent: String,
+    CanUseMyApp for MyApp {
+        AreaCalculatorComponent:
+            Rectangle,
+        AreaCalculatorComponent:
+            Circle,
     }
 }
 ```
@@ -1130,11 +1187,11 @@ check_components! {
 
 ```rust
 check_components! {
-    CanUseAppSerializer for App {
+    CanUseMyApp for MyApp {
         [
-            ValueSerializerComponent,
             AreaCalculatorComponent,
-        ]: Circle,
+            RotatorComponent,
+        ]: Rectangle,
     }
 }
 ```
@@ -1143,13 +1200,13 @@ check_components! {
 
 ```rust
 check_components! {
-    CanUseAppSerializer for App {
+    CanUseMyApp for MyApp {
         [
-            ValueSerializerComponent,
             AreaCalculatorComponent,
+            RotatorComponent,
         ]: [
-            Circle,
             Rectangle,
+            Circle,
         ],
     }
 }
@@ -1160,82 +1217,106 @@ would be the same as writing:
 
 ```rust
 check_components! {
-    CanUseAppSerializer for App {
-        ValueSerializerComponent: Circle,
-        AreaCalculatorComponent: Circle,
-        ValueSerializerComponent: Rectangle,
+    CanUseMyApp for MyApp {
         AreaCalculatorComponent: Rectangle,
+        RotatorComponent: Rectangle,
+        AreaCalculatorComponent: Circle,
+        RotatorComponent: Circle,
     }
 }
 ```
 
-## Higher Order Providers
+## Cross-Context Dependencies
 
-- Higher order providers is a CGP design pattern that allows providers to accept other providers as generic parameters.
-
-- For example, with the `CanSerializeValue` trait:
+- When the main target of a trait is a generic parameter instead of a context, like:
 
 ```rust
-#[cgp_component(ValueSerializer)]
-pub trait CanSerializeValue<Value: ?Sized> {
-    fn serialize<S>(&self, value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer;
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape> {
+    fn area(&self, shape: &Shape) -> f64;
 }
 ```
 
-we can define a higher order provider `SerializeIteratorWith` as follows:
+This allows multiple `Shape` contexts to share dependencies through a common `Context` type.
+
+- For example, we can introduce a `Scalar` type that is shared by all shapes:
 
 ```rust
-#[cgp_impl(new SerializeIteratorWith<Provider>)]
-impl<Context, Value, Provider> ValueSerializer<Value> for Context
-where
-    for<'a> &'a Value: IntoIterator,
-    Provider: for<'a> ValueSerializer<Context, <&'a Value as IntoIterator>::Item>,
-{
-    fn serialize<S>(&self, value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    { ... }
+#[cgp_type]
+pub trait HasScalarType {
+    type Scalar: Float;
+}
+
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape>: HasScalarType {
+    fn area(&self, shape: &Shape) -> Self::Scalar;
 }
 ```
 
-- The behavior of the inner item serialization is now determined by the `Provider` generic parameter, instead of the context.
+- This way, individual shape types like `Rectangle` and `Circle` do not need to implement `HasScalarType`, or worry about all shapes using the same `Scalar` type to interop with each others.
 
-- This static binding behavior allows the provider implementor to choose a specific provider, as compared to leaving it to be configurable by the concrete context.
-- For example, the following `SerializeIteratorWithContext` provider always uses the context to look up the inner item serializer:
+- The common context type can also provide value-level dependency injection, such as:
 
 ```rust
-#[cgp_impl(new SerializeIteratorWithContext)]
-impl<Context, Value> ValueSerializer<Value> for Context
-where
-    for<'a> &'a Value: IntoIterator,
-    Context: for<'a> CanSerializeValue<<&'a Value as IntoIterator>::Item>,
-{
-    fn serialize<S>(&self, value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    { ... }
+#[cgp_auto_getter]
+pub trait HasGlobalScaleFactor: HasScalarType {
+    fn global_scale_factor(&self) -> Self::Scalar;
 }
-```
 
-- Note that not all providers that contain generic parameters are higher order providers. They only become higher order providers when the generic parameters are used with provider trait constraints in the `where` clause.
-- For example, the following provider is not a higher order provider:
-
-```rust
-#[cgp_impl(new GetName<Tag>)]
-impl<Context, Tag> NameGetter for Context
+#[cgp_impl(new GloballyScaledArea<InnerCalculator>)]
+impl<Shape> AreaCalculator<Shape>
 where
-    Context: HasField<Tag, Value = String>,
+    Self: HasGlobalScaleFactor,
+    InnerCalculator: AreaCalculator<Self, Shape>,
 {
-    fn name(&self) -> &str {
-        self.get_field(PhantomData)
+    fn area(&self, shape: &Shape) -> f64 {
+        InnerCalculator::area(self, shape) * self.global_scale_factor()
     }
 }
 ```
 
-- The code above uses the `UseField` pattern, where the `Tag` type is used as the field name to access the corresponding field value via `HasField`. But since there is no constraint for `Tag` to implement any provider trait, the provider `GetName` is not a higher order provider.
+- This way, a global scale factor can be stored in the common context, and not have to have the value replicated in all shape values.
 
+- The common context can also provide lazy binding of provider implementations, so that each shape type may bind to different provider in different concrete contexts. For example:
+
+```rust
+pub struct BaseApp;
+
+delegate_components! {
+    BaseApp {
+        ScaleFactorTypeProviderComponent:
+            UseType<f32>,
+        AreaCalculatorComponent:
+            UseDelegate<new AreaCalculatorComponents {
+                Rectangle:
+                    RectangleArea,
+                Circle: 
+                    CircleArea,
+            }>,
+    }
+}
+
+#[derive(HasField)]
+pub struct ScaledApp {
+    pub global_scale_factor: f64,
+}
+
+delegate_components! {
+    BaseApp {
+        ScaleFactorTypeProviderComponent:
+            UseType<f64>,
+        AreaCalculatorComponent:
+            UseDelegate<new AreaCalculatorComponents {
+                Rectangle:
+                    GloballyScaledArea<RectangleArea>,
+                Circle: 
+                    GloballyScaledArea<CircleArea>,
+            }>,
+    }
+}
+```
+
+- In the above example, the `Rectangle` type would have an unscaled area implementation with `BaseApp`, but a globally scaled area implementation with `ScaledApp`.
 
 ## `UseContext` Provider
 
@@ -1245,46 +1326,47 @@ where
 struct UseContext;
 ```
 
-- For example, the `UseContext` implementation generated for `CanSerializeValue` is as follows:
+- For example, the `UseContext` implementation generated for `CanCalculateArea` is as follows:
 
 ```rust
 #[cgp_impl(UseContext)]
-impl<Context, Value> ValueSerializer<Value> for Context
+impl<Shape> AreaCalculator<Shape>
 where
-    Context: CanSerializeValue<Value>,
+    Self: CanCalculateArea<Shape>,
 {
-    fn serialize<S>(&self, value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.serialize(value, serializer)
+    fn area(&self, shape: &Shape) -> Self::Scalar {
+        self.area(shape)
     }
 }
 ```
 
-- There is a duality between `UseContext` and the blanket implementation of consumer traits. Whereas the blanket implementation of the `CanSerializeValue` consumer trait uses a delegated provider that implements `ValueSerializer` to implement `CanSerializeValue`, the `UseContext` provider implements the `ValueSerializer` provider trait using `CanSerializeValue` implemented by the context.
+- There is a duality between `UseContext` and the blanket implementation of consumer traits. Whereas the blanket implementation of the `CanCalculateArea` consumer trait uses a delegated provider that implements `AreaCalculator` to implement `CanCalculateArea`, the `UseContext` provider implements the `AreaCalculator` provider trait using `CanCalculateArea` implemented by the context.
     - However, trying to delegate a consumer trait to `UseContext` would create a circular dependency, resulting in compile-time errors.
 - A higher order provider may be configured to use `UseContext` as the default inner provider, so that the default provider wired in the context is used when no explicit provider is specified.
-- For example, we can modify the earlier `SerializeIteratorWith` to use `UseContext` as a default provider:
+- For example, we can modify the earlier `SumArea` to use `UseContext` as a default provider:
 
 ```rust
-pub struct SerializeIteratorWith<Provider = UseContext>(pub PhantomData<Provider>);
+pub struct IterSumArea<InnerCalculator = UseContext>(pub PhantomData<InnerCalculator>);
 
-#[cgp_impl(SerializeIteratorWith<Provider>)]
-impl<Context, Value, Provider> ValueSerializer<Value> for Context
+#[cgp_impl(IterSumArea<InnerCalculator>)]
+impl<Shape, InnerCalculator, InnerShape> AreaCalculator<Shape>
 where
-    for<'a> &'a Value: IntoIterator,
-    Provider: for<'a> ValueSerializer<Context, <&'a Value as IntoIterator>::Item>,
+    Self: HasScalarType,
+    for<'a> &'a Shape: IntoIterator<Item = &'a InnerShape>
+    InnerCalculator: AreaCalculator<Self, InnerShape>,
 {
-    fn serialize<S>(&self, value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    { ... }
+    fn area(&self, shapes: &Shape) -> Self::Scalar {
+        let mut total = Self::Scalar::default();
+        for shape in shapes.into_iter() {
+            total += InnerCalculator::area(self, shape);
+        }
+        total
+    }
 }
 ```
 
-- The struct definition of `SerializeIteratorWith` is defined with `UseContext` being a default generic parameter for `Provider`.
-- This way, when no explicit provider is specified, `SerializeIteratorWith` would have the same behavior as `SerializeIteratorWithContext`.
+- The struct definition of `IterSumArea` is defined with `UseContext` being a default generic parameter for `InnerCalculator`.
+- This way, when no explicit provider is specified, `IterSumArea` would have the same behavior as `IterSumAreaWithContext`.
 - Note that the default `UseContext` provider is only applicable for higher order providers with explicit struct definitions that contain the default generic parameter. Otherwise, there is no default provider involved, and the inner provider must always be specified explicitly.
 
 # Modularity Hierarchy
