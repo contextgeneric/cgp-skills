@@ -362,7 +362,7 @@ where
 ## `delegate_components!` Macro
 
 - The `delegate_components!` macro is commonly used to simplify the definition of type-level tables through the `DelegateComponent` trait.
-- For example, the earlier example delegation for `Rectangle` can be redefined as:
+- For example, given the following:
 
 ```rust
 delegate_components! {
@@ -373,7 +373,52 @@ delegate_components! {
 }
 ```
 
+would generate the following `DelegateComponent` and `IsProviderFor` implementation:
+
+```rust
+impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
+    type Delegate = RectangleArea;
+}
+
+impl<Context, Params> IsProviderFor<AreaCalculatorComponent, Context, Params> for Rectangle
+where
+    FooBarProvider: IsProviderFor<AreaCalculatorComponent, Context, Params>
+{}
+```
+
 - The first argument to `delegate_components!`, i.e. `Rectangle`, designates the target type where the type-level table is defined, or which the `DelegateComponent` trait will be implemented by.
+
+- The `IsProviderFor` implementation helps the propagation of the provider trait constraints. This allows a provider to implement a provider trait through `delegate_components!`, and at the same time keep track of the dependencies. 
+- Whenever possible, try to avoid mentioning the generation of the `IsProviderFor` implementation inside `delegate_components!`.
+
+## Explicit Delegation
+
+- It is possible to skip the use of `delegate_components!`, and implement the consumer trait directly on the concrete context.
+- For example, given the following:
+
+```rust
+delegate_components! {
+    Rectangle {
+        AreaCalculatorComponent:
+            RectangleArea,
+    }
+}
+```
+
+we can instead write:
+
+```rust
+impl HasArea for Rectangle {
+    fn area(&self) -> f64 {
+        <RectangleArea as AreaCalculator<Self>>::area(self)
+    }
+}
+```
+
+- The manual delegation is much more verbose, but it is much easier to understand as compared to the use of `delegate_components!`, `DelegateComponent`, and the blanket implementations.
+- When explaining the concepts behind `delegate_components!`, we can use the explicit delegation to demonstrate what the code effectively does, without requiring the reader to fully understand the trait machinery behind CGP.
+
+### Array Syntax in `delegate_components!`
 
 - The `delegate_components!` macro also supports array syntax, in case when multiple type-level keys map to the same value. For example:
 
@@ -422,6 +467,8 @@ impl DelegateComponent<BazComponent> for MyComponents {
 }
 ```
 
+### `new` in `delegate_components!`
+
 - The `delegate_components!` macro supports an optional `new` keyword in front of the target table type, to automatically define the type for the user. For example:
 
 ```rust
@@ -437,37 +484,6 @@ delegate_components! {
 would also generate a `struct MyComponents;` definition.
 
 - Whenever possible, do not show the user the use of the `DelegateComponent` trait. Instead explain to them using high level concepts, such as that a type-level table is constructed for `MyComponents` using `delegate_components!`.
-
-### `IsProviderFor` Delegation
-
-- The `delegate_components!` macro also generates the `IsProviderFor` implementation in addition to the `DelegateComponent` trait.
-
-- So given the code:
-
-```rust
-delegate_components! {
-    MyComponents {
-        FooComponent:
-            FooBarProvider,
-    }
-}
-```
-
-the full desugaring is actually:
-
-```rust
-impl DelegateComponent<FooComponent> for MyComponents {
-    type Delegate = FooBarProvider;
-}
-
-impl<Context, Params> IsProviderFor<FooComponent, Context, Params> for MyComponents
-where
-    FooBarProvider: IsProviderFor<FooComponent, Context, Params>
-{}
-```
-
-- This helps the propagation of the provider trait constraints, in case if `MyComponents` is used as a provider and used for a constraint like `MyComponents: FooProvider<MyContext>`.
-- Whenever possible, try to avoid mentioning the generation of the `IsProviderFor` implementation inside `delegate_components!`.
 
 ## Type-Level List
 
