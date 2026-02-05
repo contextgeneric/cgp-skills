@@ -240,7 +240,7 @@ where
 
 - The `Context` parameter in `#[cgp_impl]` is in the same `Self` position as the consumer trait, to make it look like blanket implementations.
 - The provider name is specified in the attribute argument for `#[cgp_impl]`. An optional `new` keyword can be given to automatically define the provider struct.
-- The macro also allows the use of `self` and `Self` to refer to the `Context` value and type.
+- The macro also allows the use of `self` and `Self` to refer to the generic `Context` value and type.
 - Behind the scenes, the `#[cgp_impl]` macro desugars to `#[cgp_provider]` by moving the `Context` type back to the first generic parameter of the provider trait, and use the given provider name type as the `Self` type.
 - Behind the scenes, all references to `self` or `Self` are automatically converted by `#[cgp_impl]` back to refer to the explicit `context` or `Context`.
 
@@ -1020,6 +1020,156 @@ delegate_components! {
 
 The example above helps `MyApp` implement `CanCalculateArea<Rectangle>` by delegating to the `Rectangle` provider, and `CanCalculateArea<Circle>` to `CircleArea`, via the `UseDelegate` provider using `AreaCalculatorComponents` as the inner lookup table based on the `Shape` type.
 
+
+
+## Cross-Context Dependencies
+
+- When the main target of a trait is a generic parameter instead of a context, like:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape> {
+    fn area(&self, shape: &Shape) -> f64;
+}
+```
+
+This allows multiple `Shape` contexts to share dependencies through a common `Context` type.
+
+- For example, we can introduce a `Scalar` type that is shared by all shapes:
+
+```rust
+#[cgp_type]
+pub trait HasScalarType {
+    type Scalar: Float;
+}
+
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape>: HasScalarType {
+    fn area(&self, shape: &Shape) -> Self::Scalar;
+}
+```
+
+- This way, individual shape types like `Rectangle` and `Circle` do not need to implement `HasScalarType`, or worry about all shapes using the same `Scalar` type to interop with each others.
+
+- The common context type can also provide value-level dependency injection, such as:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasGlobalScaleFactor: HasScalarType {
+    fn global_scale_factor(&self) -> Self::Scalar;
+}
+
+#[cgp_impl(new GloballyScaledArea<InnerCalculator>)]
+impl<Shape> AreaCalculator<Shape>
+where
+    Self: HasGlobalScaleFactor,
+    InnerCalculator: AreaCalculator<Self, Shape>,
+{
+    fn area(&self, shape: &Shape) -> f64 {
+        InnerCalculator::area(self, shape) * self.global_scale_factor()
+    }
+}
+```
+
+- This way, a global scale factor can be stored in the common context, and not have to have the value replicated in all shape values.
+
+- The common context can also provide lazy binding of provider implementations, so that each shape type may bind to different provider in different concrete contexts. For example:
+
+```rust
+pub struct BaseApp;
+
+delegate_components! {
+    BaseApp {
+        ScaleFactorTypeProviderComponent:
+            UseType<f32>,
+        AreaCalculatorComponent:
+            UseDelegate<new AreaCalculatorComponents {
+                Rectangle:
+                    RectangleArea,
+                Circle: 
+                    CircleArea,
+            }>,
+    }
+}
+
+#[derive(HasField)]
+pub struct ScaledApp {
+    pub global_scale_factor: f64,
+}
+
+delegate_components! {
+    BaseApp {
+        ScaleFactorTypeProviderComponent:
+            UseType<f64>,
+        AreaCalculatorComponent:
+            UseDelegate<new AreaCalculatorComponents {
+                Rectangle:
+                    GloballyScaledArea<RectangleArea>,
+                Circle: 
+                    GloballyScaledArea<CircleArea>,
+            }>,
+    }
+}
+```
+
+- In the above example, the `Rectangle` type would have an unscaled area implementation with `BaseApp`, but a globally scaled area implementation with `ScaledApp`.
+
+## `UseContext` Provider
+
+- CGP defines a special `UseContext` provider that is automatically implemented for all CGP traits that are defined with macros like `#[cgp_component]`:
+
+```rust
+struct UseContext;
+```
+
+- For example, the `UseContext` implementation generated for `CanCalculateArea` is as follows:
+
+```rust
+#[cgp_impl(UseContext)]
+impl<Shape> AreaCalculator<Shape>
+where
+    Self: CanCalculateArea<Shape>,
+{
+    fn area(&self, shape: &Shape) -> Self::Scalar {
+        self.area(shape)
+    }
+}
+```
+
+- There is a duality between `UseContext` and the blanket implementation of consumer traits. Whereas the blanket implementation of the `CanCalculateArea` consumer trait uses a delegated provider that implements `AreaCalculator` to implement `CanCalculateArea`, the `UseContext` provider implements the `AreaCalculator` provider trait using `CanCalculateArea` implemented by the context.
+    - However, trying to delegate a consumer trait to `UseContext` would create a circular dependency, resulting in compile-time errors.
+
+### `UseContext` as Default in Higher Order Providers
+
+- A higher order provider may be configured to use `UseContext` as the default inner provider, so that the default provider wired in the context is used when no explicit provider is specified.
+- For example, we can define an `IterSumArea` higher-order provider that uses `UseContext` as a default inner provider:
+
+```rust
+pub struct IterSumArea<InnerCalculator = UseContext>(pub PhantomData<InnerCalculator>);
+
+#[cgp_impl(IterSumArea<InnerCalculator>)]
+impl<Shape, InnerCalculator, InnerShape> AreaCalculator<Shape>
+where
+    Self: HasScalarType,
+    for<'a> &'a Shape: IntoIterator<Item = &'a InnerShape>
+    InnerCalculator: AreaCalculator<Self, InnerShape>,
+{
+    fn area(&self, shapes: &Shape) -> Self::Scalar {
+        let mut total = Self::Scalar::default();
+        for shape in shapes.into_iter() {
+            total += InnerCalculator::area(self, shape);
+        }
+        total
+    }
+}
+```
+
+- The struct definition of `IterSumArea` is defined with `UseContext` being a default generic parameter for `InnerCalculator`.
+- This way, when no explicit provider is specified, `IterSumArea` would just use the wiring in the context to calculate the area for the inner shape.
+- The inner provider can be overridden to enable static binding that does not require routing through the main context. This can be useful for simplifying the wiring on the main context, or for overridding the existing wiring in the main context.
+
+- Note that the default `UseContext` provider is only applicable for higher order providers with explicit struct definitions that contain the default generic parameter. Otherwise, there is no default provider involved, and the inner provider must always be specified explicitly.
+
 ## Check Traits
 
 - The CGP component wiring is lazy, i.e. when a `DelegateComponent` impl is defined, the type system doesn't check whether the corresponding traits are truly implemented by a context with all transitive dependencies satisfied.
@@ -1225,149 +1375,6 @@ check_components! {
     }
 }
 ```
-
-## Cross-Context Dependencies
-
-- When the main target of a trait is a generic parameter instead of a context, like:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-This allows multiple `Shape` contexts to share dependencies through a common `Context` type.
-
-- For example, we can introduce a `Scalar` type that is shared by all shapes:
-
-```rust
-#[cgp_type]
-pub trait HasScalarType {
-    type Scalar: Float;
-}
-
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea<Shape>: HasScalarType {
-    fn area(&self, shape: &Shape) -> Self::Scalar;
-}
-```
-
-- This way, individual shape types like `Rectangle` and `Circle` do not need to implement `HasScalarType`, or worry about all shapes using the same `Scalar` type to interop with each others.
-
-- The common context type can also provide value-level dependency injection, such as:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasGlobalScaleFactor: HasScalarType {
-    fn global_scale_factor(&self) -> Self::Scalar;
-}
-
-#[cgp_impl(new GloballyScaledArea<InnerCalculator>)]
-impl<Shape> AreaCalculator<Shape>
-where
-    Self: HasGlobalScaleFactor,
-    InnerCalculator: AreaCalculator<Self, Shape>,
-{
-    fn area(&self, shape: &Shape) -> f64 {
-        InnerCalculator::area(self, shape) * self.global_scale_factor()
-    }
-}
-```
-
-- This way, a global scale factor can be stored in the common context, and not have to have the value replicated in all shape values.
-
-- The common context can also provide lazy binding of provider implementations, so that each shape type may bind to different provider in different concrete contexts. For example:
-
-```rust
-pub struct BaseApp;
-
-delegate_components! {
-    BaseApp {
-        ScaleFactorTypeProviderComponent:
-            UseType<f32>,
-        AreaCalculatorComponent:
-            UseDelegate<new AreaCalculatorComponents {
-                Rectangle:
-                    RectangleArea,
-                Circle: 
-                    CircleArea,
-            }>,
-    }
-}
-
-#[derive(HasField)]
-pub struct ScaledApp {
-    pub global_scale_factor: f64,
-}
-
-delegate_components! {
-    BaseApp {
-        ScaleFactorTypeProviderComponent:
-            UseType<f64>,
-        AreaCalculatorComponent:
-            UseDelegate<new AreaCalculatorComponents {
-                Rectangle:
-                    GloballyScaledArea<RectangleArea>,
-                Circle: 
-                    GloballyScaledArea<CircleArea>,
-            }>,
-    }
-}
-```
-
-- In the above example, the `Rectangle` type would have an unscaled area implementation with `BaseApp`, but a globally scaled area implementation with `ScaledApp`.
-
-## `UseContext` Provider
-
-- CGP defines a special `UseContext` provider that is automatically implemented for all CGP traits that are defined with macros like `#[cgp_component]`:
-
-```rust
-struct UseContext;
-```
-
-- For example, the `UseContext` implementation generated for `CanCalculateArea` is as follows:
-
-```rust
-#[cgp_impl(UseContext)]
-impl<Shape> AreaCalculator<Shape>
-where
-    Self: CanCalculateArea<Shape>,
-{
-    fn area(&self, shape: &Shape) -> Self::Scalar {
-        self.area(shape)
-    }
-}
-```
-
-- There is a duality between `UseContext` and the blanket implementation of consumer traits. Whereas the blanket implementation of the `CanCalculateArea` consumer trait uses a delegated provider that implements `AreaCalculator` to implement `CanCalculateArea`, the `UseContext` provider implements the `AreaCalculator` provider trait using `CanCalculateArea` implemented by the context.
-    - However, trying to delegate a consumer trait to `UseContext` would create a circular dependency, resulting in compile-time errors.
-- A higher order provider may be configured to use `UseContext` as the default inner provider, so that the default provider wired in the context is used when no explicit provider is specified.
-- For example, we can modify the earlier `SumArea` to use `UseContext` as a default provider:
-
-```rust
-pub struct IterSumArea<InnerCalculator = UseContext>(pub PhantomData<InnerCalculator>);
-
-#[cgp_impl(IterSumArea<InnerCalculator>)]
-impl<Shape, InnerCalculator, InnerShape> AreaCalculator<Shape>
-where
-    Self: HasScalarType,
-    for<'a> &'a Shape: IntoIterator<Item = &'a InnerShape>
-    InnerCalculator: AreaCalculator<Self, InnerShape>,
-{
-    fn area(&self, shapes: &Shape) -> Self::Scalar {
-        let mut total = Self::Scalar::default();
-        for shape in shapes.into_iter() {
-            total += InnerCalculator::area(self, shape);
-        }
-        total
-    }
-}
-```
-
-- The struct definition of `IterSumArea` is defined with `UseContext` being a default generic parameter for `InnerCalculator`.
-- This way, when no explicit provider is specified, `IterSumArea` would have the same behavior as `IterSumAreaWithContext`.
-- Note that the default `UseContext` provider is only applicable for higher order providers with explicit struct definitions that contain the default generic parameter. Otherwise, there is no default provider involved, and the inner provider must always be specified explicitly.
 
 # Modularity Hierarchy
 
