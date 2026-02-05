@@ -418,6 +418,20 @@ impl HasArea for Rectangle {
 - The manual delegation is much more verbose, but it is much easier to understand as compared to the use of `delegate_components!`, `DelegateComponent`, and the blanket implementations.
 - When explaining the concepts behind `delegate_components!`, we can use the explicit delegation to demonstrate what the code effectively does, without requiring the reader to fully understand the trait machinery behind CGP.
 
+## Direct Implementation of Consumer Trait
+
+- Aside from explicit delegation, the user can always implement a consumer trait directly on a concrete context, if they don't care about code reuse:
+
+```rust
+impl HasArea for Rectangle {
+    fn area(&self) -> f64 {
+        self.width * self.height
+    }
+}
+```
+
+- It is important to highlight the possibility of directly implementing a consumer trait. This demonstrates that CGP traits are superset of vanilla Rust traits. And if the user prefers, they can always use or implement it like a regular Rust trait.
+
 ### Array Syntax in `delegate_components!`
 
 - The `delegate_components!` macro also supports array syntax, in case when multiple type-level keys map to the same value. For example:
@@ -711,7 +725,7 @@ where
 ```
 
 - The `#[cgp_auto_getter]` macro generates blanket impls that use `HasField` implementations with the field name as the `Tag` type, and the return type as the `Value` type.
-- The macro supports short hand for several return types such as `&str`, to make the `name` method more ergonomic. So we can rewrite the same trait as:
+- The macro supports short hand for several return types such as `&str`, to make the `name` method more ergonomic. So we can rewrite the same trait to return `&str` instead of `&String`:
 
 ```rust
 #[cgp_auto_getter]
@@ -719,6 +733,36 @@ pub trait HasName {
     fn name(&self) -> &str;
 }
 ```
+
+### Explicit Getter Implementation
+
+- A getter trait can always be implemented manually, if the concrete struct do not derive `HasField` or don't contain the relevant field. 
+- For example, instead of implementing `HasName` automatically:
+
+```rust
+#[derive(HasField)]
+pub struct Person {
+    pub name: String
+}
+```
+
+one can opt to not derive `HasField` and implement `Name` explicitly:
+
+```rust
+pub struct Person {
+    pub name: String
+}
+
+pub trait HasName for Person {
+    fn name(&self) -> &str;
+}
+```
+
+- The explicit getter implementation is much more verbose, especially when a context contains many fields. However, it is also much more easier to understand and does not require the user to understand the advanced trait machinery with `HasField` and blanket implementations.
+
+- The explicit getter implementation can be used to explain the equivalent effect when both `#[cgp_auto_getter]` and `#[derive(HasField)]` are used. 
+- It is also important to highlight the possibility of explicit getter implementation, to avoid misunderstanding from the user that CGP getter traits are somehow more magical than vanilla Rust traits.
+    - The explicit implementation demonstrates that the only purpose for `#[cgp_auto_getter]` is to save the user from writing some boilerplate. But they can always write such boilerplate if that is their preference.
 
 ## `#[cgp_getter]` Macro
 
@@ -754,6 +798,8 @@ where
     }
 }
 ```
+
+- Similar to `#[cgp_auto_getter]`, a `#[cgp_getter]` trait can also be directly implemented on a concrete context.
 
 ## `UseField` Pattern
 
