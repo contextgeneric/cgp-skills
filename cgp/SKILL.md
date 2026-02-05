@@ -69,6 +69,9 @@ then the all transitive callers of `greet` would also need to specify the `Conte
 use cgp::prelude::*;
 ```
 
+- The prelude should be imported in all Rust modules that use CGP constructs.
+- You can omit the import of prelude inside example code blocks within documentation.
+
 ## `#[cgp_component]` Macro
 
 - The `#[cgp_component]` macro is used to enable CGP capabilities on a trait. For example:
@@ -289,7 +292,7 @@ impl DelegateComponent<Foo> for MyComponents {
 
 ## Consumer Trait Delegation
 
-- The `#[cgp_component]` macro generates the following blanket implementation for the example `CanHash` consumer trait earlier:
+- The `#[cgp_component]` macro generates the following blanket implementation for the example `CanCalculateArea` consumer trait earlier:
 
 ```rust
 impl<Context> CanCalculateArea for Context
@@ -877,7 +880,14 @@ impl<Name> NameTypeProvider {
 }
 ```
 
-- The `UseType` struct is defined by CGP, which is implemented by providers that use `#[cgp_type]` as a design pattern.
+## `UseType` Provider
+
+- The `UseType` struct is defined by CGP, which is implemented by providers that use `#[cgp_type]` as a design pattern:
+
+```rust
+pub struct UseType<Type>(pub PhantomData<Type>);
+```
+
 - The `UseType` pattern allows a concrete context to implement an abstract type by delegating it to `UseType`. For example:
 
 ```rust
@@ -890,6 +900,20 @@ delegate_components! {
 ```
 
 would implement `HasNameType` for `Person` with `Name` being implemented as `String`.
+
+## Direct Implementation Type Traits
+
+- An abstract type can always be directly implemented on a concrete context through its consumer trait.
+- For example, instead of using `UseType`, we can implement `HasNameType` as follows:
+
+```rust
+impl HasNameType for Person {
+    type Name = String;
+}
+```
+
+- The direct implementation of a type trait is not much more verbose than the indirect implementation through `delegate_components!` and `UseType`. So it may be preferred especially for simple use cases.
+- For users who are new to CGP, it is preferred to always show a direct implementation of the type traits. This helps the user to understand that CGP abstract types are nothing more than vanilla Rust traits that contain associated types.
 
 ## Abstract Type in Getter Traits
 
