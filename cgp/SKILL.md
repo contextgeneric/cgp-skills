@@ -979,6 +979,8 @@ where
 - The `Scalar: Clone` bound is in the impl-generics, so it is included in both the trait and impl.
 - The `Scalar: Mul<Output = Scalar>` bound is only in the `where` clause of the impl. It is an impl-side dependency that is not included in the trait definition.
 
+`#[cgp_fn]` specifically do not support the use of generics in the desugared trait method. This is because such use is relatively uncommon in CGP. And even when the need arises, it is considered advanced use case that is better written as explicit blanket implementations, instead of using `#[cgp_fn]`.
+
 ### `#[uses]` Attribute
 
 The `#[uses]` attribute can be used in both `#[cgp_fn]` and `#[cgp_impl]` to add simple `where` trait bounds to the `Self` context.
@@ -1073,6 +1075,107 @@ impl AreaCalculator {
 }
 ```
 
+The `#[uses]` attribute is specifically designed to look like a `use` statement, and so it support simplified trait bounds syntax in the form `TraitIdent<ParamA, ParamB, ...>`. This means that one cannot write more complex bounds like ones that contain associated type equality in it. Instead, if these are needed, they should be written as explicit `where` clauses in the function body.
+
+### `#[extend]` Attribute
+
+The `#[extend]` attribute can be used in both `#[cgp_fn]` and `#[cgp_component]` to include the given trait bounds as the super traits of the generated trait. For example, given:
+
+```rust
+pub trait HasScalarType {
+    type Scalar: Clone + Mul<Output = Self::Scalar>;
+}
+
+#[cgp_fn]
+#[extend(HasScalarType)]
+fn rectangle_area(
+    &self,
+    #[implicit] width: Self::Scalar,
+    #[implicit] height: Self::Scalar,
+) -> Self::Scalar {
+    width * height
+}
+```
+
+would be desugared to:
+
+```rust
+pub trait RectangleArea: HasScalarType {
+    fn rectangle_area(&self) -> Self::Scalar;
+}
+
+impl<Context> RectangleArea for Context
+where
+    Self: HasField<Symbol!("width"), Value = Self::Scalar>
+        + HasField<Symbol!("height"), Value = Self::Scalar>
+        + HasScalarType,
+{
+    fn rectangle_area(&self) -> Self::Scalar {
+        let width: Self::Scalar = self.get_field(PhantomData::<Symbol!("width")>).clone();
+        let height: Self::Scalar = self.get_field(PhantomData::<Symbol!("height")>).clone();
+
+        width * height
+    }
+}
+```
+
+Note that `#[extend]` is the only way to add supertrait bounds to `#[cgp_fn]`. This is because the `where` clauses in the function body are treated as impl-side dependencies, and thus are hidden from the generated trait definition.
+
+`#[extend]` can also be used with `#[cgp_component]` to add supertrait bounds to the generated consumer trait. For example:
+
+```rust
+#[cgp_component(AreaCalculator)]
+#[extend(HasScalarType)]
+pub trait CanCalculateArea {
+    fn area(&self) -> Self::Scalar;
+}
+```
+
+is equivalent to:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea: HasScalarType {
+    fn area(&self) -> Self::Scalar;
+}
+```
+
+The choice of whether to use `#[extend]` or the normal Rust syntax for super traits is mostly a matter of style. The normal Rust syntax is more concise, but `#[extend]` enables gradual transition to supertraits to users who are getting started with `#[cgp_fn]` and are not yet familiar with Rust's trait system.
+
+This is because many Rust developers are not familiar with the supertrait concept, and the appearance of many supertrait bounds can look intimidating. On the other hand, `#[extend]` can be explained as being the `pub use` equivalent of the `#[uses]` attribute, which has a more direct correspondance to the vanilla `use` statement in Rust.
+
+### `#[extend_where]` Attribute
+
+The `#[extend_where]` attribute can be used in `#[cgp_fn]` to add `where` clauses to the generated trait definition. For example:
+
+```rust
+#[cgp_fn]
+#[extend_where(Scalar: Clone)]
+fn rectangle_area<Scalar>(
+    &self,
+    #[implicit] width: Scalar,
+    #[implicit] height: Scalar,
+) -> Scalar
+where
+    Scalar: Mul<Output = Scalar>,
+{
+    width * height
+}
+```
+
+would produce the following trait definition:
+
+```rust
+pub trait RectangleArea<Scalar>
+where
+    Scalar: Clone,
+{
+    fn rectangle_area(&self) -> Scalar;
+}
+```
+
+`#[extend_where]` is not supported in `#[cgp_impl]` or `#[cgp_component]`, because the `where` clauses in these constructs are already part of the trait definition, and thus can be directly written in the normal Rust syntax.
+
 ### Abstract Types
 
 - CGP supports abstract types by defining associated types in CGP traits. For example:
@@ -1089,7 +1192,7 @@ pub trait HasNameType {
 ```rust
 #[cgp_auto_getter]
 pub trait HasName: HasNameType {
-    fn name(&name) -> &Self::Name;
+    fn name(&self) -> &Self::Name;
 }
 ```
 
