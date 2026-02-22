@@ -830,6 +830,249 @@ the example `UseField` provider will use the `first_name` field in `Person` to i
 - Whenever possible, explain the `UseField` provider by saying that it implements the getter trait by reading from the context the field name specified.
     - For example, `Person` implements `HasName` using its `first_name` field.
 
+### Implicit Arguments
+
+CGP supports implicit arguments for implementations to automatically retrieve field values from a context. For example:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea {
+    fn area(&self) -> f64;
+}
+
+#[cgp_impl(new RectangleArea)]
+impl AreaCalculator {
+    fn area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+        width * height
+    }
+}
+```
+
+The function arguments with `#[implicit]` are automatically extracted and removed from the function signature, and the code desugars to the following:
+
+```rust
+#[cgp_impl(new RectangleArea)]
+impl AreaCalculator
+where
+    Self: HasField<Symbol!("width"), Value = f64>
+        + HasField<Symbol!("height"), Value = f64>,
+{
+    fn area(&self) -> f64 {
+        let width: f64 = self.get_field(PhantomData::<Symbol!("width")>).clone();
+        let height: f64 = self.get_field(PhantomData::<Symbol!("height")>).clone();
+
+        width * height
+    }
+}
+```
+
+The semantics of implicit arguments follows the same pattern as `#[cgp_auto_getter]`. For example, `.clone()` is automatically added to implicit arguments with owned values, and `.as_str()` is automatically added to implicit arguments with with `&str` type.
+
+When writing basic CGP code, it is strongly recommended to use implicit arguments whenever possible. This allows the user to write code that looks more like normal Rust code, without the need to understand the underlying trait machinery of `HasField` and getter traits.
+
+On the other hand, `#[cgp_auto_getter]` and `#[cgp_getter]` are better suited for more advanced use cases, such as when field access happening in the middle of a function body. `#[cgp_auto_getter]` also reduces the boilerplate when the same fields are repeatedly accessed in multiple functions.
+
+### `#[cgp_fn]` Macro
+
+The `#[cgp_fn]` macro supports the use of implicit arguments in plain Rust function syntax, and desugars the code into blanket implementations. For example:
+
+```rust
+#[cgp_fn]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+```
+
+desugars to:
+
+```rust
+pub trait RectangleArea {
+    fn area(&self) -> f64;
+}
+
+impl<Context> RectangleArea for Context
+where
+    Self: HasField<Symbol!("width"), Value = f64>
+        + HasField<Symbol!("height"), Value = f64>,
+{
+    fn area(&self) -> f64 {
+        let width: f64 = self.get_field(PhantomData::<Symbol!("width")>).clone();
+        let height: f64 = self.get_field(PhantomData::<Symbol!("height")>).clone();
+
+        width * height
+    }
+}
+```
+
+This significantly improves the ergonomic and reduces the boilerplate of defining blanket trait implementations. `#[cgp_fn]` exposes the simplest CGP concepts, and only requires the user to understand plain Rust functions to get started.
+
+Whenever possible, prefer to use `#[cgp_fn]` over `#[cgp_component]` and `#[cgp_impl]` to explain basic CGP concepts. Then main difference is that `#[cgp_fn]` only allows single implementation, while `#[cgp_component]` allows multiple implementations but requires additional wiring step.
+
+#### Custom trait name for `#[cgp_fn]`
+
+`#[cgp_fn]` accepts an optional attribute argument to specify the name of the generated trait. If unspecified, it would use the function name in PascalCase as the trait name. For example, the earlier example is equivalent to:
+
+```rust
+#[cgp_fn(RectangleArea)]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+```
+
+We can for example change the trait name to `CanCalculateRectangleArea`:
+
+```rust
+#[cgp_fn(CanCalculateRectangleArea)]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+```
+
+and the generated trait would be:
+
+```rust
+pub trait CanCalculateRectangleArea {
+    fn rectangle_area(&self) -> f64;
+}
+```
+
+### Generics and `where` clause in `#[cgp_fn]`
+
+By default, all generic parameters of the function in `#[cgp_fn]` are moved to the generated trait and impl, and the `where` clause is moved to the impl block only. For example:
+
+```rust
+#[cgp_fn]
+pub fn rectangle_area<Scalar: Clone>(
+    &self,
+    #[implicit] width: Scalar,
+    #[implicit] height: Scalar,
+) -> Scalar
+where
+    Scalar: Mul<Output = Scalar>,
+{
+    width * height
+}
+```
+
+desugars to:
+
+```rust
+pub trait RectangleArea<Scalar: Clone> {
+    fn rectangle_area(&self) -> Scalar;
+}
+
+impl<Context, Scalar: Clone> RectangleArea<Scalar> for Context
+where
+    Self: HasField<Symbol!("width"), Value = Scalar>
+        + HasField<Symbol!("height"), Value = Scalar>,
+    Scalar: Mul<Output = Scalar> + Clone,
+{
+    fn rectangle_area(&self) -> Scalar {
+        let width: Scalar = self.get_field(PhantomData::<Symbol!("width")>).clone();
+        let height: Scalar = self.get_field(PhantomData::<Symbol!("height")>).clone();
+
+        width * height
+    }
+}
+```
+
+- The `Scalar: Clone` bound is in the impl-generics, so it is included in both the trait and impl.
+- The `Scalar: Mul<Output = Scalar>` bound is only in the `where` clause of the impl. It is an impl-side dependency that is not included in the trait definition.
+
+### `#[uses]` Attribute
+
+The `#[uses]` attribute can be used in both `#[cgp_fn]` and `#[cgp_impl]` to add simple `where` trait bounds to the `Self` context.
+
+For example, given:
+
+```rust
+#[cgp_fn]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+
+#[cgp_fn]
+#[uses(RectangleArea)]
+fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64 {
+    self.rectangle_area() * scale_factor * scale_factor
+}
+```
+
+The `scaled_rectangle_area` function is equivalent to:
+
+```rust
+#[cgp_fn]
+fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64
+where
+    Self: RectangleArea,
+{
+    self.rectangle_area() * scale_factor * scale_factor
+}
+```
+
+which both desugars to:
+
+```rust
+pub trait ScaledRectangleArea {
+    fn scaled_rectangle_area(&self) -> f64;
+}
+
+impl<Context> ScaledRectangleArea for Context
+where
+    Self: HasField<Symbol!("scale_factor"), Value = f64>
+        + RectangleArea,
+{
+    fn scaled_rectangle_area(&self) -> f64 {
+        let scale_factor: f64 = self.get_field(PhantomData::<Symbol!("scale_factor")>).clone();
+
+        self.rectangle_area() * scale_factor * scale_factor
+    }
+}
+```
+
+It is highly recommended to use `#[uses]` over explicit `where` clauses on `Self`, especially when writing basic CGP code. This makes the code looks more like a `use` import statement, which "imports" the dependencies like `RectangleArea` to be used in the function body.
+
+This is more intuitive to the use of `where` clause with `Self`, which is often much less intuitive to users who are new to Rust, let alone CGP.
+
+The `#[uses]` attribute can be used to import CGP constructs defined with both `#[cgp_fn]` and `#[cgp_component]`. For example:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea {
+    fn area(&self) -> f64;
+}
+
+#[cgp_fn]
+#[uses(CanCalculateArea)]
+pub fn scaled_area(&self, #[implicit] scale_factor: f64) -> f64 {
+    self.area() * scale_factor * scale_factor
+}
+```
+
+This enables scaled area calculation for any context that implements `CanCalculateArea`, regardless of which `AreaCalculator` provider is wired with the context.
+
+Conversely, `#[cgp_impl]` can also use `#[uses]` to import dependencies from other `#[cgp_fn]` or `#[cgp_component]` constructs. For example:
+
+```rust
+#[cgp_fn]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea {
+    fn area(&self) -> f64;
+}
+
+#[cgp_impl(new RectangleAreaCalculator)]
+#[uses(RectangleArea)]
+impl AreaCalculator {
+    fn area(&self) -> f64 {
+        self.rectangle_area()
+    }
+}
+```
+
 ### Abstract Types
 
 - CGP supports abstract types by defining associated types in CGP traits. For example:
