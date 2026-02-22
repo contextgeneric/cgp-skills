@@ -1277,6 +1277,100 @@ pub trait HasName {
 - This allows the abstract `Name` type to be automatically inferred based on the `name` field of the concrete context.
 - This approach is useful when the only purpose of the abstract type is to be used as the return type of the getter method, but not anywhere else.
 
+### Abstract Type import with `#[use_type]`
+
+The `#[use_type]` attribute can be used as a more idiomatic way to import abstract types in `#[cgp_fn]`, `#[cgp_impl]`, and `#[cgp_component]`. For example, given:
+
+```rust
+pub trait HasScalarType {
+    type Scalar: Clone + Mul<Output = Self::Scalar>;
+}
+
+#[cgp_fn]
+#[use_type(HasScalarType::Scalar)]
+fn rectangle_area(
+    &self,
+    #[implicit] width: Scalar,
+    #[implicit] height: Scalar,
+) -> Scalar
+{
+    width * height
+}
+```
+
+The code would be desugared to:
+
+```rust
+pub trait RectangleArea: HasScalarType {
+    fn rectangle_area(&self) -> <Self as HasScalarType>::Scalar;
+}
+
+impl<Context> RectangleArea for Context
+where
+    Self: HasField<Symbol!("width"), Value = <Self as HasScalarType>::Scalar>
+        + HasField<Symbol!("height"), Value = <Self as HasScalarType>::Scalar>
+        + HasScalarType,
+{
+    fn rectangle_area(&self) -> <Self as HasScalarType>::Scalar {
+        let width: <Self as HasScalarType>::Scalar =
+            self.get_field(PhantomData::<Symbol!("width")>).clone();
+
+        let height: <Self as HasScalarType>::Scalar =
+            self.get_field(PhantomData::<Symbol!("height")>).clone();
+
+        width * height
+    }
+}
+```
+
+Compared to just including an abstract type in the trait bound or supertrait, `#[use_type]` replaces all occurrences of the abstract type identifier and replaces it with the fully qualified syntax `<Self as Trait>::Type`. This significantly reduces the boilerplate of adding prefixes like `Self::` to every occurrence of the abstract type.
+
+The fully qualified syntax also avoids any potential ambiguity. In particular, it allows nested associated types to be used without needing the user to specify the fully qualified syntax themselves.
+
+`#[use_type]` can also be used in both `#[cgp_impl]` and `#[cgp_component]` to import abstract types in the same way. For example:
+
+```rust
+#[cgp_component(AreaCalculator)]
+#[use_type(HasScalarType::Scalar)]
+pub trait CanCalculateArea {
+    fn area(&self) -> Scalar;
+}
+
+#[cgp_impl(new RectangleArea)]
+#[use_type(HasScalarType::Scalar)]
+impl AreaCalculator {
+    fn area(&self, #[implicit] width: Scalar, #[implicit] height: Scalar) -> Scalar {
+        width * height
+    }
+}
+```
+
+would first be desugared to the following, before the rest of the desugaring process:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea: HasScalarType {
+    fn area(&self) -> <Self as HasScalarType>::Scalar;
+}
+
+#[cgp_impl(new RectangleArea)]
+impl AreaCalculator
+where
+    Self: HasScalarType,
+{
+    fn area(
+        &self,
+        #[implicit] width: <Self as HasScalarType>::Scalar,
+        #[implicit] height: <Self as HasScalarType>::Scalar,
+    ) -> <Self as HasScalarType>::Scalar {
+        width * height
+    }
+}
+```
+
+Whenever possible, it is strongly recommended to always use `#[use_type]` to import abstract types, for all use cases in `#[cgp_fn]`, `#[cgp_impl]`, and `#[cgp_component]`. This significantly reduces the boilerplate of using abstract types, and makes the code much more readable.
+
+It also enables better syntax extension in the future, which would require explicit use of `#[use_type]` to get the necessary metadata for the syntax extension to work.
 
 ### Higher Order Providers
 
