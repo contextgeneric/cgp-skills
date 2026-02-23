@@ -1391,16 +1391,40 @@ we can define a higher order provider `ScaledArea` as follows:
 #[cgp_impl(ScaledArea<InnerCalculator>)]
 impl AreaCalculator
 where
-    Self: HasScaleFactor,
     InnerCalculator: AreaCalculator<Self>,
 {
-    fn area(&self) -> f64 {
-        InnerCalculator::area(self) * self.scale_factor()
+    fn area(&self, #[implicit] scale_factor: f64) -> f64 {
+        InnerCalculator::area(self) * scale_factor * scale_factor
     }
 }
 ```
 
 - The behavior of the inner area calculation is now determined by the `InnerCalculator` generic parameter, instead of the context.
+
+### `#[use_provider]` Attribute
+
+The `#[use_provider]` attribute can be used to improve the ergonomics of using higher order providers, by hiding the `Self` parameter at the first position of the generic parameter of the provider trait.
+
+For example, the earlier `ScaledArea` provider can be rewritten as:
+
+```rust
+#[cgp_impl(ScaledArea<InnerCalculator>)]
+#[use_provider(InnerCalculator: AreaCalculator)]
+impl AreaCalculator
+{
+    fn area(&self, #[implicit] scale_factor: f64) -> f64 {
+        #[use_provider(InnerCalculator)] self.area() * scale_factor * scale_factor
+    }
+}
+```
+
+- The outer `#[use_provider]` attribute automatically adds the `Self` parameter to the generic parameter of `InnerCalculator`, so that the user only needs to write `InnerCalculator: AreaCalculator` instead of `InnerCalculator: AreaCalculator<Self>`. The trait bound is then added to the `where` clause of the impl block.
+
+- The inner `#[use_provider]` attribute accepts a `Provider` type and can be applied on a method call expression. It converts the expression from the form `receiver.method(args)` to `Provider::method(receiver, args)`, so that the method call is dispatched to the specified provider instead of through the context.
+
+It is strongly recommended to always use `#[use_provider]` when implementing higher order providers, as it significantly reduces the boilerplate of writing higher order providers, and makes the code much more readable. Without it, the reader may be confused by the extra `Self` generic parameter at the first position of the provider trait, which breaks the illusion that the provider trait appears the same as the consumer trait.
+
+### Non-higher-order providers with generic parameters
 
 - Note that not all providers that contain generic parameters are higher order providers. They only become higher order providers when the generic parameters are used with provider trait constraints in the `where` clause.
 - For example, the following provider is not a higher order provider:
