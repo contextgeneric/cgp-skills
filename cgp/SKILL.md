@@ -1777,10 +1777,13 @@ impl CanUsePerson for Person {}
 
 ### `CanUseComponent` Trait
 
-- It is insufficient to use check traits alone in case when a check fails. This is because Rust would not produce sufficient details in the error message to help inform us on what dependency is missing.
-- For example, the `CanUsePerson` check earlier only output a vague error that tells us `GreetHello: Greeter<Person>` is not implemented, without telling us why.
-- We can use check traits together with `CanUseComponent` as their supertraits to force the Rust compiler to show more error details.
-- The `CanUseComponent` trait is a check trait defined as follows:
+It is insufficient to use check traits alone in case when a check fails. This is because Rust would not produce sufficient details in the error message to help inform us on what dependency is missing.
+
+For example, the `CanUsePerson` check earlier only output a vague error that tells us `GreetHello: Greeter<Person>` is not implemented, without telling us why.
+
+We can use check traits together with `CanUseComponent` as their supertraits to force the Rust compiler to show more error details.
+
+The `CanUseComponent` trait is a check trait defined as follows:
 
 ```rust
 pub trait CanUseComponent<Component, Params: ?Sized = ()> {}
@@ -1792,8 +1795,9 @@ where
 {}
 ```
 
-- `CanUseComponent` for a CGP component is automatically implemented for a context, if a context delegates the component to a provider, and the provider implements the provider trait for that context.
-- The check is done via `IsProviderFor`, to ensure that the compiler generates appropriate error messages when there is any unsatisfied constraint.
+`CanUseComponent` for a CGP component is automatically implemented for a context, if a context delegates the component to a provider, and the provider implements the provider trait for that context.
+
+The check is done via `IsProviderFor`, to ensure that the compiler generates appropriate error messages when there is any unsatisfied constraint.
     - Without `IsProviderFor`, Rust would conceal the indirect errors and only show that the provider trait is not implemented without providing further details.
 
 ### `check_components!` Macro
@@ -1805,7 +1809,7 @@ where
 
 ```rust
 check_components! {
-    CanUsePerson for Person {
+    Person {
         GreeterComponent,
     }
 }
@@ -1814,26 +1818,56 @@ check_components! {
 - Behind the scenes, the macro desugars the code above to:
 
 ```rust
-trait CanUsePerson<Component, Params: ?Sized>: CanUseComponent<Component, Params> {}
-impl CanUsePerson<GreeterComponent, ()> for Person {}
+trait __CheckPerson<Component, Params: ?Sized>: CanUseComponent<Component, Params> {}
+impl __CheckPerson<GreeterComponent, ()> for Person {}
 ```
 
-- The auxilary `CanUsePerson` trait is defined as a local alias to check the use of `CanUseComponent` with the same parameters.
-- For each `Component` listed in `check_components!`, an impl block for `CanUsePerson` is defined.
-- The example implementation `CanUsePerson<GreeterComponent, ()>` is implemented only if:
+The check trait `__CheckPerson` is defined as a local alias trait to check the implementation of `CanUseComponent` with the same parameters.
+    - The name of the check trait follows `__Check{Context}` format, where `Context` is the target context type being checked.
+
+For each `Component` listed in `check_components!`, an impl block for `__CheckPerson` is defined.
+
+The example implementation `__CheckPerson<GreeterComponent, ()>` is implemented only if:
     - `Person` implements `CanUseComponent<Component, Params>`.
     - `Person`'s delegate for `GreeterComponent`, `GreetHello`, implements `IsProviderFor<GreeterComponent, Person, ()>`.
     - Recall that `#[cgp_impl]` or `#[cgp_provider]` generates the implementation of `GreetHello: IsProviderFor<GreeterComponent, Person, ()>` with the same constraints required for `GreetHello` to implement `Greeter<Person>`.
-- Since the `name` field is missing, the compiler reports the error that `HasField<symbol!("name")>` is not implemented for `Person`.
+
+Since the `name` field is missing, the compiler reports the error that `HasField<symbol!("name")>` is not implemented for `Person`.
     - The root cause is often hidden among many other non-essential messages, and types such as `symbol!("name")` are expanded into their Greek alphabets form.
 
-### Generic Parameters in `check_components!`
+#### Specifying check trait name
 
-- `check_components!` can only be used with generic parameters. For example:
+The name of the generated check trait can be overridden using a `#[check_trait] attribute. For example:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    #[check_trait(CanUsePerson)]
+    Person {
+        GreeterComponent,
+    }
+}
+```
+
+would generate a check trait of the name `CanUsePerson` instead of `__CheckPerson`.
+
+This is mainly useful when there are multiple use of `check_components!` in the same module, which would result in name conflict for the default check trait name.
+
+#### Generic Parameters in `check_components!`
+
+`check_components!` can be used with CGP traits containing generic parameters. For example, given:
+
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape> {
+    fn area(&self, shape: &Shape) -> f64;
+}
+```
+
+and the following check:
+
+```rust
+check_components! {
+    MyApp {
         AreaCalculatorComponent:
             Rectangle,
     }
@@ -1843,25 +1877,58 @@ check_components! {
 would be desugared to:
 
 ```rust
-trait CanUseMyApp<Component, Params: ?Sized>:
+trait __CheckMyApp<Component, Params: ?Sized>:
     CanUseComponent<Component, Params>
 {
 }
 
-impl CanUseMyApp<AreaCalculatorComponent, Rectangle> for MyApp {}
+impl __CheckMyApp<AreaCalculatorComponent, Rectangle> for MyApp {}
 ```
 
 which would check for the implementation of `MyApp: CanCalculateArea<Rectangle>`.
 
-- The generic parameters are grouped into a tuple and placed in `Params`.
+### Multiple Generic Parameters in `check_components!`
 
-### Array Syntax in `check_components!`
+When there are more than one generic parameters, they are grouped into a tuple and placed in `Params`. For example, given:
 
-- When we want to check the implementation of a CGP component with multiple generic parameters, we can use the array syntax to group them together. For example:
+```rust
+#[cgp_component(AreaCalculator)]
+pub trait CanCalculateArea<Shape, Scalar> {
+    fn area(&self, shape: &Shape) -> Scalar;
+}
+```
+
+and the following check:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    MyApp {
+        AreaCalculatorComponent:
+            (Rectangle, f64),
+    }
+}
+```
+
+would be desugared to:
+
+```rust
+trait __CheckMyApp<Component, Params: ?Sized>:
+    CanUseComponent<Component, Params>
+{
+}
+
+impl __CheckMyApp<AreaCalculatorComponent, (Rectangle, f64)> for MyApp {}
+```
+
+which would check for the implementation of `MyApp: CanCalculateArea<Rectangle, f64>`.
+
+### Array Syntax in `check_components!`
+
+When we want to check the implementation of a CGP component with multiple generic parameters, we can use the array syntax to group them together. For example:
+
+```rust
+check_components! {
+    MyApp {
         AreaCalculatorComponent: [
             Rectangle,
             Circle,
@@ -1874,7 +1941,7 @@ is the same as writing:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    MyApp {
         AreaCalculatorComponent:
             Rectangle,
         AreaCalculatorComponent:
@@ -1883,11 +1950,11 @@ check_components! {
 }
 ```
 
-- We can also group by the `Component` key instead of the generic `Param`. For example:
+We can also group by the `Component` key instead of the generic `Param`. For example:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    MyApp {
         [
             AreaCalculatorComponent,
             RotatorComponent,
@@ -1896,11 +1963,11 @@ check_components! {
 }
 ```
 
-- We can also group by both `Component` and `Param`. For example:
+We can also group by both `Component` and `Param`. For example:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    MyApp {
         [
             AreaCalculatorComponent,
             RotatorComponent,
@@ -1917,7 +1984,7 @@ would be the same as writing:
 
 ```rust
 check_components! {
-    CanUseMyApp for MyApp {
+    MyApp {
         AreaCalculatorComponent: Rectangle,
         RotatorComponent: Rectangle,
         AreaCalculatorComponent: Circle,
@@ -1925,6 +1992,46 @@ check_components! {
     }
 }
 ```
+
+#### `#[check_providers]` attribute
+
+The `check_components!` macro supports the use of `#[check_providers]` attribute to implement the check of component implementation on specific providers. For example:
+
+```rust
+check_components! {
+    #[check_trait(CheckScaledRectangleProviders)]
+    #[check_providers(
+        RectangleAreaCalculator,
+        ScaledAreaCalculator<RectangleAreaCalculator>,
+    )]
+    ScaledRectangle {
+        AreaCalculatorComponent,
+    }
+}
+```
+
+Would implement checks that both `RectangleAreaCalculator` and `ScaledAreaCalculator<RectangleAreaCalculator>` implement `AreaCalculator<ScaledRectangle>`.
+
+The generated code for `#[check_providers]` is as follows:
+
+```rust
+trait CheckScaledRectangleProviders<__Component__, __Params__: ?Sized>:
+    IsProviderFor<__Component__, ScaledRectangle, __Params__>
+{
+}
+
+impl CheckScaledRectangleProviders<AreaCalculatorComponent, ()> for RectangleAreaCalculator {}
+
+impl CheckScaledRectangleProviders<AreaCalculatorComponent, ()>
+    for ScaledAreaCalculator<RectangleAreaCalculator>
+{}
+```
+
+Compared to non-provider checks, the check trait has `IsProviderFor` as its supertrait, and the impl blocks are implemented for the provider types instead of the context type.
+
+The provider checks are especially useful for the case of checking higher order providers, where each of the provider implementation can be checked separately.
+
+For example, if the missing dependency affects `RectangleAreaCalculator`, then the check above would show errors on both `RectangleAreaCalculator` and `ScaledAreaCalculator<RectangleAreaCalculator>`. But if the missing dependency affects only `ScaledAreaCalculator<RectangleAreaCalculator>`, then the check above would only show error on `ScaledAreaCalculator<RectangleAreaCalculator>`, which can help narrow down the root cause.
 
 ## Modularity Hierarchy
 
