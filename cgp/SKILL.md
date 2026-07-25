@@ -1,23 +1,199 @@
 ---
 name: cgp
-description: Skills for Context-Generic Programming (CGP) in Rust
+description: >-
+  Read, write, debug, and explain Context-Generic Programming (CGP) code in Rust.
+  Use this skill whenever you encounter or are asked to work with CGP — any code that
+  uses `cgp::prelude::*`, the `#[cgp_component]`, `#[cgp_impl]`, `#[cgp_provider]`,
+  `#[cgp_fn]`, `#[cgp_type]`, `#[cgp_getter]`, `#[cgp_auto_getter]`, `#[cgp_computer]`,
+  `#[cgp_producer]`, or `cgp_namespace!` macros, the `delegate_components!`,
+  `check_components!`, or `delegate_and_check_components!` macros, the `Symbol!`,
+  `Product!`, `Sum!`, or `Path!` type-level macros, the `HasField`/`HasFields` traits or
+  their derives, providers such as `UseContext`/`UseDelegate`/`UseField`/`UseType`, the
+  handler family (`Computer`/`Producer`/`Handler`), or terms like consumer trait,
+  provider trait, provider, wiring, impl-side dependency, or context-generic. Trigger it
+  even when the user does not say "CGP" by name but is clearly working with these
+  constructs, when a Rust trait error mentions `IsProviderFor`/`DelegateComponent`, or
+  when someone wants modular, dependency-injected, multiple-implementation Rust traits.
 ---
 
-# Guide to Context-Generic Programming (CGP) in Rust
+# Context-Generic Programming (CGP) in Rust
 
-This guide gives you a high level overview on how to work with CGP code in Rust.
+CGP is a modular programming paradigm for Rust that works around the language's coherence
+restrictions, letting you write many overlapping or "orphan" trait implementations and then
+choose which one applies by **wiring** them onto a concrete context type. This file is a
+self-contained primer: read it top to bottom and you hold the whole mental model — every core term,
+the shape of every construct, and enough of each expansion to read, write, and debug the majority of
+CGP code. It is longer than a typical skill on purpose, because CGP's surface is broad and an agent
+who stops here should still be competent, not lost.
 
-## Introduction
+**This primer is the map, not the territory — load the sub-skill before you act on any construct it
+covers.** The primer gives you the shape of each construct; the `references/` sub-skills give you the
+exact grammar, the full expansion, the corner cases, and the worked examples that keep you from
+writing subtly wrong code. The gap between the two is where mistakes live: the primer tells you
+`#[cgp_impl]` writes a provider, but [components](references/components.md) tells you what `self`
+rewrites to, [macro-grammar](references/macro-grammar.md) tells you which attribute forms parse, and
+only reading them stops you from emitting an impl that fails to compile in a way the error message
+will not explain. So before you write, modify, review, or debug code using a construct — even one
+that looks simple — **open the sub-skill that owns it.** Each entry in [the sub-skill
+index](#sub-skills-load-the-one-that-owns-your-task) below says exactly what it adds beyond this
+primer, so you can tell what you would be guessing at without it. Treat "I already read the primer"
+as insufficient: the primer is calibrated to make you *know what you do not know*, and the sub-skill
+is where that gap is closed.
 
-CGP is a modular programming paradigm that provides workaround on the coherence restrictions in Rust. You can write multiple overlapping or orphan trait implementations implementations in CGP, and then wire them through a concrete context.
+CGP is implemented almost entirely as procedural macros. Every macro desugars to ordinary Rust
+traits and impls, so the reliable way to understand any construct is to know the code it expands
+to. This primer shows those expansions where they matter and keeps them out of the way where they
+do not.
 
-## Blanket Traits
+## Tooling: use cargo-cgp for readable errors and expansions
 
-CGP evolves from the use of blanket trait implementations, also commonly called extension traits. This is widely used in Rust today with examples like `StreamExt` and `IterTools`. But CGP takes this concept and pushes it much further.
+**Before debugging any CGP compile error, use `cargo-cgp` if it is available.** It has two commands
+you will want: `check`, which reshapes the errors, and
+[`expand`](#reading-what-a-macro-generated-cargo-cgp-expand), which shows the code the macros generated. `cargo-cgp` is CGP's
+first-class toolchain — a cargo subcommand that stands in for `cargo check` and rewrites CGP's
+compiler errors into a compact, root-cause-first form, tagging each rewritten message with a
+`[CGP-Exxx]` code. A raw CGP error is often a wall of generated types with the real cause buried or
+hidden entirely; `cargo-cgp` names the cause and renders the dependency chain that leads to it.
+Recommend it to the user for building and checking CGP code, and prefer it over plain `cargo check`
+whenever a wiring failure needs diagnosing.
 
-The core idea of CGP is that we can use the `where` clause of a blanket trait impl to hide the constraints needed from the trait interface.
+**Check whether it is installed** with `cargo cgp --version` (or just run `cargo cgp check` in a CGP
+project). If the subcommand is missing, it is not installed.
 
-For example, given:
+**If it is not installed, recommend installing it** — tell the user it makes CGP errors far more
+readable — and **install it on their behalf only with their approval**, since it provisions a nightly
+toolchain and builds a compiler-linked driver (heavy).
+
+**Prefer the cargo path**, which is the default for almost every machine: `cargo install cargo-cgp`
+then `cargo cgp setup` (the first installs the small front-end on whatever toolchain is present;
+`setup` provisions the pinned nightly and builds the matching driver in lockstep). It needs rustup.
+
+**Reach for Nix only if the host actually has it** — a `nix` command on `PATH` or a `flake.nix` in the
+project — or if the user explicitly asks for it; otherwise do not bring Nix up at all. When Nix *is*
+present but cargo-cgp is not installed, the lightest move is to **not install** and instead run the
+tool through the flake from the project directory:
+`nix run github:contextgeneric/cargo-cgp/v0.1.0-alpha -- check` (arguments after `--` go to
+`cargo check`). To install into a Nix profile instead, use
+`nix profile install github:contextgeneric/cargo-cgp/v0.1.0-alpha`.
+
+cargo-cgp requires a specific pinned Rust nightly, installed by `cargo cgp setup` (or built by the
+Nix flake), and forces it only for its own check, so the user's project keeps its own toolchain
+untouched. Full instructions:
+<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/reference/installation.md>.
+
+**Using it:** run it wherever you would run `cargo check` (arguments after `check` are forwarded):
+`cargo cgp check`, `cargo cgp check --workspace`. It keeps rustc's own error code and adds a
+`[CGP-Exxx]` tag, leading with the root cause over a `cargo tree`-style dependency chain; the codes
+are catalogued at
+<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/error-code.md>.
+
+### Reading what a macro generated: `cargo cgp expand`
+
+**When a CGP error stops making sense, read the code the macros produced rather than reasoning about
+what you think they produce.** A wiring failure is always "the emitted impls do not resolve," and the
+impls are generated, so the fastest way past a confusing diagnostic is often to look at them.
+`cargo cgp expand` prints the crate after macro expansion, with CGP's type-level constructs
+**resugared** — a field tag reads `Symbol!("width")`, not the raw `Symbol<5, Chars<'w', …>>`
+spine the compiler prints; a pipeline reads `Product![StepOne, StepTwo]`; a namespace key reads
+`Path!(@app.GreeterComponent)` — so the generated code is legible in the same vocabulary as the
+source.
+
+Reach for it in four situations, each one where the answer is in the generated code rather than in the
+message:
+
+- **A diagnostic names a type you did not write** (`IsProviderFor<…>`, a `PathCons<…>` key, a
+  `__Context__` parameter) and you need to see the impl it came from.
+- **A wiring table does not resolve** and you want the real `DelegateComponent` keys and `Delegate`
+  values it produced, rather than inferring them from the table's syntax.
+- **You are unsure what a construct emits** — the exact `where` clauses of a provider impl, whether a
+  getter's blanket impl requires the field you think it does. Reading the expansion beats guessing, and
+  beats trusting a remembered expansion.
+- **Two forms differ and only one compiles.** Expand both and diff; the delta is the bug.
+
+Run it on one target, narrowed to what you care about:
+
+```sh
+cargo cgp expand --lib                              # the whole library target
+cargo cgp expand --lib --item contexts::MockApp     # one module, type, or trait
+```
+
+**Target selection is required when a package has several targets** — pass `--lib` or `--bin NAME`, or
+cargo declines with "extra arguments to `rustc` can only be passed to one target". Other arguments
+(`-p`, `--features`) forward to `cargo rustc`, and the expansion goes to stdout, so redirect it to a
+file when it is long and read that instead of flooding your context.
+
+**`--item <path>` is what makes the output manageable**, and which of three rules applies depends on
+what the path names. The path is `::`-separated, may carry a leading `crate::`, and names something
+inside the crate being expanded:
+
+- a **module** → its contents (`--item contexts`);
+- a **type** → its declaration and every impl written *for* it. For a context that is its struct, the
+  `HasField`/`HasFieldMut` impls the derive generated, and its `DelegateComponent` wiring entries with
+  the real key and provider types (`--item Rectangle`);
+- a **trait** → its definition and every impl *of* it, which is usually the rule you want. Naming a
+  component's *provider* trait (`--item AreaCalculator`) gives the provider trait, the delegation
+  blanket impl, the `UseContext` and `RedirectLookup` impls, and each wired provider's impl; naming the
+  *consumer* trait (`--item CanCalculateArea`) gives just the consumer trait and its routing blanket.
+
+Two limits matter when you read the output. **`expand` is not a check**: it stops once the macros are
+expanded, so it reports nothing about wiring — use `cargo cgp check` for that, and expect `expand` to
+succeed even on a crate that does not type-check (which is exactly what makes it useful mid-debugging).
+And the output is for reading, not compiling: the `cgp::macro_prelude::` qualifier is stripped, and an
+`open` statement's per-key entry keeps its raw `PathCons<…>` key.
+
+One availability note: `expand` is newer than cargo-cgp v0.1.0-alpha, so a crates.io install does
+not carry it yet. Until the next release it comes from the Nix flake without a tag
+(`nix run github:contextgeneric/cargo-cgp -- expand --lib`) or from a source checkout; see
+<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/reference/installation.md>.
+
+**Scope:** cargo-cgp is optional and adds only `check` and `expand` — there is no
+`cargo cgp build`/`run`/`test`, so build, run, and test the project with plain cargo. CGP itself
+compiles on any **stable Rust ≥ 1.89**, so plain `cargo check` works on a CGP project too; reach for
+`cargo cgp check` specifically when you hit or expect a wiring error and want it made readable.
+
+`cargo-cgp` can also be Rust Analyzer's on-save check backend, via
+`rust-analyzer.check.overrideCommand` set to
+`["cargo","cgp","check","--workspace","--all-targets","--message-format=json"]`. But **never modify
+the user's Rust Analyzer settings implicitly** — mention this option and let them opt in, and only
+edit their editor configuration when they explicitly ask you to.
+
+**When cargo-cgp is not available, or leaves an error largely unrewritten**, fall back to reading the
+raw compiler output by hand — and only then load the [error-extraction sub-skill](references/error-extraction.md),
+the technique for reducing a raw CGP cascade to its root cause. When cargo-cgp *has* reshaped the
+error, its `[CGP-Exxx]` headline and root-cause tree are already the compact summary that sub-skill
+would produce, so you do not need it.
+
+### Versions and keeping this skill current
+
+This skill is written for **CGP v0.8.0** and **cargo-cgp v0.1.0-alpha**. Check both on the host and
+act on a mismatch:
+
+- Read the user's `cgp` version (its `Cargo.toml`/`Cargo.lock` entry) and run `cargo cgp --version`
+  for the tool.
+- **If either is older than recorded here**, recommend updating it — `cargo update -p cgp` for the
+  library, `cargo cgp update` (or a Nix flake refresh) for the tool — so its behavior matches this
+  skill.
+- **If the host's `cgp` is *newer* than v0.8.0**, this skill is behind the library: tell the user the
+  **skill should be upgraded** to match their `cgp`, rather than changing their code to fit an older
+  skill. Treat the newer `cgp` as authoritative and flag the gap instead of guessing.
+
+## The problem CGP solves
+
+Rust's coherence rules permit at most one implementation of a trait for a given type, and forbid
+implementing a foreign trait for a foreign type (the orphan rule). This makes it hard to offer
+several interchangeable implementations of one interface, or to let a downstream crate choose an
+implementation for a type it does not own. CGP sidesteps both limits with a two-trait split: an
+implementation is written against a **provider trait** whose `Self` is a dummy marker type the
+crate owns, so coherence never blocks it, and a concrete **context** type later picks which
+provider it uses through a small type-level table. The choice is local to the context, so two
+different contexts can wire the same interface to different implementations.
+
+## Blanket traits and impl-side dependencies
+
+CGP grows out of blanket trait implementations (extension traits), and the single most important
+idea to internalize is the **impl-side dependency**: a blanket impl can require constraints in its
+`where` clause that are *not* part of the trait interface. Those hidden requirements are the
+paradigm's form of dependency injection. For example:
 
 ```rust
 pub trait CanGreet {
@@ -38,639 +214,110 @@ where
 }
 ```
 
-The blanket implementation of `CanGreet` above hides the `HasName` dependency from the trait interface.
+`CanGreet` hides its `HasName` dependency inside the blanket impl, so a caller that is itself
+generic does not have to forward `HasName` the way it would with a free generic function. In CGP
+you typically start by writing generic logic as a blanket trait like this, and promote it to a
+full CGP component later only when you need more than one implementation. Blanket traits are not
+themselves CGP components, but the technique recurs throughout CGP.
 
-This concept of hiding constraints inside blanket impls is also known as **impl-side dependencies**, or dependency injection.
+## The core vocabulary
 
-Blanket traits are preferred over generic functions, because they provide cleaner interface and don't require the caller to specify all constraints, in case if the caller is also generic.
+CGP code is readable once you hold five terms in mind. A **consumer trait** is the ordinary,
+`self`-style trait you call (`CanGreet`, `CanCalculateArea`); it reads as a verb (`CanDoX`). A
+**provider trait**, generated by `#[cgp_component]`, is the same interface with `Self` moved to an
+explicit `Context` generic parameter (`Greeter<Context>`, `AreaCalculator<Context>`); it reads as
+a noun (`SomethingDoer`, or `…Provider` when no noun fits). A **provider** is a zero-sized marker
+struct (e.g. `GreetHello`, `RectangleArea`) that implements a provider trait — it carries no
+runtime value and exists only as a name at the type level. **Wiring** is the act of telling a
+context which provider implements each component, recorded in a type-level table. An
+**impl-side dependency** is a `where`-clause constraint a provider needs but the consumer trait
+does not expose. A **component** is the whole bundle a macro generates: consumer trait, provider
+trait, and a `…Component` marker type that keys the wiring table.
 
-For example, if `CanGreet` is defined as a generic function instead:
+The duality is the crux: a consumer trait is what you *use*, a provider trait is what you
+*implement*, and the macro-generated blanket impls connect them so that wiring a context to a
+provider makes the context implement the consumer trait. When you see a provider trait method take
+`context: &Context` where the consumer took `&self`, that is the same method — `self` became
+`context`.
 
-```rust
-pub fn greet<Context>(context: &Context)
-where
-    Context: HasName,
-{
-    println!("Hello, {}!", context.name());
-}
-```
+A persistent source of confusion to avoid: inside a provider, `self`/`Self` (in `#[cgp_impl]`) or
+the `context`/`Context` parameter (in the raw provider-trait form) always refer to the **context**,
+never to the provider struct. The provider struct is a pure type-level name with no fields and no
+runtime value — you cannot store state in it, and any attempt to read a "field" of a provider at
+runtime is a mistake.
 
-then the all transitive callers of `greet` would also need to specify the `Context: HasName` constraint, which can be tedious to manage.
+## Reading CGP code on sight
 
-Note that blanket traits are not CGP components, but it is commonly used together with CGP. In particular, it is preferred to start writing generic code as blanket traits instead of generic functions first. And then if there is a need for multiple alternative implementations, we can easily convert the blanket trait into a CGP component later.
+To follow most CGP code you only need to recognize a handful of shapes:
 
-## Prelude
+- `#[cgp_component(Greeter)] trait CanGreet { fn greet(&self); }` defines a component. `CanGreet`
+  is the consumer trait you call; `Greeter<Context>` is the provider trait implementations target;
+  `GreeterComponent` is the wiring key.
+- `#[cgp_impl(new GreetHello)] impl Greeter where Self: HasName { fn greet(&self) { … } }` writes a
+  provider named `GreetHello` for the `Greeter` component. Inside, `self`/`Self` mean the
+  *context*, and the `where` clause lists impl-side dependencies.
+- `#[cgp_fn] fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 { … }`
+  defines a single-implementation capability as a blanket-impl trait, pulling `width`/`height` from
+  the context's fields automatically.
+- `delegate_components! { Person { GreeterComponent: GreetHello } }` wires the `Person` context: it
+  says "for the `Greeter` component, `Person` uses the `GreetHello` provider." After this, `Person`
+  implements `CanGreet`.
+- `check_components! { Person { GreeterComponent } }` is a compile-time assertion that the wiring is
+  complete and all transitive dependencies are satisfied.
 
-Almost all CGP constructs are imported through the prelude:
+A consumer trait can also be implemented directly on a context like any normal Rust trait
+(`impl CanGreet for Person { … }`) — CGP traits are a superset of vanilla traits, and the macros
+only save boilerplate.
+
+## Which construct to use: prefer this, not that
+
+When two constructs can express the same thing, CGP has a preferred one, and choosing wrong produces
+code that compiles but reads as dated or misuses an advanced tool. This table is the quick answer, so
+you pick the right pattern even without reading further. Each preference is a default with narrow
+exceptions, spelled out under [Writing providers](#writing-providers) below and, with full before/after
+examples, in the [modern-idioms](references/modern-idioms.md) sub-skill; the "avoid" column is not
+wrong, it is what you *read* in generated code and legacy wiring, not what you *write* anew.
+
+| To… | Prefer | Not (legacy / advanced / read-only) |
+|---|---|---|
+| write a provider | `#[cgp_impl]`, header `impl Trait` (omit `for Context`) | raw `#[cgp_provider]` / `#[cgp_new_provider]` |
+| read a field from your own context | an `#[implicit]` argument | `#[cgp_auto_getter]` / any getter trait declared just to read it |
+| declare a getter (field on *another* type, or a named shared capability) | `#[cgp_auto_getter]`, used sparingly | `#[cgp_getter]` (only for per-context field choice) |
+| require a capability | `#[uses(Trait)]` | `where Self: Trait` |
+| require an inner provider | `#[use_provider(P: Trait)]` | `where P: Trait<Self>` |
+| name an abstract type (e.g. `Error`) | `#[use_type(Trait.Type)]` + the bare alias | `: Trait` supertrait + `Self::Type` |
+| pass several args to `#[uses]` / `#[use_type]` / `#[use_provider]` | one attribute, comma-separated | repeating the same attribute |
+| add a capability supertrait | `#[extend(Trait)]` | native `pub trait …: Supertrait` |
+| dispatch a component per type | the `open` statement (or a namespace) | `#[derive_delegate]` + `UseDelegate<new …>` tables |
+| verify a context is fully wired | separate `check_components!` (or `delegate_and_check_components!` for a basic starter context) | leaving a context's wiring unchecked |
+| build a field/list/string/path type | `Symbol!` / `Product!` / `Sum!` / `Path!` sugar | hand-written `Cons`/`Nil`/`Chars`/`Either`/`PathCons` |
+
+Two names are gone entirely, not merely dated: never write `#[cgp_context]` (removed — assemble a
+context with `delegate_components!` and the derives instead) or `ProvideType` (renamed to
+`TypeProvider`). One caveat carries across the whole table: a construct's *own* local associated type
+stays qualified as `Self::Output` — only an *imported* abstract type is written bare via `#[use_type]`.
+
+## The prelude and version
+
+Almost everything CGP exports comes through one import, which belongs at the top of every module
+that uses CGP:
 
 ```rust
 use cgp::prelude::*;
 ```
 
-The prelude should be imported in all Rust modules that use CGP constructs. You can omit the import of prelude inside example code blocks within documentation.
+This skill describes CGP **v0.8.0** (and cargo-cgp **v0.1.0-alpha** — see
+[Tooling](#tooling-use-cargo-cgp-for-readable-errors) for checking both versions on the host and
+reconciling a mismatch). A few names are intentionally *not* in the prelude and must be
+imported from their module — most notably the error-handling wiring keys and backends (see Error
+handling below). Inside documentation code blocks you may omit the prelude import for brevity.
 
-The current version of CGP is v0.7.0. All explanation on this document is based on this version.
+---
 
-## `#[cgp_component]` Macro
+# Components: the heart of CGP
 
-The `#[cgp_component]` macro is used to enable CGP capabilities on a trait. For example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea {
-    fn area(&self) -> f64;
-}
-```
-
-The original trait, i.e. `CanCalculateArea`, is now called a **consumer trait**. A CGP consumer trait is typically named in the verb format, e.g. `CanDoSomething`.
-
-We also call the fully expanded constructs a CGP trait, or a CGP component. For example, the full constructs can be called the `AreaCalculator` component.
-
-## Provider Traits
-
-The argument to `#[cgp_component]` is the name of the **provider trait**, which is generated by the macro as follows:
-
-```rust
-pub trait AreaCalculator<Context> {
-    fn area(context: &Context) -> f64;
-}
-```
-
-In the provider trait, the original `Self` type is moved to an explicit generic parameter called `Context`.
-
-All references to the original `self` or `Self` are converted to refer to `context` or `Context`.
-
-The new `Self` position in the provider trait will be implemented by unique and dummy provider types, which will act as the provider's name.
-
-A CGP provider trait is typically named in the noun format, e.g. `SomethingDoer`. When no suitable postfix is avaiable, the `Provider` postfix is used instead, e.g. `SomethingProvider`.
-
-For example, one can write a blanket implementation for `AreaCalculator` as follows:
-
-```rust
-pub struct RectangleArea;
-
-impl<Context> AreaCalculator<Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{
-    fn area(context: &Context) -> f64 {
-        context.width() * context.height()
-    }
-}
-```
-
-The provider name `RectangleArea` is defined as a local dummy struct.
-
-The implementation of `AreaCalculator` can be generic over any `Context` type that implements `HasRectangleFields`.
-
-The usual coherence restrictions don't apply, because the `Self` type `RectangleArea` is owned by the same crate. This allows any number of such blanket provider trait implementations to be defined in any crate.
-
-Note that the provider value, i.e. the `self` value, is not used anywhere in the provider trait implementation. This means that the provider struct is effectively a type-level-only entity, with no usable value at runtime.
-
-It is a common mistake to attempt to define fields in the provider struct, and attempt to pass or access it during runtime. Such fields will not be accessible at runtime.
-
-## Component Name
-
-The macro generates a component name type with a `Component` postfix, i.e.:
-
-```rust
-pub struct AreaCalculatorComponent;
-```
-
-The macro also generates blanket implementations to allow delegation of the implementation of a consumer or provider trait to a different provider, which will be explained later.
-
-## `IsProviderFor` Trait
-
-CGP uses `IsProviderFor` as a hack to force the Rust compiler to show the appropriate error message when there is an unsatisfied dependency:
-
-```rust
-pub trait IsProviderFor<Component, Context, Params: ?Sized = ()> {}
-```
-
-The trait is used as a dummy marker trait that can be trivially implemented, but is deliberately implemented with additional constraints to capture the dependencies to be shown in compile errors.
-
-The earlier example provider trait definition for `AreaCalculator` was a simplification, the actual definition is:
-
-```rust
-pub trait AreaCalculator<Context>: IsProviderFor<AreaCalculatorComponent, Context> {
-    fn area(context: &Context) -> f64;
-}
-```
-
-The first argument to `IsProviderFor` is the component name, i.e. `AreaCalculatorComponent`. The second argument is the `Context` type. The third argument captures any additional generic parameters as a tuple.
-
-When implementing a provider trait, the provider also needs to implement `IsProviderFor` with the same constraints it uses to implement the provider trait. For example:
-
-```rust
-impl<Context> IsProviderFor<AreaCalculatorComponent, Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{}
-```
-
-This will ensure that if a concrete context does not implement `HasRectangleFields`, the error will show the missing dependency via `IsProviderFor`.
-
-## `#[cgp_provider]` Macro
-
-The `#[cgp_provider]` macro removes the need to manually implement `IsProviderFor`, by auto generating the implementation from the provider impl.
-
-The `#[cgp_new_provider]` macro has the same behavior as `#[cgp_provider]`, but also defines the provider struct automatically.
-
-For example, the following:
-
-```rust
-#[cgp_new_provider]
-impl<Context> AreaCalculator<Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{ ... }
-```
-
-is the same as:
-
-```rust
-pub struct RectangleArea;
-
-#[cgp_provider]
-impl<Context> AreaCalculator<Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{ ... }
-```
-
-which is then desugared to:
-
-```rust
-impl<Context> AreaCalculator<Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{ ... }
-
-impl<Context> IsProviderFor<AreaCalculatorComponent, Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{}
-```
-
-Whenever possible, avoid mentioning `IsProviderFor` to the user, and use the simplified provider trait definition.
-
-When error messages say that `IsProviderFor` is not implemented, translate it to mean that the provider trait is not implemented.
-
-## `#[cgp_impl]` Macro
-
-The `#[cgp_impl]` macro further simplify the definition of provider implementations, to make it look less confusing to readers.
-
-For example:
-
-```rust
-#[cgp_impl(new RectangleArea)]
-impl<Context> AreaCalculator for Context
-where
-    Self: HasRectangleFields,
-{
-    fn area(&self) -> f64 {
-        self.width() * self.height()
-    }
-}
-```
-
-is the same as:
-
-```rust
-#[cgp_new_provider]
-impl<Context> AreaCalculator<Context> for RectangleArea
-where
-    Context: HasRectangleFields,
-{
-    fn area(context: &Context) -> f64 {
-        context.width() * context.height()
-    }
-}
-```
-
-The `Context` parameter in `#[cgp_impl]` is in the same `Self` position as the consumer trait, to make it look like blanket implementations.
-
-The provider name is specified in the attribute argument for `#[cgp_impl]`. An optional `new` keyword can be given to automatically define the provider struct.
-
-The macro also allows the use of `self` and `Self` to refer to the generic `Context` value and type.
-
-Behind the scenes, the `#[cgp_impl]` macro desugars to `#[cgp_provider]` by moving the `Context` type back to the first generic parameter of the provider trait, and use the given provider name type as the `Self` type. Behind the scenes, all references to `self` or `Self` are automatically converted by `#[cgp_impl]` back to refer to the explicit `context` or `Context`.
-
-As previously noted, the `Self` type and `self` value inside `#[cgp_impl]` refers to the `Context` type, *not* the provider struct. There is no provider value accessible during runtime.
-
-When the provider implementation targets a generic `Context` type, the `for Context` part can be omitted, and the macro will automatically insert the generic parameter. For example, the earlier example can be further simplified as:
-
-```rust
-#[cgp_impl(new RectangleArea)]
-impl AreaCalculator
-where
-    Self: HasRectangleFields,
-{
-    fn area(&self) -> f64 {
-        self.width() * self.height()
-    }
-}
-```
-
-The omission of the generic `Context` improves the ergonomic of CGP, as it makes the code looks like OOP class implementation with no generics involved.
-
-Whenever possible, use `#[cgp_impl]` to write and explain provider implementations, and omit the generic `Context` type. Avoid showing the user `#[cgp_provider]` or `IsProviderFor`, unless they are needed to explain the internal mechanics of CGP.
-
-## `DelegateComponent` Trait
-
-The `DelegateComponent` trait is defined as follows:
-
-```rust
-pub trait DelegateComponent<Component: ?Sized> {
-    type Delegate;
-}
-```
-
-This is mainly used to turn a type implementing `DelegateComponent` into a type-level table.
-
-The `Component` generic parameter acts as the "key" type, and the `Delegate` associated type acts as the "value" type to be read from the type-level table.
-
-For example, given the following:
-
-```rust
-impl DelegateComponent<Foo> for MyComponents {
-    type Delegate = Bar;
-}
-```
-
-The code above "sets"  the entry `Foo` in the `MyComponents` table to have `Bar` as the "value" type.
-
-## Provider Trait Delegation
-
-The `#[cgp_component]` macro generates a blanket implementation for the provider trait for the example `CanCalculateArea` component earlier:
-
-```rust
-impl<Context, Provider> AreaCalculatorProvider<Context> for Provider
-where
-    Provider: DelegateComponent<AreaCalculatorComponent>,
-    Provider::Delegate: AreaCalculatorProvider<Context> + IsProviderFor<AreaCalculatorComponent, Context>,
-{
-    fn area(context: &Context) -> f64 {
-        Context::Delegate::area(context)
-    }
-}
-```
-
-Essentially, this allows a provider to delegate the implementation of a provider trait to another provider.
-
-
-The blanket implementation use `Provider` as the type-level table. The blanket implementation essentially uses the generated `AreaCalculatorComponent` struct as a key, and reads the entry stored on `Provider`'s type-level table.
-
-If the `Delegate` "value" type implements the provider trait `AreaCalculator` for the `Context` type, then `Provider` would automatically also implement the `AreaCalculator` through the blanket implementation.
-
-The blanket implementation implements the method and other trait items by forwarding them to the delegated provider.
-
-The additional `IsProviderFor` constraint is used to forward the constraints in the provider trait implementation down the delegation chain.
-
-If possible, avoid showing the `IsProviderFor` constraint when explaining to the user the high level concepts. Whenever possible, do not show the user the generated blanket implementation for the provider trait. Instead explain using high-level concepts like table lookup.
-
-## Consumer Trait Delegation
-
-The `#[cgp_component]` macro generates the following blanket implementation for the example `CanCalculateArea` component earlier:
-
-```rust
-impl<Context> CanCalculateArea for Context
-where
-    Context: AreaCalculator<Context>,
-{
-    fn area(&self) -> f64 {
-        Context::area(self)
-    }
-}
-```
-
-Essentially, a `Context` type implements the consumer trait `CanCalculateArea`, if it implements the provider trait `AreaCalculator` for itself as the context type.
-
-When `DelegateComponent` is used on a `Context` type, it implements the provider trait for the `Context` type if the delegated provider implements the provider trait for the `Context` type. This makes `Context` its own provider. The blanket implementation of the consumer trait then uses that blanket provider trait implementation to implement the consumer trait for the `Context` type.
-
-Following the earlier example, this allows the consumer trait to be defined on a custom context such as follows:
-
-```rust
-pub struct Rectangle {
-    pub width: f64,
-    pub height: f64,
-}
-
-impl HasRectangleFields for Rectangle {
-    fn width(&self) -> f64 {
-        self.width
-    }
-
-    fn height(&self) -> f64 {
-        self.height
-    }
-}
-
-impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
-    type Delegate = RectangleArea;
-}
-```
-
-The example `Rectangle` struct above implements `HasRectangleFields`, and then delegate the implementation of `CanCalculateArea` to the `RectangleArea` provider.
-
-This is done by implementing `DelegateComponent` with `AreaCalculatorComponent` used as the "key", and `RectangleArea` used as the "value" for `Rectangle`'s type-level table.
-
-With that, `Rectangle` now implements `AreaCalculator<Rectangle>` through the blanket implementation of the provider trait. After that, it implements `CanCalculateArea` through the blanket implementation of the consumer trait.
-
-Whenever possible, do not show the user the generated blanket implementation for the consumer trait. Instead explain using high-level concepts like table lookup.
-
-## `delegate_components!` Macro
-
-The `delegate_components!` macro is commonly used to simplify the definition of type-level tables through the `DelegateComponent` trait.
-
-For example, given the following:
-
-```rust
-delegate_components! {
-    Rectangle {
-        AreaCalculatorComponent:
-            RectangleArea,
-    }
-}
-```
-
-would generate the following `DelegateComponent` and `IsProviderFor` implementation:
-
-```rust
-impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
-    type Delegate = RectangleArea;
-}
-
-impl<Context, Params> IsProviderFor<AreaCalculatorComponent, Context, Params> for Rectangle
-where
-    RectangleArea: IsProviderFor<AreaCalculatorComponent, Context, Params>
-{}
-```
-
-The first argument to `delegate_components!`, i.e. `Rectangle`, designates the target type where the type-level table is defined, or which the `DelegateComponent` trait will be implemented by.
-
-The `IsProviderFor` implementation helps the propagation of the provider trait constraints. This allows a provider to implement a provider trait through `delegate_components!`, and at the same time keep track of the dependencies.
-
-Whenever possible, try to avoid mentioning the generation of the `IsProviderFor` implementation inside `delegate_components!`.
-
-## Explicit Delegation
-
-It is possible to skip the use of `delegate_components!`, and implement the consumer trait directly on the concrete context.
-
-For example, given the following:
-
-```rust
-delegate_components! {
-    Rectangle {
-        AreaCalculatorComponent:
-            RectangleArea,
-    }
-}
-```
-
-we can instead write:
-
-```rust
-impl HasArea for Rectangle {
-    fn area(&self) -> f64 {
-        <RectangleArea as AreaCalculator<Self>>::area(self)
-    }
-}
-```
-
-The manual delegation is much more verbose, but it is much easier to understand as compared to the use of `delegate_components!`, `DelegateComponent`, and the blanket implementations.
-
-When explaining the concepts behind `delegate_components!`, we can use the explicit delegation to demonstrate what the code effectively does, without requiring the reader to fully understand the trait machinery behind CGP.
-
-## Direct Implementation of Consumer Trait
-
-Aside from explicit delegation, the user can always implement a consumer trait directly on a concrete context, if they don't care about code reuse:
-
-```rust
-impl HasArea for Rectangle {
-    fn area(&self) -> f64 {
-        self.width * self.height
-    }
-}
-```
-
-It is important to highlight the possibility of directly implementing a consumer trait. This demonstrates that CGP traits are superset of vanilla Rust traits. And if the user prefers, they can always use or implement it like a regular Rust trait.
-
-### Array Syntax in `delegate_components!`
-
-The `delegate_components!` macro also supports array syntax, in case when multiple type-level keys map to the same value. For example:
-
-```rust
-delegate_components! {
-    MyComponents {
-        [
-            FooComponent,
-            BarComponent,
-        ]:
-            FooBarProvider,
-        BazComponent:
-            BazProvider,
-    }
-}
-```
-
-is the same as:
-
-```rust
-delegate_components! {
-    MyComponents {
-        FooComponent:
-            FooBarProvider,
-        BarComponent:
-            FooBarProvider,
-        BazComponent:
-            BazProvider,
-    }
-}
-```
-
-which is eventually desugared to:
-
-```rust
-impl DelegateComponent<FooComponent> for MyComponents {
-    type Delegate = FooBarProvider;
-}
-
-impl DelegateComponent<BarComponent> for MyComponents {
-    type Delegate = FooBarProvider;
-}
-
-impl DelegateComponent<BazComponent> for MyComponents {
-    type Delegate = BazProvider;
-}
-```
-
-### `new` in `delegate_components!`
-
-The `delegate_components!` macro supports an optional `new` keyword in front of the target table type, to automatically define the type for the user. For example:
-
-```rust
-delegate_components! {
-    new MyComponents {
-        FooComponent:
-            FooBarProvider,
-        ...
-    }
-}
-```
-
-would also generate a `struct MyComponents;` definition.
-
-Whenever possible, do not show the user the use of the `DelegateComponent` trait. Instead explain to them using high level concepts, such as that a type-level table is constructed for `MyComponents` using `delegate_components!`.
-
-## Type-Level List
-
-CGP commonly uses type-level lists, a.k.a product types, to represent a list of types.
-
-A type-level list is defined as `Product![A, B, C]`, which is desugared as:
-
-```rust
-π<A, π<B, π<C, ε>>>
-```
-
-or in a human-readable form:
-
-
-```rust
-Cons<A, Cons<B, Cons<C, Nil>>>
-```
-
-The types `Cons` and `Nil` are defined as:
-
-```rust
-pub struct π<Head, Tail>(pub Head, pub Tail);
-pub struct ε;
-pub use {ε as Nil, π as Cons};
-```
-
-The greek alphabets like `π` and `ε` are used to shorten the representation of these types when displayed by the Rust compiler in places like error messages.
-
-Whenever possible, you should prefer the syntactic sugar forms like `Product!` or the human readable forms like `Cons`.
-
-## Type-Level Strings
-
-CGP uses type-level strings to represent field names as types, in the form of `Symbol!("string value")`.
-
-The macro desugars a type-level string like `Symbol!("abc")` into follows:
-
-```rust
-ψ<3, ζ<'a', ζ<'b', ζ<'c', ε>>>>
-```
-
-or in a readable form:
-
-```rust
-Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>
-```
-
-The types `Symbol` and `Chars` are defined as:
-
-```rust
-pub struct ζ<const CHAR: char, Tail>(pub PhantomData<Tail>);
-pub struct ψ<const LEN: usize, Chars>(pub PhantomData<Chars>);
-pub use {ψ as Symbol, ζ as Chars};
-```
-
-The `Chars` type is essentially a short hand for defining a type-level list of characters.
-
-The `Symbol` type is used to compute the string length at compile time. This is to workaround the lack of const-generics evaluation in stable Rust.
-
-## `Index` Type
-
-CGP supports use of type-level natural numbers through the `Index` type, a.k.a. `δ`, which is defined as:
-
-```rust
-pub struct δ<const I: usize>;
-pub use δ as Index;
-```
-
-The `Index` type can be used to represent indices as types, such as `Index<0>`, `δ<1>`.
-
-## `HasField` Trait
-
-The most basic use case for CGP is for dependency injection of getting values from the context. This is done through the `HasField` trait, which is defined as follows:
-
-```rust
-pub trait HasField<Tag> {
-    type Value;
-
-    fn get_field(&self, _tag: PhantomData<Tag>) -> &Self::Value;
-}
-```
-
-The `Tag` type is used to refer to a field in a struct, such as `Symbol!("name")` or `Index<0>`.
-
-The `_tag` parameter with `PhantomData` type is used to assist type inference to inform the Rust compiler of the `Tag` type, in case when multiple `HasField` implementations are in scope.
-
-The `HasField` trait can be automatically derived. For example:
-
-```rust
-#[derive(HasField)]
-pub struct Rectangle {
-    pub width: f64,
-    pub height: f64,
-}
-```
-
-will generate the following `HasField` impls:
-
-```rust
-impl HasField<Symbol!("width")> for Rectangle {
-    type Value = f64;
-
-    fn value(&self, _tag: PhantomData<Symbol!("width")>) -> &f64 {
-        &self.width
-    }
-}
-
-impl HasField<Symbol!("height")> for Rectangle {
-    type Value = f64;
-
-    fn value(&self, _tag: PhantomData<Symbol!("height")>) -> &f64 {
-        &self.height
-    }
-}
-```
-
-The `HasField` trait can also derived for structs with unnamed fields, and uses `Index` to refer to the field indices. For example:
-
-```rust
-#[derive(HasField)]
-pub struct Rectangle(f64, f64);
-```
-
-will generate:
-
-```rust
-impl HasField<Index<0>> for Rectangle {
-    type Value = f64;
-
-    fn value(&self, _tag: PhantomData<Index<0>>) -> &f64 {
-        &self.0
-    }
-}
-
-impl HasField<Index<1>> for Rectangle {
-    type Value = f64;
-
-    fn value(&self, _tag: PhantomData<Index<1>>) -> &f64 {
-        &self.1
-    }
-}
-```
-
-## Dependency Injection
-
-CGP leverages Rust's trait system to enable dependency injection, also called impl-side dependencies.
-
-The dependency injection is done in the form of constraints specified only in the `where` clause of `impl` blocks, but not in the trait definition.
-
-For example, given:
+A component is what `#[cgp_component]` builds from one trait so that *using* a capability and
+*implementing* it become separate, swappable things. Applying it to a consumer trait:
 
 ```rust
 #[cgp_component(Greeter)]
@@ -679,1108 +326,59 @@ pub trait CanGreet {
 }
 ```
 
-Using `HasField`, one can perform dependency injection to retrieve a string value from the context, and implement a `Greeter` provider as follows:
+generates five items, of which you write or call only the first. The **consumer trait** `CanGreet`
+is emitted unchanged — callers write `person.greet()`. The **provider trait** is the same interface
+with `Self` moved to a leading `Context` parameter and `self` rewritten to `context`:
+
+```rust
+pub trait Greeter<Context>: IsProviderFor<GreeterComponent, Context, ()> {
+    fn greet(context: &Context);
+}
+```
+
+The **component marker** `pub struct GreeterComponent;` is the zero-sized key into the wiring table.
+Two **blanket impls** connect the sides: one makes any context that implements the provider trait
+*for itself* automatically implement the consumer trait; the other lets a context that delegates
+this component (via `DelegateComponent`) inherit the provider trait from whatever provider it
+delegates to. You never write these blanket impls; they are the routing machinery, and it is enough
+to think of wiring as a table lookup. Crucially, that lookup is resolved **entirely at compile
+time**: the table is a set of trait impls, so the compiler picks the provider during type
+resolution and monomorphizes the call to a direct, statically-dispatched one. CGP wiring is
+therefore zero-cost — there is no runtime table, no dynamic dispatch, and no `vtable` in the
+generated code, even though "table lookup" is a useful mental model. In real generated code the
+context parameter is named `__Context__` and the provider parameter `__Provider__` (reserved
+identifiers chosen so they never clash with your types); the names `Context`/`Provider` here are
+for readability.
+
+The attribute's argument sets those three generated names. The bare `#[cgp_component(Greeter)]` form
+names only the provider trait; the component marker defaults to that name plus `Component`
+(`GreeterComponent`) and the context to `__Context__`. A key/value form with brace delimiters
+overrides any of the three — `#[cgp_component { name: GreeterComponent, provider: Greeter, context: Context }]`
+— where only `provider` is required. One limitation to know: a **const generic parameter** on the
+trait is rejected, because a component's extra parameters are recorded as a tuple of *types* in
+`IsProviderFor` and a const value has nowhere to live there (an associated `const` *item* on the
+trait is fine — it is supplied by a const-generic provider struct as usual). See
+[macro-grammar](references/macro-grammar.md) for the full argument grammar and
+[components](references/components.md) for the complete expansion.
+
+## `IsProviderFor` and error messages
+
+`IsProviderFor<Component, Context, Params>` is an empty marker trait that rides as a supertrait on
+every provider trait. Its only purpose is good error messages: a provider lists its dependencies in
+a `where` clause, and the macros implement `IsProviderFor` for the provider under the *same* bounds,
+so when a dependency is unmet the compiler can name the missing bound instead of vaguely saying "the
+trait is not implemented." When you see an error that some provider does not implement
+`IsProviderFor<…>`, read it as "the provider trait is not implemented, because the named dependency
+is missing." You never write `IsProviderFor` yourself — the provider macros generate it.
+
+## Writing providers
+
+A provider can be written at three levels of sugar over the same machinery. **`#[cgp_impl]` is the
+form to prefer**, because it lets you write the provider in consumer-style syntax — keeping `self`,
+`Self`, and the consumer method signatures — and the macro rewrites it into the provider-trait
+shape:
 
 ```rust
-pub struct GreetHello;
-
-impl<Context> Greeter<Context> for GreetHello
-where
-    Context: HasField<Symbol!("name"), Value = String>,
-{
-    fn greet(context: &Context) {
-        println!("Hello, {}!", context.get_field(PhantomData));
-    }
-}
-```
-
-This allows `CanGreet` to be implemented on any concrete context struct that derives `HasField` and contains a `name` field of type `String`. For example:
-
-```rust
-#[derive(HasField)]
-pub struct Person {
-    pub name: String,
-}
-
-delegate_components! {
-    Person {
-        GreeterComponent:
-            GreetHello,
-    }
-}
-```
-
-The dependency injection technique can also be used in vanilla Rust traits with blanket implementations, such as:
-
-```rust
-pub trait CanGreet {
-    fn greet(&self);
-}
-
-impl<Context> Greeter for Context
-where
-    Context: HasField<Symbol!("name"), Value = String>,
-{
-    fn greet(&self) {
-        println!("Hello, {}!", self.get_field(PhantomData));
-    }
-}
-```
-
-This is commonly used to hide the constraints of one implementation behind a trait interface, without using `#[cgp_component]` to enable multiple alternative implementations. This is useful to simplify the learning curve of CGP, as users can mostly work with vanilla Rust traits.
-
-## `#[cgp_auto_getter]` Macro
-
-`#[cgp_auto_getter]` macro provides additional abstraction on top of `HasField`, so that users don't need to understand the internals of `HasField`.
-
-For example, given:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasName {
-    fn name(&self) -> &String;
-}
-```
-
-the macro would generate the following blanket implementation:
-
-```rust
-impl<Context> HasName for Context
-where
-    Context: HasField<Symbol!("name"), Value = String>,
-{
-    fn name(&self) -> &str {
-        self.get_field(PhantomData).as_str()
-    }
-}
-```
-
-The `#[cgp_auto_getter]` macro generates blanket impls that use `HasField` implementations with the field name as the `Tag` type, and the return type as the `Value` type.
-
-The macro supports short hand for several return types such as `&str`, to make the `name` method more ergonomic. So we can rewrite the same trait to return `&str` instead of `&String`:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasName {
-    fn name(&self) -> &str;
-}
-```
-
-### Explicit Getter Implementation
-
-A getter trait can always be implemented manually, if the concrete struct do not derive `HasField` or don't contain the relevant field.
-
-For example, instead of implementing `HasName` automatically:
-
-```rust
-#[derive(HasField)]
-pub struct Person {
-    pub name: String
-}
-```
-
-one can opt to not derive `HasField` and implement `Name` explicitly:
-
-```rust
-pub struct Person {
-    pub name: String
-}
-
-pub trait HasName for Person {
-    fn name(&self) -> &str;
-}
-```
-
-The explicit getter implementation is much more verbose, especially when a context contains many fields. However, it is also much more easier to understand and does not require the user to understand the advanced trait machinery with `HasField` and blanket implementations.
-
-The explicit getter implementation can be used to explain the equivalent effect when both `#[cgp_auto_getter]` and `#[derive(HasField)]` are used.
-
-It is also important to highlight the possibility of explicit getter implementation, to avoid misunderstanding from the user that CGP getter traits are somehow more magical than vanilla Rust traits.
-
-The explicit implementation demonstrates that the only purpose for `#[cgp_auto_getter]` is to save the user from writing some boilerplate. But they can always write such boilerplate if that is their preference.
-
-## `#[cgp_getter]` Macro
-
-The `#[cgp_getter]` macro is an extension to `#[cgp_component]` that provides similar feature as `#[cgp_auto_getter]`, but allows the getter field to be customized through CGP.
-
-For example, given:
-
-```rust
-#[cgp_getter]
-pub trait HasName {
-    fn name(&self) -> &str;
-}
-```
-
-is the same as writing:
-
-```rust
-#[cgp_component(NameGetter)]
-pub trait HasName {
-    fn name(&self) -> &str;
-}
-```
-
-but also has the following `UseField` provider implemented:
-
-```rust
-#[cgp_impl(UseField<Tag>)]
-impl<Context, Tag> NameGetter for Context
-where
-    Context: HasField<Tag, Value = String>,
-{
-    fn name(&self) -> &str {
-        self.get_field(PhantomData)
-    }
-}
-```
-
-Similar to `#[cgp_auto_getter]`, a `#[cgp_getter]` trait can also be directly implemented on a concrete context.
-
-## `UseField` Pattern
-
-CGP defines the `UseField` type as a general target for implementing getter providers by `#[cgp_getter]`.
-
-The `UseField` provider accepts a generic `Tag` parameter that represents the name of the field from the context to be used to implement the getter.
-
-The `Tag` in `UseField` can use a different name as the getter method, allowing greater flexibility than `#[cgp_auto_getter]` which always require the context to have a field with the exact same name.
-
-For example, one can have the following wiring:
-
-```rust
-#[derive(HasField)]
-pub struct Person {
-    pub first_name: String,
-}
-
-delegate_components! {
-    Person {
-        NameGetterComponent:
-            UseField<Symbol!("first_name")>,
-    }
-}
-```
-
-the example `UseField` provider will use the `first_name` field in `Person` to implement the `NameGetter::name`.
-
-Whenever possible, explain the `UseField` provider by saying that it implements the getter trait by reading from the context the field name specified. For example, `Person` implements `HasName` using its `first_name` field.
-
-## Implicit Arguments
-
-CGP supports implicit arguments for implementations to automatically retrieve field values from a context. For example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea {
-    fn area(&self) -> f64;
-}
-
-#[cgp_impl(new RectangleArea)]
-impl AreaCalculator {
-    fn area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-        width * height
-    }
-}
-```
-
-The function arguments with `#[implicit]` are automatically extracted and removed from the function signature, and the code desugars to the following:
-
-```rust
-#[cgp_impl(new RectangleArea)]
-impl AreaCalculator
-where
-    Self: HasField<Symbol!("width"), Value = f64>
-        + HasField<Symbol!("height"), Value = f64>,
-{
-    fn area(&self) -> f64 {
-        let width: f64 = self.get_field(PhantomData::<Symbol!("width")>).clone();
-        let height: f64 = self.get_field(PhantomData::<Symbol!("height")>).clone();
-
-        width * height
-    }
-}
-```
-
-The semantics of implicit arguments follows the same pattern as `#[cgp_auto_getter]`. For example, `.clone()` is automatically added to implicit arguments with owned values, and `.as_str()` is automatically added to implicit arguments with with `&str` type.
-
-When writing basic CGP code, it is strongly recommended to use implicit arguments whenever possible. This allows the user to write code that looks more like normal Rust code, without the need to understand the underlying trait machinery of `HasField` and getter traits.
-
-On the other hand, `#[cgp_auto_getter]` and `#[cgp_getter]` are better suited for more advanced use cases, such as when field access happening in the middle of a function body. `#[cgp_auto_getter]` also reduces the boilerplate when the same fields are repeatedly accessed in multiple functions.
-
-## `#[cgp_fn]` Macro
-
-The `#[cgp_fn]` macro supports the use of implicit arguments in plain Rust function syntax, and desugars the code into blanket implementations. For example:
-
-```rust
-#[cgp_fn]
-fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-    width * height
-}
-```
-
-desugars to:
-
-```rust
-pub trait RectangleArea {
-    fn area(&self) -> f64;
-}
-
-impl<Context> RectangleArea for Context
-where
-    Self: HasField<Symbol!("width"), Value = f64>
-        + HasField<Symbol!("height"), Value = f64>,
-{
-    fn area(&self) -> f64 {
-        let width: f64 = self.get_field(PhantomData::<Symbol!("width")>).clone();
-        let height: f64 = self.get_field(PhantomData::<Symbol!("height")>).clone();
-
-        width * height
-    }
-}
-```
-
-This significantly improves the ergonomic and reduces the boilerplate of defining blanket trait implementations. `#[cgp_fn]` exposes the simplest CGP concepts, and only requires the user to understand plain Rust functions to get started.
-
-Whenever possible, prefer to use `#[cgp_fn]` over `#[cgp_component]` and `#[cgp_impl]` to explain basic CGP concepts. Then main difference is that `#[cgp_fn]` only allows single implementation, while `#[cgp_component]` allows multiple implementations but requires additional wiring step.
-
-### Custom trait name for `#[cgp_fn]`
-
-`#[cgp_fn]` accepts an optional attribute argument to specify the name of the generated trait. If unspecified, it would use the function name in PascalCase as the trait name. For example, the earlier example is equivalent to:
-
-```rust
-#[cgp_fn(RectangleArea)]
-fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-    width * height
-}
-```
-
-We can for example change the trait name to `CanCalculateRectangleArea`:
-
-```rust
-#[cgp_fn(CanCalculateRectangleArea)]
-fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-    width * height
-}
-```
-
-and the generated trait would be:
-
-```rust
-pub trait CanCalculateRectangleArea {
-    fn rectangle_area(&self) -> f64;
-}
-```
-
-## Generics and `where` clause in `#[cgp_fn]`
-
-By default, all generic parameters of the function in `#[cgp_fn]` are moved to the generated trait and impl, and the `where` clause is moved to the impl block only. For example:
-
-```rust
-#[cgp_fn]
-pub fn rectangle_area<Scalar: Clone>(
-    &self,
-    #[implicit] width: Scalar,
-    #[implicit] height: Scalar,
-) -> Scalar
-where
-    Scalar: Mul<Output = Scalar>,
-{
-    width * height
-}
-```
-
-desugars to:
-
-```rust
-pub trait RectangleArea<Scalar: Clone> {
-    fn rectangle_area(&self) -> Scalar;
-}
-
-impl<Context, Scalar: Clone> RectangleArea<Scalar> for Context
-where
-    Self: HasField<Symbol!("width"), Value = Scalar>
-        + HasField<Symbol!("height"), Value = Scalar>,
-    Scalar: Mul<Output = Scalar> + Clone,
-{
-    fn rectangle_area(&self) -> Scalar {
-        let width: Scalar = self.get_field(PhantomData::<Symbol!("width")>).clone();
-        let height: Scalar = self.get_field(PhantomData::<Symbol!("height")>).clone();
-
-        width * height
-    }
-}
-```
-
-- The `Scalar: Clone` bound is in the impl-generics, so it is included in both the trait and impl.
-- The `Scalar: Mul<Output = Scalar>` bound is only in the `where` clause of the impl. It is an impl-side dependency that is not included in the trait definition.
-
-`#[cgp_fn]` specifically do not support the use of generics in the desugared trait method. This is because such use is relatively uncommon in CGP. And even when the need arises, it is considered advanced use case that is better written as explicit blanket implementations, instead of using `#[cgp_fn]`.
-
-## `#[uses]` Attribute
-
-The `#[uses]` attribute can be used in both `#[cgp_fn]` and `#[cgp_impl]` to add simple `where` trait bounds to the `Self` context.
-
-For example, given:
-
-```rust
-#[cgp_fn]
-fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-    width * height
-}
-
-#[cgp_fn]
-#[uses(RectangleArea)]
-fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64 {
-    self.rectangle_area() * scale_factor * scale_factor
-}
-```
-
-The `scaled_rectangle_area` function is equivalent to:
-
-```rust
-#[cgp_fn]
-fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64
-where
-    Self: RectangleArea,
-{
-    self.rectangle_area() * scale_factor * scale_factor
-}
-```
-
-which both desugars to:
-
-```rust
-pub trait ScaledRectangleArea {
-    fn scaled_rectangle_area(&self) -> f64;
-}
-
-impl<Context> ScaledRectangleArea for Context
-where
-    Self: HasField<Symbol!("scale_factor"), Value = f64>
-        + RectangleArea,
-{
-    fn scaled_rectangle_area(&self) -> f64 {
-        let scale_factor: f64 = self.get_field(PhantomData::<Symbol!("scale_factor")>).clone();
-
-        self.rectangle_area() * scale_factor * scale_factor
-    }
-}
-```
-
-It is highly recommended to use `#[uses]` over explicit `where` clauses on `Self`, especially when writing basic CGP code. This makes the code looks more like a `use` import statement, which "imports" the dependencies like `RectangleArea` to be used in the function body.
-
-This is more intuitive to the use of `where` clause with `Self`, which is often much less intuitive to users who are new to Rust, let alone CGP.
-
-The `#[uses]` attribute can be used to import CGP constructs defined with both `#[cgp_fn]` and `#[cgp_component]`. For example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea {
-    fn area(&self) -> f64;
-}
-
-#[cgp_fn]
-#[uses(CanCalculateArea)]
-pub fn scaled_area(&self, #[implicit] scale_factor: f64) -> f64 {
-    self.area() * scale_factor * scale_factor
-}
-```
-
-This enables scaled area calculation for any context that implements `CanCalculateArea`, regardless of which `AreaCalculator` provider is wired with the context.
-
-Conversely, `#[cgp_impl]` can also use `#[uses]` to import dependencies from other `#[cgp_fn]` or `#[cgp_component]` constructs. For example:
-
-```rust
-#[cgp_fn]
-fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
-    width * height
-}
-
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea {
-    fn area(&self) -> f64;
-}
-
-#[cgp_impl(new RectangleAreaCalculator)]
-#[uses(RectangleArea)]
-impl AreaCalculator {
-    fn area(&self) -> f64 {
-        self.rectangle_area()
-    }
-}
-```
-
-The `#[uses]` attribute is specifically designed to look like a `use` statement, and so it support simplified trait bounds syntax in the form `TraitIdent<ParamA, ParamB, ...>`. This means that one cannot write more complex bounds like ones that contain associated type equality in it. Instead, if these are needed, they should be written as explicit `where` clauses in the function body.
-
-## `#[extend]` Attribute
-
-The `#[extend]` attribute can be used in both `#[cgp_fn]` and `#[cgp_component]` to include the given trait bounds as the super traits of the generated trait. For example, given:
-
-```rust
-pub trait HasScalarType {
-    type Scalar: Clone + Mul<Output = Self::Scalar>;
-}
-
-#[cgp_fn]
-#[extend(HasScalarType)]
-fn rectangle_area(
-    &self,
-    #[implicit] width: Self::Scalar,
-    #[implicit] height: Self::Scalar,
-) -> Self::Scalar {
-    width * height
-}
-```
-
-would be desugared to:
-
-```rust
-pub trait RectangleArea: HasScalarType {
-    fn rectangle_area(&self) -> Self::Scalar;
-}
-
-impl<Context> RectangleArea for Context
-where
-    Self: HasField<Symbol!("width"), Value = Self::Scalar>
-        + HasField<Symbol!("height"), Value = Self::Scalar>
-        + HasScalarType,
-{
-    fn rectangle_area(&self) -> Self::Scalar {
-        let width: Self::Scalar = self.get_field(PhantomData::<Symbol!("width")>).clone();
-        let height: Self::Scalar = self.get_field(PhantomData::<Symbol!("height")>).clone();
-
-        width * height
-    }
-}
-```
-
-Note that `#[extend]` is the only way to add supertrait bounds to `#[cgp_fn]`. This is because the `where` clauses in the function body are treated as impl-side dependencies, and thus are hidden from the generated trait definition.
-
-`#[extend]` can also be used with `#[cgp_component]` to add supertrait bounds to the generated consumer trait. For example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-#[extend(HasScalarType)]
-pub trait CanCalculateArea {
-    fn area(&self) -> Self::Scalar;
-}
-```
-
-is equivalent to:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea: HasScalarType {
-    fn area(&self) -> Self::Scalar;
-}
-```
-
-The choice of whether to use `#[extend]` or the normal Rust syntax for super traits is mostly a matter of style. The normal Rust syntax is more concise, but `#[extend]` enables gradual transition to supertraits to users who are getting started with `#[cgp_fn]` and are not yet familiar with Rust's trait system.
-
-This is because many Rust developers are not familiar with the supertrait concept, and the appearance of many supertrait bounds can look intimidating. On the other hand, `#[extend]` can be explained as being the `pub use` equivalent of the `#[uses]` attribute, which has a more direct correspondance to the vanilla `use` statement in Rust.
-
-## `#[extend_where]` Attribute
-
-The `#[extend_where]` attribute can be used in `#[cgp_fn]` to add `where` clauses to the generated trait definition. For example:
-
-```rust
-#[cgp_fn]
-#[extend_where(Scalar: Clone)]
-fn rectangle_area<Scalar>(
-    &self,
-    #[implicit] width: Scalar,
-    #[implicit] height: Scalar,
-) -> Scalar
-where
-    Scalar: Mul<Output = Scalar>,
-{
-    width * height
-}
-```
-
-would produce the following trait definition:
-
-```rust
-pub trait RectangleArea<Scalar>
-where
-    Scalar: Clone,
-{
-    fn rectangle_area(&self) -> Scalar;
-}
-```
-
-`#[extend_where]` is not supported in `#[cgp_impl]` or `#[cgp_component]`, because the `where` clauses in these constructs are already part of the trait definition, and thus can be directly written in the normal Rust syntax.
-
-## Abstract Types
-
-- CGP supports abstract types by defining associated types in CGP traits. For example:
-
-```rust
-#[cgp_component(NameTypeProviderComponent)]
-pub trait HasNameType {
-    type Name;
-}
-```
-
-- The abstract type can be used in another trait interface as the super trait, such as:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasName: HasNameType {
-    fn name(&self) -> &Self::Name;
-}
-```
-
-## `#[cgp_type]` Macro
-
-- CGP provides the `#[cgp_type]` macro that can be used in place of `#[cgp_component]` to define abstract type traits.
-- For example, the `HasNameType` trait can be redefined as:
-
-```rust
-#[cgp_type]
-pub trait HasNameType {
-    type Name;
-}
-```
-
-- If no provider name is given in `#[cgp_type]`, a default provider name with the type name plus `TypeProvider` postfix is used. So the above code is the same as:
-
-```rust
-#[cgp_type(NameTypeProvider)]
-pub trait HasNameType {
-    type Name;
-}
-```
-
-- `#[cgp_type]` has the same base behavior as `#[cgp_component]`, but generates additional constructs such as a blanket implementation for `UseType`:
-
-```rust
-#[cgp_impl(UseType<Name>)]
-impl<Name> NameTypeProvider {
-    type Name = Name;
-}
-```
-
-## `UseType` Provider
-
-- The `UseType` struct is defined by CGP, which is implemented by providers that use `#[cgp_type]` as a design pattern:
-
-```rust
-pub struct UseType<Type>(pub PhantomData<Type>);
-```
-
-- The `UseType` pattern allows a concrete context to implement an abstract type by delegating it to `UseType`. For example:
-
-```rust
-delegate_components! {
-    Person {
-        NameTypeProviderComponent:
-            UseType<String>,
-    }
-}
-```
-
-would implement `HasNameType` for `Person` with `Name` being implemented as `String`.
-
-## Direct Implementation Type Traits
-
-- An abstract type can always be directly implemented on a concrete context through its consumer trait.
-- For example, instead of using `UseType`, we can implement `HasNameType` as follows:
-
-```rust
-impl HasNameType for Person {
-    type Name = String;
-}
-```
-
-- The direct implementation of a type trait is not much more verbose than the indirect implementation through `delegate_components!` and `UseType`. So it may be preferred especially for simple use cases.
-- For users who are new to CGP, it is preferred to always show a direct implementation of the type traits. This helps the user to understand that CGP abstract types are nothing more than vanilla Rust traits that contain associated types.
-
-## Abstract Type in Getter Traits
-
-- When a getter trait contains only one getter method, it can define a local associated type and use it as the return type of the getter method. For example:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasName {
-    type Name;
-
-    fn name(&self) -> &Self::Name;
-}
-```
-
-- This allows the abstract `Name` type to be automatically inferred based on the `name` field of the concrete context.
-- This approach is useful when the only purpose of the abstract type is to be used as the return type of the getter method, but not anywhere else.
-
-## Abstract Type import with `#[use_type]`
-
-The `#[use_type]` attribute can be used as a more idiomatic way to import abstract types in `#[cgp_fn]`, `#[cgp_impl]`, and `#[cgp_component]`. For example, given:
-
-```rust
-pub trait HasScalarType {
-    type Scalar: Clone + Mul<Output = Self::Scalar>;
-}
-
-#[cgp_fn]
-#[use_type(HasScalarType::Scalar)]
-fn rectangle_area(
-    &self,
-    #[implicit] width: Scalar,
-    #[implicit] height: Scalar,
-) -> Scalar
-{
-    width * height
-}
-```
-
-The code would be desugared to:
-
-```rust
-pub trait RectangleArea: HasScalarType {
-    fn rectangle_area(&self) -> <Self as HasScalarType>::Scalar;
-}
-
-impl<Context> RectangleArea for Context
-where
-    Self: HasField<Symbol!("width"), Value = <Self as HasScalarType>::Scalar>
-        + HasField<Symbol!("height"), Value = <Self as HasScalarType>::Scalar>
-        + HasScalarType,
-{
-    fn rectangle_area(&self) -> <Self as HasScalarType>::Scalar {
-        let width: <Self as HasScalarType>::Scalar =
-            self.get_field(PhantomData::<Symbol!("width")>).clone();
-
-        let height: <Self as HasScalarType>::Scalar =
-            self.get_field(PhantomData::<Symbol!("height")>).clone();
-
-        width * height
-    }
-}
-```
-
-Compared to just including an abstract type in the trait bound or supertrait, `#[use_type]` replaces all occurrences of the abstract type identifier and replaces it with the fully qualified syntax `<Self as Trait>::Type`. This significantly reduces the boilerplate of adding prefixes like `Self::` to every occurrence of the abstract type.
-
-The fully qualified syntax also avoids any potential ambiguity. In particular, it allows nested associated types to be used without needing the user to specify the fully qualified syntax themselves.
-
-`#[use_type]` can also be used in both `#[cgp_impl]` and `#[cgp_component]` to import abstract types in the same way. For example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-#[use_type(HasScalarType::Scalar)]
-pub trait CanCalculateArea {
-    fn area(&self) -> Scalar;
-}
-
-#[cgp_impl(new RectangleArea)]
-#[use_type(HasScalarType::Scalar)]
-impl AreaCalculator {
-    fn area(&self, #[implicit] width: Scalar, #[implicit] height: Scalar) -> Scalar {
-        width * height
-    }
-}
-```
-
-would first be desugared to the following, before the rest of the desugaring process:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea: HasScalarType {
-    fn area(&self) -> <Self as HasScalarType>::Scalar;
-}
-
-#[cgp_impl(new RectangleArea)]
-impl AreaCalculator
-where
-    Self: HasScalarType,
-{
-    fn area(
-        &self,
-        #[implicit] width: <Self as HasScalarType>::Scalar,
-        #[implicit] height: <Self as HasScalarType>::Scalar,
-    ) -> <Self as HasScalarType>::Scalar {
-        width * height
-    }
-}
-```
-
-Whenever possible, it is strongly recommended to always use `#[use_type]` to import abstract types, for all use cases in `#[cgp_fn]`, `#[cgp_impl]`, and `#[cgp_component]`. This significantly reduces the boilerplate of using abstract types, and makes the code much more readable.
-
-It also enables better syntax extension in the future, which would require explicit use of `#[use_type]` to get the necessary metadata for the syntax extension to work.
-
-## Higher Order Providers
-
-Higher order providers is a CGP design pattern that allows providers to accept other providers as generic parameters.
-
-For example, with the `CanCalculateArea` trait:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea {
-    fn area(&self) -> f64;
-}
-```
-
-we can define a higher order provider `ScaledArea` as follows:
-
-```rust
-#[cgp_impl(ScaledArea<InnerCalculator>)]
-impl AreaCalculator
-where
-    InnerCalculator: AreaCalculator<Self>,
-{
-    fn area(&self, #[implicit] scale_factor: f64) -> f64 {
-        InnerCalculator::area(self) * scale_factor * scale_factor
-    }
-}
-```
-
-The behavior of the inner area calculation is now determined by the `InnerCalculator` generic parameter, instead of the context.
-
-## `#[use_provider]` Attribute
-
-The `#[use_provider]` attribute can be used to improve the ergonomics of using higher order providers, by hiding the `Self` parameter at the first position of the generic parameter of the provider trait.
-
-For example, the earlier `ScaledArea` provider can be rewritten as:
-
-```rust
-#[cgp_impl(ScaledArea<InnerCalculator>)]
-#[use_provider(InnerCalculator: AreaCalculator)]
-impl AreaCalculator
-{
-    fn area(&self, #[implicit] scale_factor: f64) -> f64 {
-        #[use_provider(InnerCalculator)] self.area() * scale_factor * scale_factor
-    }
-}
-```
-
-The outer `#[use_provider]` attribute automatically adds the `Self` parameter to the generic parameter of `InnerCalculator`, so that the user only needs to write `InnerCalculator: AreaCalculator` instead of `InnerCalculator: AreaCalculator<Self>`. The trait bound is then added to the `where` clause of the impl block.
-
-The inner `#[use_provider]` attribute accepts a `Provider` type and can be applied on a method call expression. It converts the expression from the form `receiver.method(args)` to `Provider::method(receiver, args)`, so that the method call is dispatched to the specified provider instead of through the context.
-
-It is strongly recommended to always use `#[use_provider]` when implementing higher order providers, as it significantly reduces the boilerplate of writing higher order providers, and makes the code much more readable. Without it, the reader may be confused by the extra `Self` generic parameter at the first position of the provider trait, which breaks the illusion that the provider trait appears the same as the consumer trait.
-
-## Non-higher-order providers with generic parameters
-
-Note that not all providers that contain generic parameters are higher order providers. They only become higher order providers when the generic parameters are used with provider trait constraints in the `where` clause.
-
-For example, the following provider is not a higher order provider:
-
-```rust
-#[cgp_impl(new GetName<Tag>)]
-impl<Tag> NameGetter
-where
-    Self: HasField<Tag, Value = String>,
-{
-    fn name(&self) -> &str {
-        self.get_field(PhantomData)
-    }
-}
-```
-
-The code above uses the `UseField` pattern, where the `Tag` type is used as the field name to access the corresponding field value via `HasField`. But since there is no constraint for `Tag` to implement any provider trait, the provider `GetName` is not a higher order provider.
-
-## Generic Parameters
-
-CGP traits can also contain generic parameters, for example:
-
-```rust
-#[cgp_component(AreaCalculator)]
-pub trait CanCalculateArea<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-defines a further modularized version of the earlier `CanCalculateArea` trait, where the area calculation is done on the generic `Shape` parameter instead of the context.
-
-When the provider trait is generated, the generic parameters are appended after the `Context` parameter. For example:
-
-```rust
-pub trait AreaCalculator<Context, Shape>: IsProviderFor<AreaCalculatorComponent, Context, Shape> {
-    fn area(context: &Context, shape: &Shape) -> f64;
-}
-```
-
-In the `IsProviderFor` supertrait, all generic parameters a grouped together into a tuple and placed in the last `Params` position.
-
-When the trait contains lifetime generic parameters, they are wrapped in the `Life` type, which lifts lifetimes into types:
-
-```rust
-pub struct Life<'a>(pub PhantomData<*mut &'a ()>);
-```
-
-## `UseDelegate` Provider
-
-For traits containing generic parameters, the `#[cgp_component]` macro supports additional option to generate `UseDelegate` providers that dispatch providers based on the generic type using an inner type-level table.
-
-For example, given:
-
-```rust
-#[cgp_component {
-    provider: AreaCalculator,
-    derive_delegate: UseDelegate<Shape>,
-}]
-pub trait CanCalculateArea<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-The following provider will be generated:
-
-```rust
-#[cgp_impl(UseDelegate<Components>)]
-impl<Shape, Components> AreaCalculator<Shape>
-where
-    Components: DelegateComponent<Shape>,
-    Components::Delegate: AreaCalculator<Shape>,
-{
-    fn area(&self, shape: &Shape) -> f64 {
-        Components::Delegate::area(self, shape)
-    }
-}
-```
-
-Only the generic type specified in `UseDelegate`'s generic parameter will be used as the key. For example, the `UseDelegate` provider above dispatches based on `Shape` alone.
-
-The `UseDelegate` type is defined by CGP, but one can define and use other delegate providers in similar ways. For example:
-
-```rust
-pub struct UseInputDelegate<Input>(pub PhantomData<Input>);
-
-#[cgp_component {
-    provider: Computer,
-    derive_delegate: [
-        UseDelegate<Code>,
-        UseInputDelegate<Input>,
-    ],
-}]
-pub trait CanCompute<Code, Input> {
-    type Output;
-
-    fn compute(&self, _code: PhantomData<Code>, input: Input) -> Self::Output;
-}
-```
-
-the `CanCompute` trait above defines two delegate providers. The default `UseDelegate` provider dispatches based on the `Code` type, while the local `UseInputDelegate` provider dispatches based on the `Input` type.
-
-## Nested Table Definition
-
-`delegate_components!` supports defining nested type-level tables within the outer table definition.
-
-For example:
-
-```rust
-delegate_components! {
-    MyApp {
-        AreaCalculatorComponent:
-            UseDelegate<new AreaCalculatorComponents {
-                Rectangle:
-                    RectangleArea,
-                Circle:
-                    CircleArea,
-                ...
-            }>,
-        ...
-    }
-}
-```
-
-is the same as:
-
-```rust
-delegate_components! {
-    MyApp {
-        AreaCalculatorComponent:
-            UseDelegate<AreaCalculatorComponents>,
-        ...
-    }
-}
-
-delegate_components! {
-    new AreaCalculatorComponents {
-        Rectangle:
-            RectangleArea,
-        Circle:
-            CircleArea,
-        ...
-    }
-}
-```
-
-The example above helps `MyApp` implement `CanCalculateArea<Rectangle>` by delegating to the `Rectangle` provider, and `CanCalculateArea<Circle>` to `CircleArea`, via the `UseDelegate` provider using `AreaCalculatorComponents` as the inner lookup table based on the `Shape` type.
-
-## Cross-Context Dependencies
-
-When the main target of a trait is a generic parameter instead of a context, like:
-
-```rust
-#[cgp_component(AreaOfShapeCalculator)]
-pub trait CanCalculateAreaOfShape<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-This allows multiple `Shape` contexts to share dependencies through a common `Context` type.
-
-For example, we can introduce a `Scalar` type that is shared by all shapes:
-
-```rust
-#[cgp_type]
-pub trait HasScalarType {
-    type Scalar: Float;
-}
-
-#[cgp_component(AreaOfShapeCalculator)]
-pub trait CanCalculateAreaOfShape<Shape>: HasScalarType {
-    fn area(&self, shape: &Shape) -> Self::Scalar;
-}
-```
-
-- This way, individual shape types like `Rectangle` and `Circle` do not need to implement `HasScalarType`, or worry about all shapes using the same `Scalar` type to interop with each others.
-
-- The common context type can also provide value-level dependency injection, such as:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasGlobalScaleFactor: HasScalarType {
-    fn global_scale_factor(&self) -> Self::Scalar;
-}
-
-#[cgp_impl(new GloballyScaledArea<InnerCalculator>)]
-impl<Shape> AreaCalculator<Shape>
-where
-    Self: HasGlobalScaleFactor,
-    InnerCalculator: AreaCalculator<Self, Shape>,
-{
-    fn area(&self, shape: &Shape) -> f64 {
-        InnerCalculator::area(self, shape) * self.global_scale_factor()
-    }
-}
-```
-
-This way, a global scale factor can be stored in the common context, and not have to have the value replicated in all shape values.
-
-The common context can also provide lazy binding of provider implementations, so that each shape type may bind to different provider in different concrete contexts. For example:
-
-```rust
-pub struct BaseApp;
-
-delegate_components! {
-    BaseApp {
-        ScaleFactorTypeProviderComponent:
-            UseType<f32>,
-        AreaOfShapeCalculatorComponent:
-            UseDelegate<new AreaOfShapeCalculatorComponents {
-                Rectangle:
-                    RectangleArea,
-                Circle:
-                    CircleArea,
-            }>,
-    }
-}
-
-#[derive(HasField)]
-pub struct ScaledApp {
-    pub global_scale_factor: f64,
-}
-
-delegate_components! {
-    BaseApp {
-        ScaleFactorTypeProviderComponent:
-            UseType<f64>,
-        AreaOfShapeCalculatorComponent:
-            UseDelegate<new AreaOfShapeCalculatorComponents {
-                Rectangle:
-                    GloballyScaledArea<RectangleArea>,
-                Circle:
-                    GloballyScaledArea<CircleArea>,
-            }>,
-    }
-}
-```
-
-In the above example, the `Rectangle` type would have an unscaled area implementation with `BaseApp`, but a globally scaled area implementation with `ScaledApp`.
-
-## `UseContext` Provider
-
-- CGP defines a special `UseContext` provider that is automatically implemented for all CGP traits that are defined with macros like `#[cgp_component]`:
-
-```rust
-struct UseContext;
-```
-
-- For example, the `UseContext` implementation generated for `CanCalculateArea` is as follows:
-
-```rust
-#[cgp_impl(UseContext)]
-impl<Shape> AreaOfShapeCalculator<Shape>
-where
-    Self: CanCalculateAreaOfShape<Shape>,
-{
-    fn area(&self, shape: &Shape) -> Self::Scalar {
-        self.area(shape)
-    }
-}
-```
-
-There is a duality between `UseContext` and the blanket implementation of consumer traits. Whereas the blanket implementation of the `CanCalculateArea` consumer trait uses a delegated provider that implements `AreaCalculator` to implement `CanCalculateArea`, the `UseContext` provider implements the `AreaCalculator` provider trait using `CanCalculateArea` implemented by the context.
-
-However, trying to delegate a consumer trait to `UseContext` would create a circular dependency, resulting in compile-time errors.
-
-### `UseContext` as Default in Higher Order Providers
-
-A higher order provider may be configured to use `UseContext` as the default inner provider, so that the default provider wired in the context is used when no explicit provider is specified.
-
-For example, we can define an `IterSumArea` higher-order provider that uses `UseContext` as a default inner provider:
-
-```rust
-pub struct IterSumArea<InnerCalculator = UseContext>(pub PhantomData<InnerCalculator>);
-
-#[cgp_impl(IterSumArea<InnerCalculator>)]
-impl<Shape, InnerCalculator, InnerShape> AreaCalculator<Shape>
-where
-    Self: HasScalarType,
-    for<'a> &'a Shape: IntoIterator<Item = &'a InnerShape>
-    InnerCalculator: AreaCalculator<Self, InnerShape>,
-{
-    fn area(&self, shapes: &Shape) -> Self::Scalar {
-        let mut total = Self::Scalar::default();
-        for shape in shapes.into_iter() {
-            total += InnerCalculator::area(self, shape);
-        }
-        total
-    }
-}
-```
-
-The struct definition of `IterSumArea` is defined with `UseContext` being a default generic parameter for `InnerCalculator`.
-
-This way, when no explicit provider is specified, `IterSumArea` would just use the wiring in the context to calculate the area for the inner shape.
-
-The inner provider can be overridden to enable static binding that does not require routing through the main context. This can be useful for simplifying the wiring on the main context, or for overridding the existing wiring in the main context.
-
-Note that the default `UseContext` provider is only applicable for higher order providers with explicit struct definitions that contain the default generic parameter. Otherwise, there is no default provider involved, and the inner provider must always be specified explicitly.
-
-## Check Traits
-
-The CGP component wiring is lazy, i.e. when a `DelegateComponent` impl is defined, the type system doesn't check whether the corresponding traits are truly implemented by a context with all transitive dependencies satisfied.
-
-When a consumer trait is used with a context, but there are unsatisfied dependencies, the compiler will produce short error messages that are difficult to debug and identify the root cause.
-
-To ensure that a consumer is implemented by a context, we implement check traits to assert at compile time that the wiring is complete.
-
-For example, given:
-
-```rust
-#[cgp_auto_getter]
-pub trait HasName {
-    fn name(&self) -> &str;
-}
-
-#[cgp_component(Greeter)]
-pub trait CanGreet {
-    fn greet(&self);
-}
-
 #[cgp_impl(new GreetHello)]
 impl Greeter
 where
@@ -1790,460 +388,669 @@ where
         println!("Hello, {}!", self.name());
     }
 }
-
-#[derive(HasField)]
-pub struct Person {
-    pub first_name: String,
-}
-
-delegate_components! {
-    Person {
-        GreeterComponent:
-            GreetHello,
-    }
-}
 ```
 
-The `Person` struct above incorrectly contains a `first_name` field, instead of the `name` field expected by `GreetHello` via `HasName`.
-
-We can write a check trait to check whether `Person` implements `CanGreet` as follows:
-
-```rust
-trait CanUsePerson: CanGreet {}
-impl CanUsePerson for Person {}
-```
-
-A check trait like `CanUsePerson` is a dummy trait that includes the dependencies that we want to check as its super trait.
-
-The check trait contains an empty body that can be trivially implemented if all the supertrait constraints are satisfied.
-
-We then implement the check trait for the context type that we want to check. If the type also implements all the supertraits, then the implementation is successful and the test passes.
-
-## `CanUseComponent` Trait
-
-It is insufficient to use check traits alone in case when a check fails. This is because Rust would not produce sufficient details in the error message to help inform us on what dependency is missing.
-
-For example, the `CanUsePerson` check earlier only output a vague error that tells us `GreetHello: Greeter<Person>` is not implemented, without telling us why.
-
-We can use check traits together with `CanUseComponent` as their supertraits to force the Rust compiler to show more error details.
-
-The `CanUseComponent` trait is a check trait defined as follows:
+The provider name goes in the attribute argument; a leading `new` keyword also declares the
+`struct GreetHello;`. **Prefer the unqualified `impl Greeter` form and let the macro insert the
+context parameter** — omitting `for Context` is what makes a provider read like an ordinary trait
+impl. Write the explicit `impl<Context> Greeter for Context` only when you must bound or name the
+context readably (for example a lifetime or HRTB the sugar cannot express); it must then be declared
+in the impl generics. Remember that `self`/`Self` here mean the context. `#[cgp_impl]` desugars to:
 
 ```rust
-pub trait CanUseComponent<Component, Params: ?Sized = ()> {}
-
-impl<Context, Component, Params: ?Sized> CanUseComponent<Component, Params> for Context
-where
-    Context: DelegateComponent<Component>,
-    Context::Delegate: IsProviderFor<Component, Context, Params>,
-{}
-```
-
-`CanUseComponent` for a CGP component is automatically implemented for a context, if a context delegates the component to a provider, and the provider implements the provider trait for that context.
-
-The check is done via `IsProviderFor`, to ensure that the compiler generates appropriate error messages when there is any unsatisfied constraint. Without `IsProviderFor`, Rust would conceal the indirect errors and only show that the provider trait is not implemented without providing further details.
-
-## `check_components!` Macro
-
-Additionally, instead of defining the check traits manually, we can use `check_components!` to simplify the definition of the compile time tests.
-
-The `check_components!` macro generates code that checks the CGP wiring of components using `CanUseComponent`.
-
-The static check is written with `check_components!` as follow:
-
-```rust
-check_components! {
-    Person {
-        GreeterComponent,
-    }
-}
-```
-
-Behind the scenes, the macro desugars the code above to:
-
-```rust
-trait __CheckPerson<Component, Params: ?Sized>: CanUseComponent<Component, Params> {}
-impl __CheckPerson<GreeterComponent, ()> for Person {}
-```
-
-The check trait `__CheckPerson` is defined as a local alias trait to check the implementation of `CanUseComponent` with the same parameters. The name of the check trait follows `__Check{Context}` format, where `Context` is the target context type being checked.
-
-For each `Component` listed in `check_components!`, an impl block for `__CheckPerson` is defined.
-
-The example implementation `__CheckPerson<GreeterComponent, ()>` is implemented only if:
-    - `Person` implements `CanUseComponent<Component, Params>`.
-    - `Person`'s delegate for `GreeterComponent`, `GreetHello`, implements `IsProviderFor<GreeterComponent, Person, ()>`.
-
-Recall that `#[cgp_impl]` or `#[cgp_provider]` generates the implementation of `GreetHello: IsProviderFor<GreeterComponent, Person, ()>` with the same constraints required for `GreetHello` to implement `Greeter<Person>`.
-
-Since the `name` field is missing, the compiler reports the error that `HasField<symbol!("name")>` is not implemented for `Person`. The root cause is often hidden among many other non-essential messages, and types such as `symbol!("name")` are expanded into their Greek alphabets form.
-
-### Specifying check trait name
-
-The name of the generated check trait can be overridden using a `#[check_trait] attribute. For example:
-
-```rust
-check_components! {
-    #[check_trait(CanUsePerson)]
-    Person {
-        GreeterComponent,
-    }
-}
-```
-
-would generate a check trait of the name `CanUsePerson` instead of `__CheckPerson`.
-
-This is mainly useful when there are multiple use of `check_components!` in the same module, which would result in name conflict for the default check trait name.
-
-### Generic Parameters in `check_components!`
-
-`check_components!` can be used with CGP traits containing generic parameters. For example, given:
-
-```rust
-#[cgp_component(AreaOfShapeCalculator)]
-pub trait CanCalculateAreaOfShape<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-and the following check:
-
-```rust
-check_components! {
-    MyApp {
-        AreaOfShapeCalculatorComponent:
-            Rectangle,
-    }
-}
-```
-
-would be desugared to:
-
-```rust
-trait __CheckMyApp<Component, Params: ?Sized>:
-    CanUseComponent<Component, Params>
-{
-}
-
-impl __CheckMyApp<AreaOfShapeCalculatorComponent, Rectangle> for MyApp {}
-```
-
-which would check for the implementation of `MyApp: CanCalculateAreaOfShape<Rectangle>`.
-
-## Multiple Generic Parameters in `check_components!`
-
-When there are more than one generic parameters, they are grouped into a tuple and placed in `Params`. For example, given:
-
-```rust
-#[cgp_component(AreaOfShapeCalculator)]
-pub trait CanCalculateAreaOfShape<Shape, Scalar> {
-    fn area(&self, shape: &Shape) -> Scalar;
-}
-```
-
-and the following check:
-
-```rust
-check_components! {
-    MyApp {
-        AreaOfShapeCalculatorComponent:
-            (Rectangle, f64),
-    }
-}
-```
-
-would be desugared to:
-
-```rust
-trait __CheckMyApp<Component, Params: ?Sized>:
-    CanUseComponent<Component, Params>
-{
-}
-
-impl __CheckMyApp<AreaOfShapeCalculatorComponent, (Rectangle, f64)> for MyApp {}
-```
-
-which would check for the implementation of `MyApp: CanCalculateAreaOfShape<Rectangle, f64>`.
-
-## Array Syntax in `check_components!`
-
-When we want to check the implementation of a CGP component with multiple generic parameters, we can use the array syntax to group them together. For example:
-
-```rust
-check_components! {
-    MyApp {
-        AreaCalculatorComponent: [
-            Rectangle,
-            Circle,
-        ],
-    }
-}
-```
-
-is the same as writing:
-
-```rust
-check_components! {
-    MyApp {
-        AreaCalculatorComponent:
-            Rectangle,
-        AreaCalculatorComponent:
-            Circle,
-    }
-}
-```
-
-We can also group by the `Component` key instead of the generic `Param`. For example:
-
-```rust
-check_components! {
-    MyApp {
-        [
-            AreaCalculatorComponent,
-            RotatorComponent,
-        ]: Rectangle,
-    }
-}
-```
-
-We can also group by both `Component` and `Param`. For example:
-
-```rust
-check_components! {
-    MyApp {
-        [
-            AreaCalculatorComponent,
-            RotatorComponent,
-        ]: [
-            Rectangle,
-            Circle,
-        ],
-    }
-}
-```
-
-would be the same as writing:
-
-
-```rust
-check_components! {
-    MyApp {
-        AreaCalculatorComponent: Rectangle,
-        RotatorComponent: Rectangle,
-        AreaCalculatorComponent: Circle,
-        RotatorComponent: Circle,
-    }
-}
-```
-
-### `#[check_providers]` attribute
-
-The `check_components!` macro supports the use of `#[check_providers]` attribute to implement the check of component implementation on specific providers. For example:
-
-```rust
-check_components! {
-    #[check_trait(CheckScaledRectangleProviders)]
-    #[check_providers(
-        RectangleAreaCalculator,
-        ScaledAreaCalculator<RectangleAreaCalculator>,
-    )]
-    ScaledRectangle {
-        AreaCalculatorComponent,
-    }
-}
-```
-
-Would implement checks that both `RectangleAreaCalculator` and `ScaledAreaCalculator<RectangleAreaCalculator>` implement `AreaCalculator<ScaledRectangle>`.
-
-The generated code for `#[check_providers]` is as follows:
-
-```rust
-trait CheckScaledRectangleProviders<__Component__, __Params__: ?Sized>:
-    IsProviderFor<__Component__, ScaledRectangle, __Params__>
-{
-}
-
-impl CheckScaledRectangleProviders<AreaCalculatorComponent, ()> for RectangleAreaCalculator {}
-
-impl CheckScaledRectangleProviders<AreaCalculatorComponent, ()>
-    for ScaledAreaCalculator<RectangleAreaCalculator>
-{}
-```
-
-Compared to non-provider checks, the check trait has `IsProviderFor` as its supertrait, and the impl blocks are implemented for the provider types instead of the context type.
-
-The provider checks are especially useful for the case of checking higher order providers, where each of the provider implementation can be checked separately.
-
-For example, if the missing dependency affects `RectangleAreaCalculator`, then the check above would show errors on both `RectangleAreaCalculator` and `ScaledAreaCalculator<RectangleAreaCalculator>`. But if the missing dependency affects only `ScaledAreaCalculator<RectangleAreaCalculator>`, then the check above would only show error on `ScaledAreaCalculator<RectangleAreaCalculator>`, which can help narrow down the root cause.
-
-## `delegate_and_check_components!` Macro
-
-The `delegate_and_check_components!` macro combines both the use of `delegate_components!` and `check_components!` into a single macro, so that every delegation is automatically checked without needing to write a separate `check_components!` block.
-
-For example, given the following:
-
-```rust
-delegate_and_check_components! {
-    ScaledRectangle {
-        AreaCalculatorComponent:
-            ScaledAreaCalculator<RectangleAreaCalculator>,
-    }
-}
-```
-
-is equivalent to writing:
-
-```rust
-delegate_components! {
-    ScaledRectangle {
-        AreaCalculatorComponent:
-            ScaledAreaCalculator<RectangleAreaCalculator>,
-    }
-}
-
-check_components! {
-    #[check_trait(__CanUseScaledRectangle)]
-    ScaledRectangle {
-        AreaCalculatorComponent,
-    }
-}
-```
-
-The default name of the check trait generated by `delegate_and_check_components!` is `__CanUse{Context}`. This is different from the default name of the check trait generated by `check_components!`, which is `__Check{Context}`, so that both macros can be called at most once in the same module without name conflict.
-
-The check trait name can also be overridden by using `#[check_trait]` attribute:
-
-```rust
-delegate_and_check_components! {
-    #[check_trait(TestScaledRectangle)]
-    ScaledRectangle {
-        AreaCalculatorComponent:
-            ScaledAreaCalculator<RectangleAreaCalculator>,
-    }
-}
-```
-
-It is recommended to use `delegate_and_check_components!` over `delegate_components!` in the main context wiring, so that the wiring is always checked and any error can be caught as early as possible.
-
-On the other hand, `delegate_components!` alone can be still be used for building intermediary provider tables that group multiple providers together.
-
-`delegate_components!` may also be used in more complex cases, such as when complex higher order providers or generic parameters are involved. In those cases, checking the use on separate `check_components!` block may be more flexible.
-
-### Specifying generic parameters with `#[check_params]`
-
-When delegating a CGP trait with generic parameters, a `#[check_params]` attribute is required to specify the generic parameters for the check.
-
-For example, given:
-
-```rust
-#[cgp_component(AreaOfShapeCalculator)]
-pub trait CanCalculateAreaOfShape<Shape> {
-    fn area(&self, shape: &Shape) -> f64;
-}
-```
-
-The parameters would need to be specified, so that the checks can be done on the specified paramters:
-
-```rust
-delegate_and_check_components! {
-    MyApp {
-        #[check_params(
-            Rectangle,
-            Circle,
-        )]
-        AreaOfShapeCalculatorComponent:
-            UseDelegate<new AreaOfShapeCalculatorComponents {
-                Rectangle:
-                    RectangleArea,
-                Circle:
-                    CircleArea,
-            }>,
-    }
-}
-```
-
-Without `#[check_params]`, the generated check trait would check for the implementation of `CanUseComponent<AreaOfShapeCalculatorComponent, MyApp, ()>`, which would not be satisfied since the generic parameter for `CanCalculateAreaOfShape` is missing.
-
-## Skipping checks with `#[skip_check]`
-
-We can also skip checks for specific components by using `#[skip_check]` attribute. For example:
-
-
-```rust
-delegate_and_check_components! {
-    ScaledRectangle {
-        #[skip_check]
-        AreaCalculatorComponent:
-            ScaledAreaCalculator<RectangleAreaCalculator>,
-    }
-}
-```
-
-This is mainly useful for the case when the check for that component is specifically done separately. With `#[skip_check]`, one don't need to define another `delegate_components!` block just to wire components without checks.
-
-## Modularity Hierarchy
-
-The [reference for modularity hierarchy](references/modularity-hierarchy.md) summarizes the modularity hierarchy of the use of CGP and vanilla Rust constructs, using the `Serialize` trait from `serde` as the base example.
-
-## Debugging Techniques
-
-When compile errors are shown for a failed component wiring, try to identify the root cause by walking through the transitive dependencies shown within the error messages.
-
-When you suspect that a required CGP component is not implemented for a context, try include that component in `check_components!` so that the error can be narrowed down.
-
-Note that not all trait are necessarily CGP component. An unsatisfied dependency can also be just regular trait or blanket trait. These dependencies cannot be verified via `check_components!`.
-
-## General Instructions for LLMs
-
-When interacting with the user, assume that the user only has basic Rust programming experience and is not familiar with any concept in CGP.
-
-Only provide further explanation for CGP concepts if the user asks for the specific explanation. Otherwise, assume that the user already understand the CGP concepts used in the code.
-
-When the user asks you to explain CGP concepts:
-    - You should assume that the user is not familiar with advanced Rust concepts, including generics, traits, blanket implementations, and the coherence problem.
-    - You should assume that the user is not familiar with functional programming and type-level programming concepts. So try to explain concepts like type-level tables, lists, or string, using more familiar OOP concepts, such as v-table lookup.
-    - Use full sentences and explain CGP concepts in ways that are approachable and engaging to beginners. You should include additional explanation for advanced concepts such as generics when applicable.
-
-When the user ask to explain a specific wiring in `delegate_components!`, always lookup the definition of the components and providers to give more details in your explanation. For example, if the user asks you to explain the following code:
-
-```rust
-delegate_components! {
-    Person {
-        GretterComponent:
-            GreetHello,
-    }
-}
-```
-
-you should look up for the definitions of `GreetComponent` and `GreetHello`. This includes finding out what are the names of the consumer trait and provider trait for `GreetComponent`, and the trait or impl body.
-
-When the user asks about the implementation details of a provider, always perform lookup on the original definition, and also the definition of all dependencies that the provider uses. For example, if the user asks you to explain the following:
-
-```rust
-#[cgp_impl(GreetHello)]
-impl<Context> Greeter for Context
+#[cgp_new_provider]
+impl<Context> Greeter<Context> for GreetHello
 where
     Context: HasName,
 {
-    fn greet(&self) {
-        println!("Hello, {}!", self.name());
+    fn greet(context: &Context) {
+        println!("Hello, {}!", context.name());
     }
 }
 ```
 
-you should lookup for the definition of `Greeter` and `HasName`, and include the details of those definitions in your explanation.
+The lower forms are what you mostly *read* rather than write. `#[cgp_provider]` is applied to a
+provider-trait impl written directly on an existing provider struct; it passes the impl through and
+auto-generates the matching `IsProviderFor` impl from the same `where` clause.
+`#[cgp_new_provider]` is the same but also declares the provider struct (a generic provider gets a
+`PhantomData` field over its parameters, e.g. `pub struct Multiply<Field>(PhantomData<Field>);`).
+The attribute argument can override the component name, which otherwise defaults to the provider
+trait's name plus `Component`. One special `#[cgp_impl]` form, `#[cgp_impl(Self)]`, bypasses the
+provider rewrite entirely and emits the block as a *direct* consumer-trait impl on the concrete
+context (the `for Context` clause is then required) — useful when you want to implement a consumer
+trait by hand while still applying companion attributes such as `#[use_provider]`.
 
-When the user asks about how a provider is implemented for a context, also perform lookup based on the specific wiring for the context, and find out what other providers that implementation is linked to. For example, if you need to explain `GreetHello`, and you find the following wiring:
+**Strongly prefer the modern, vanilla-looking idioms when you write CGP, and reach for the explicit
+forms only when a construct genuinely cannot express the case.** Each idiom below trades a piece of
+visible machinery for syntax that reads like ordinary Rust:
+
+- **Write providers with `#[cgp_impl]`** (not `#[cgp_provider]`/`#[cgp_new_provider]`), omitting
+  `for Context` so the header reads `impl Greeter`.
+- **Declare dependencies with attributes, not hand-written bounds:** capability dependencies with
+  [`#[uses(...)]`](references/functions-and-getters.md), inner-provider dependencies with
+  [`#[use_provider(...)]`](references/higher-order-providers.md), instead of raw `Self:` /
+  `Provider: …<Self>` `where` clauses. When one of these attributes — or
+  [`#[use_type]`](references/abstract-types.md) — carries several arguments, put them all in one
+  attribute separated by commas (`#[uses(A, B)]`, `#[use_type(T.X, U.Y)]`) rather than stacking the
+  same attribute repeatedly; one attribute reads as a single dependency list.
+- **Read context fields with [`#[implicit]`](references/functions-and-getters.md) arguments** rather
+  than a getter trait — this is the default for *any* field a provider reads from its own context,
+  including one several providers each read. An implicit argument reads only from `self` and takes a
+  plain `&T` by reference without cloning. Use `#[cgp_auto_getter]` sparingly, only where an implicit
+  argument cannot reach: a getter for a field on *another* type required as a `where` bound on it
+  (`Request: HasBasicAuthHeader<Self>`), an accessor other code depends on as a named capability, or a
+  getter carrying an associated type inferred from the field. Reserve `#[cgp_getter]` for the advanced
+  case of choosing the source field per context.
+- **Add non-type capability supertraits with [`#[extend(...)]`](references/functions-and-getters.md)**
+  rather than native `: Supertrait` syntax, which reads as OOP-style inheritance rather than a
+  capability import.
+- **Import abstract types with [`#[use_type]`](references/abstract-types.md)**, writing the bare
+  alias (`Scalar`, `Error`) instead of a hand-written `: HasScalarType` supertrait and a qualified
+  `Self::Scalar` at every use. This holds even in `#[cgp_component]` definitions: prefer
+  `#[use_type(HasErrorType.Error)]` over `: HasErrorType` + `Self::Error`. When a provider *pins* an
+  abstract type to a concrete one — a `where Self: HasErrorType<Error = AppError>` clause — express
+  that with the equality form `#[use_type(HasErrorType.{Error = AppError})]`, which emits the same
+  `Self: HasErrorType<Error = AppError>` bound; the right-hand side may even name another imported
+  alias (`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]`
+  unifies two abstract types). The equality form is a `#[cgp_impl]`/`#[cgp_fn]` tool — it is rejected
+  on `#[cgp_component]`.
+- **Dispatch a generic-parameter component with the `open` statement or a namespace**, skipping
+  `#[derive_delegate]`/`UseDelegate` when defining a new component.
+
+The explicit forms remain correct and are what you *read* in generated code and desugaring; the
+exceptions that still need them are narrow — an associated-type-equality bound on a **non-abstract-type**
+trait (`Iterator<Item = u8>`, `From<X>`), which `#[use_type]` cannot spell and which reads more clearly
+as an explicit `where` clause than crammed into an import-shaped `#[uses]` (which now accepts it), a
+lifetime or HRTB that forces a named context, or a **local** associated type such as `Self::Output`,
+which stays qualified because it is the trait's own type, not an imported abstract one. Do *not* leave an
+equality bound on an **abstract-type** trait (`Self: HasErrorType<Error = AppError>`) as a hand-written
+`where` clause — that is exactly what the `#[use_type]` equality form `#[use_type(HasErrorType.{Error = AppError})]`
+replaces; only equality on a trait you would never `#[use_type]` from stays an explicit `where`. For the full legacy-to-modern before/after mapping of each idiom — the
+reference to load whenever you read or modernize existing CGP — see
+[modern-idioms](references/modern-idioms.md).
+
+The provider's `where` clause is where **impl-side dependencies** live: `GreetHello` requires
+`Self: HasName`, but `CanGreet` exposes no such bound, so a caller bounding on `CanGreet` never sees
+`HasName`. The wiring satisfies each dependency by resolving it through the same context.
+
+A consumer trait is still an ordinary trait: when you don't need multiple implementations, write
+`impl CanGreet for Person { … }` directly and skip the provider machinery entirely.
+
+---
+
+# Wiring: connecting a context to providers
+
+Wiring records, on a context type, which provider supplies each component. The underlying mechanism
+is the `DelegateComponent` trait — a type-level table whose key is the `…Component` marker and whose
+`Delegate` associated type is the chosen provider — but you almost always write it through
+`delegate_components!`:
+
+```rust
+#[derive(HasField)]
+pub struct Person {
+    pub name: String,
+}
+
+delegate_components! {
+    Person {
+        GreeterComponent: GreetHello,
+    }
+}
+```
+
+After this, `Person` implements `CanGreet` and `person.greet()` resolves through the table to
+`GreetHello`. Swapping the table entry is the only change needed to swap behavior.
+
+The macro has a few shorthands. An **array key** maps several components to one provider:
+`[FooComponent, BarComponent]: FooBarProvider`. A leading **`new`** keyword
+(`delegate_components! { new MyComponents { … } }`) also defines `struct MyComponents;`, which is how
+you build an **aggregate provider** — a zero-sized provider that holds a table dispatching each
+component to a sub-provider, so other contexts can delegate a whole group of components to it as one
+reusable unit. A leading **generic list** (`delegate_components! { <T> MyContext<T> { … } }`) wires a
+whole family of contexts at once.
+
+The target of `delegate_components!` is therefore not always a context: it is either a concrete
+context (as `Person` is above) or an aggregate provider (as `MyComponents` is). This distinction
+governs checking — an aggregate provider is dispatched *to* by contexts and is never its own context,
+so it must be wired with plain `delegate_components!` and never `delegate_and_check_components!`; the
+next section explains why.
+
+To understand what wiring *does*, picture the explicit version: `delegate_components!` is equivalent
+to implementing the consumer trait by hand and forwarding to the provider —
+`impl CanGreet for Person { fn greet(&self) { <GreetHello as Greeter<Person>>::greet(self) } }`.
+The macro just generates that plumbing (plus the `IsProviderFor` propagation) for you.
+
+## `UseContext`
+
+`UseContext` is a provider that implements a provider trait by routing back through the context's
+*own* consumer-trait impl — the dual of the consumer blanket impl. Wiring a component to
+`UseContext` means "use whatever this context already does for this trait," which is mainly useful
+as the default inner provider of a higher-order provider (below). Delegating a component directly to
+`UseContext` when the context's only implementation of that component *is* that delegation creates a
+circular dependency and fails to compile.
+
+## Dispatching a generic-parameter component per type with `open`
+
+When a component is generic over a type parameter, you often want a different provider per value of
+that parameter. The modern, preferred way is the **`open` statement** inside `delegate_components!`.
+Given a component `CanCalculateArea<Shape>` (provider `AreaCalculator`), a context dispatches per
+shape like this:
+
+```rust
+delegate_components! {
+    MyApp {
+        open AreaCalculatorComponent;
+
+        @AreaCalculatorComponent.Rectangle: RectangleArea,
+        @AreaCalculatorComponent.Circle: CircleArea,
+    }
+}
+```
+
+The `open … ;` header opens one or more components for per-value wiring and **must lead** the
+block (it comes before any plain `Component: Provider` mappings, or the macro fails to parse). The
+braces are optional when opening a single component (`open AreaCalculatorComponent;`); use the
+braced list `open { A, B };` to open several at once. Each
+`@Component.Key: Provider` entry then assigns a provider for one value of the dispatch parameter; a
+brace group on the final segment shares one provider across several values
+(`@AreaCalculatorComponent.{u32, u64, bool}: SomeProvider`), and a key may carry generics
+(`@SomeComponent.<'a, T> &'a T: SomeProvider`). `open` works through the `RedirectLookup` impl that
+every `#[cgp_component]` already generates, so it needs no extra attribute on the component. It does
+not combine with a joined namespace (`#[prefix(...)]`); that is the full namespace feature.
+
+**Legacy form (read but don't write):** older code dispatches the same way by wrapping a nested
+table in the `UseDelegate` provider —
+`AreaCalculatorComponent: UseDelegate<new AreaCalculatorComponents { Rectangle: RectangleArea, Circle: CircleArea }>`
+— generated by a `#[derive_delegate(UseDelegate<Shape>)]` attribute on the component. This still
+works and is common in existing code, but it is slated for deprecation; prefer `open` for new code.
+Note that some CGP-shipped components (the error and handler families) are still *defined* with
+`#[derive_delegate]` in the library, so you will see `UseDelegate` tables wiring them.
+
+---
+
+# Checking: verifying wiring at compile time
+
+CGP wiring is **lazy**: defining a `delegate_components!` entry does not itself check that the
+provider's transitive dependencies are satisfied. A missing dependency therefore surfaces only when
+the consumer trait is finally used, often as a confusing error. To catch it early and clearly, assert
+the wiring with a check:
+
+```rust
+check_components! {
+    Person {
+        GreeterComponent,
+    }
+}
+```
+
+This generates a check trait whose supertrait is `CanUseComponent<GreeterComponent, ()>` for
+`Person`; if `Person` cannot actually use the component, the compiler reports the missing dependency
+at this site, walking through `IsProviderFor` so the real cause (e.g. a missing
+`HasField<Symbol!("name")>`) is named rather than hidden. For a component with generic parameters,
+list the parameter after the component (`GreeterComponent: Rectangle`), group multiple parameters as
+a tuple (`(Rectangle, f64)`), and use array syntax to check several at once.
+
+`delegate_and_check_components!` fuses wiring and checking in one step, so every delegation is
+verified the moment it is written:
+
+```rust
+delegate_and_check_components! {
+    Person {
+        GreeterComponent: GreetHello,
+    }
+}
+```
+
+Its check trait is named `__CanUse{Context}` (vs. `__Check{Context}` for `check_components!`), so
+both macros can appear once per module without clashing; override with `#[check_trait(Name)]`. When
+the delegated component has generic parameters, add `#[check_params(...)]` on the entry; skip a
+single entry's check with `#[skip_check]`.
+
+**This fused macro is a convenience for basic wiring and for getting started — not the default for
+advanced code.** It exists so a newcomer cannot forget to write a separate `check_components!` and
+then hit confusing lazy-wiring errors, and it derives a check only for the plain `Component: Provider`
+delegation form. It cannot easily derive checks for advanced mappings — generic-parameter dispatch
+(the `open` statement and `@`-path keys), namespaces, or per-layer higher-order checks. **In larger,
+more advanced codebases, keep `delegate_components!` and `check_components!` separate**, which gives
+full control over what is checked: `#[check_providers(...)]` per provider layer, concrete parameters
+for generic keys, and checks over opened or namespaced wiring. The one non-negotiable is that a
+context's wiring *is* checked somehow; which macro you use to do it scales with the wiring's
+complexity.
+
+One case makes `delegate_and_check_components!` not just unnecessary but wrong: an **aggregate
+provider** (the `new MyComponents { … }` table above). That target is a provider other contexts
+delegate to, not a context itself — it has no fields and never implements a provider trait with
+itself in the context position — so the check's `CanUseComponent` assertion on it cannot hold and the
+macro would report spurious failures. Wire an aggregate provider with plain `delegate_components!`;
+it is verified indirectly when a real context that delegates to it is checked, or directly with a
+`#[check_providers(...)]` block that asserts `IsProviderFor` on it. Finally, not every unsatisfied
+bound is a CGP component — some are ordinary or blanket traits that `check_components!` cannot verify.
+
+For a nested [higher-order provider](references/higher-order-providers.md), checking the context
+tells you a layer is broken but not which one. The `#[check_providers(...)]` attribute on a
+`check_components!` table changes the assertion from `CanUseComponent` on the context to
+`IsProviderFor` on each named provider, so a dependency missing only from the outer wrapper errors on
+its line alone while one missing from the inner provider errors on both — pinpointing the layer. See
+[checking](references/checking.md) for the debugging playbook.
+
+---
+
+# Functions and getters: the ergonomic surface
+
+Most basic CGP reads and writes values from the context, and the constructs here make that look like
+plain Rust.
+
+## `HasField` and `#[derive(HasField)]`
+
+`HasField<Tag>` is tag-keyed field access. The `Tag` is a type-level name: `Symbol!("width")` for a
+named field or `Index<0>` for a tuple field. `#[derive(HasField)]` generates one impl per field:
+
+```rust
+#[derive(HasField)]
+pub struct Rectangle {
+    pub width: f64,
+    pub height: f64,
+}
+// generates HasField<Symbol!("width"), Value = f64> and HasField<Symbol!("height"), Value = f64>
+```
+
+Field values are read with `self.get_field(PhantomData::<Symbol!("width")>)`; the `PhantomData`
+carries the tag so type inference knows which field is meant.
+
+## `#[cgp_fn]` and `#[implicit]` arguments
+
+`#[cgp_fn]` turns one function into a single-implementation blanket-impl trait — the simplest entry
+point to CGP. Arguments marked `#[implicit]` are removed from the signature and pulled from context
+fields via `HasField`:
+
+```rust
+#[cgp_fn]
+fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 {
+    width * height
+}
+```
+
+This generates a `RectangleArea` trait (named from the function in PascalCase; override with
+`#[cgp_fn(MyName)]`) with a blanket impl for any context that has `width: f64` and `height: f64`
+fields. Implicit arguments get `.clone()` added automatically for owned values and `.as_str()` for
+`&str`. Generic parameters on the function move to the trait and impl; the `where` clause becomes
+impl-side dependencies on the impl only; generic *method* parameters are intentionally unsupported.
+Prefer implicit arguments for basic code — they make CGP look like ordinary functions.
+
+## `#[uses]`, `#[extend]`, `#[extend_where]`
+
+`#[uses(TraitA, TraitB<Param>)]` (on `#[cgp_fn]` or `#[cgp_impl]`) imports `Self` trait bounds, read
+like a `use` statement. The simple `Trait<Params>` form is idiomatic, but any `where`-clause bound is
+accepted, including associated-type equality (`HasErrorType<Error = AppError>`) — prefer `#[use_type]`'s
+equality form for abstract-type pins:
+
+```rust
+#[cgp_fn]
+#[uses(RectangleArea)]
+fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64 {
+    self.rectangle_area() * scale_factor * scale_factor
+}
+```
+
+`#[extend(Trait)]` adds *supertrait* bounds to the generated trait — the only way to add supertraits
+in `#[cgp_fn]` (whose `where` clauses are impl-side dependencies), and the **preferred** way to add a
+*non-type capability* supertrait on `#[cgp_component]` too: `#[extend(HasName)]` reads as importing a
+capability, whereas the native `pub trait CanGreet: HasName` syntax reads as OOP-style inheritance
+from a parent class, which a CGP supertrait is not. (When the supertrait is an abstract-type component
+whose associated type the signatures name, prefer `#[use_type]` instead — it adds the supertrait *and*
+rewrites the type, and is the recommended form for abstract-type components.) `#[extend_where(Bound)]`
+adds `where` clauses to the generated trait definition (`#[cgp_fn]` only), and accepts arbitrary
+predicates including associated-type equality, unlike `#[uses]`/`#[extend]`. A fourth `#[cgp_fn]`-only
+attribute, `#[impl_generics(Param: Bound)]`, adds a bounded generic parameter to the generated *impl*
+alone — not the trait — which is how a `#[cgp_fn]` body borrows a generic value it does not want to
+expose as a trait parameter (e.g. `#[impl_generics(Name: Display)]` over an `#[implicit] name: &Name`).
+
+## Getters: `#[cgp_auto_getter]`, `#[cgp_getter]`, `UseField`
+
+An `#[implicit]` argument (above) is the default way to read a context field, so a getter trait is
+used *sparingly* — only where an implicit argument cannot reach. Because an implicit argument reads
+only from the provider's own `self` (and takes a plain `&T` by reference, no clone), it covers every
+same-context read, even a field several providers each consume. A getter trait earns its keep in
+three cases it cannot handle: a field that lives on a type *other* than the provider's context, where
+the getter is required as a `where` bound on that type (`Request: HasBasicAuthHeader<Self>`, so there
+is no `self` field to read); an accessor other code depends on as a *named* capability through
+`#[uses(HasName)]` or a supertrait; and a getter carrying an *associated type inferred from the
+field* so the type stays abstract for callers.
+
+`#[cgp_auto_getter]` generates a blanket getter impl over `HasField`, with the field name taken from
+the method name, and is the getter form to prefer for those cases:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasName {
+    fn name(&self) -> &str;
+}
+// blanket impl for any context with a `name` field; &str/&String shorthands handled
+```
+
+A single-getter trait may instead declare a local associated type used as the return type, inferred
+from the field — `trait HasName { type Name; fn name(&self) -> &Self::Name; }`.
+
+`#[cgp_getter]` is an **advanced** tool, reserved for when a context needs full control over which
+field a getter reads from — most getters should use `#[cgp_auto_getter]` or an implicit argument
+instead. It is like `#[cgp_component]` but also provides a `UseField<Tag>` blanket impl, so the
+getter's source field can be chosen by *wiring* rather than fixed to the method name. The
+`UseField<Tag>` provider implements a getter by reading the field named `Tag`, which may differ from
+the method name:
 
 ```rust
 delegate_components! {
     Person {
-        NameGetterComponent:
-            UseField<"person_name">,
-        GretterComponent:
-            GreetHello,
+        NameGetterComponent: UseField<Symbol!("first_name")>,
+    }
+}
+// Person::name() now returns the `first_name` field
+```
+
+`UseFieldRef` is the `AsRef`/`AsMut`-based variant. Any getter can also be implemented by hand — the
+macros only save boilerplate.
+
+---
+
+# Abstract types
+
+CGP abstracts over types with associated types in components. `#[cgp_type]` is the dedicated macro
+(use it instead of `#[cgp_component]` for an abstract-type trait):
+
+```rust
+#[cgp_type]
+pub trait HasNameType {
+    type Name;
+}
+```
+
+This defaults the provider name to the type name plus `TypeProvider` (here `NameTypeProvider`, marker
+`NameTypeProviderComponent`) and additionally generates a `UseType` blanket impl. A context fixes the
+type by wiring the component to `UseType<ConcreteType>`:
+
+```rust
+delegate_components! {
+    Person {
+        NameTypeProviderComponent: UseType<String>,
+    }
+}
+// or directly: impl HasNameType for Person { type Name = String; }
+```
+
+The direct impl is just as valid and shows that abstract types are ordinary associated-type traits.
+
+The `#[use_type(HasScalarType.Scalar)]` attribute is the recommended way to *use* an abstract type
+inside `#[cgp_fn]`/`#[cgp_impl]`/`#[cgp_component]`: it rewrites bare `Scalar` to the fully-qualified
+`<Self as HasScalarType>::Scalar` everywhere and adds the supertrait/where bound, removing `Self::`
+boilerplate and ambiguity. CGP's built-in abstract-type component is `HasType` (provider
+`TypeProvider`).
+
+---
+
+# Higher-order providers
+
+A **higher-order provider** takes another provider as a generic parameter and constrains it with a
+provider-trait bound, so its inner behavior is chosen by wiring rather than fixed:
+
+```rust
+#[cgp_impl(new ScaledAreaCalculator<InnerCalculator>)]
+#[use_provider(InnerCalculator: AreaCalculator)]
+impl<InnerCalculator> AreaCalculator {
+    fn area(&self, #[implicit] scale_factor: f64) -> f64 {
+        let base_area = InnerCalculator::area(self);
+        base_area * scale_factor * scale_factor
     }
 }
 ```
 
-then you should explain that for the `Person` context, since `NameGetterComponent` is wired to `UseField<"person_name">`, so when `println!("Hello, {}!", self.name())` is called from `GreetHello`, the value from `person_name` field will be returned from `self.name()`.
+`#[use_provider(InnerCalculator: AreaCalculator)]` completes the inner provider's bound by adding the
+`Self` parameter for you (you write `: AreaCalculator`, it means `AreaCalculator<Self>`) and moves it
+into the `where` clause — that is the *only* thing the attribute does. Inside the body you still call
+the provider explicitly with the associated-function form `InnerCalculator::area(self)`; there is no
+call-site rewriting. A context then chooses the inner provider when wiring, e.g.
+`AreaCalculatorComponent: ScaledAreaCalculator<RectangleAreaCalculator>`.
+
+A higher-order provider often defaults its inner parameter to `UseContext`
+(`pub struct IterSumArea<Inner = UseContext>(PhantomData<Inner>);`), so that when no inner provider is
+named, the inner step falls back to the context's own wiring. Not every provider with a generic
+parameter is higher-order: a provider like `GetName<Tag>` that uses `Tag` only as a `HasField` key
+(no provider-trait bound) is not.
+
+When a component itself is generic (`#[cgp_component(AreaCalculator)] trait CanCalculateArea<Shape>`),
+the provider trait appends the parameters after the context (`AreaCalculator<Context, Shape>`),
+`IsProviderFor` groups them into its `Params` tuple, and lifetimes are lifted into the `Life<'a>`
+type. Such a component is most useful for **cross-context dependencies**: when the main target is a
+generic parameter (e.g. `CanCalculateArea<Shape>: HasScalarType`), individual shape types need not
+implement shared capabilities — the common context supplies the shared abstract type, value-level
+injection (a global scale factor via a getter), and lazy per-context provider binding, so two apps
+can wire the same shape to different providers.
+
+---
+
+# Error handling
+
+CGP makes the error type abstract so generic code can fail without naming a concrete error.
+`HasErrorType` (an abstract-type component, `type Error: Debug`) gives a context one shared
+error type; `CanRaiseError<SourceError>` constructs it from a concrete source error
+(`Context::raise_error(source)`); `CanWrapError<Detail>` attaches detail. Both build on
+`HasErrorType` and are associated-function (no `self`) components that dispatch per source/detail
+type. An error-aware trait imports that error type with `#[use_type(HasErrorType.Error)]`, so it
+names the error as the bare `Error` instead of writing `: HasErrorType` and `Self::Error` by hand:
+
+```rust
+#[cgp_component(Loader)]
+#[use_type(HasErrorType.Error)]
+pub trait CanLoad {
+    fn load(&self, path: &str) -> Result<String, Error>;
+}
+
+#[cgp_impl(new LoadOrFail)]
+#[uses(CanRaiseError<String>)]
+#[use_type(HasErrorType.Error)]
+impl Loader {
+    fn load(&self, path: &str) -> Result<String, Error> {
+        if path.is_empty() {
+            return Err(Self::raise_error("empty path".to_owned()));
+        }
+        Ok(format!("contents of {path}"))
+    }
+}
+```
+
+A context wires its error type and the raise/wrap behavior. The backend providers — `RaiseFrom`
+(convert via `From`), `ReturnError`, `RaiseInfallible`, `PanicOnError`, `DebugError`/`DisplayError`
+(format into a `String` and forward), `DiscardDetail` — plug in per source type, modern-style with
+`open`:
+
+```rust
+delegate_components! {
+    App {
+        open ErrorRaiserComponent;
+
+        ErrorTypeProviderComponent: UseType<String>,
+        @ErrorRaiserComponent.String: RaiseFrom,
+        @ErrorRaiserComponent.ParseError: DebugError,
+    }
+}
+```
+
+**Imports:** `HasErrorType`, `CanRaiseError`, and `CanWrapError` come from the prelude, but the
+wiring keys (`ErrorTypeProviderComponent`, `ErrorRaiserComponent`, `ErrorWrapperComponent`) live
+under `cgp::core::error`, and the backend providers (`RaiseFrom`, `DebugError`, …) under
+`cgp::extra::error` — import the specific names you wire. Standalone backends (`cgp-error-anyhow`,
+`cgp-error-eyre`, `cgp-error-std`) provide ready error types.
+
+---
+
+# Handlers: the computation family
+
+CGP models computation as a family of components along three axes — synchronous vs. async,
+infallible vs. fallible, and input-taking vs. input-free:
+
+- **`Computer` / `CanCompute`** — a synchronous, infallible transform `compute(&self, PhantomData<Code>, input) -> Output`. By-reference (`ComputerRef`) and async (`AsyncComputer`) variants exist.
+- **`TryComputer` / `CanTryCompute`** — the fallible computer.
+- **`Producer` / `CanProduce`** — input-free production (only a context and a `Code` tag).
+- **`Handler` / `CanHandle`** — the general **async, fallible, error-aware** computation; the workhorse for I/O and pipelines. It supertraits `HasErrorType`.
+- **`CanRun` / `CanSendRun`** — task runners.
+
+Any CGP trait with async methods — a handler, a runner, or one you define — declares them under the
+`#[async_trait]` attribute, which rewrites each `async fn` to `-> impl Future` (the lint-clean,
+allocation-free form). The generated future carries no `Send` bound, so spawning it on a
+work-stealing executor needs the `Send`-recovery pattern in [handlers](references/handlers.md).
+
+`#[cgp_computer]` and `#[cgp_producer]` define a `Computer`/`Producer` provider from a function.
+Providers compose through combinators: `PipeHandlers<Product![A, B, C]>` chains handlers
+left-to-right, `ComposeHandlers` nests them, `ReturnInput` passes input through, and the `Promote*`
+adapters lift a simpler handler (e.g. a sync `Computer`) into a more capable one (an async
+`Handler`). For example, a context wires a pipeline of field-reading computers:
+
+```rust
+delegate_components! {
+    MyContext {
+        ComputerComponent:
+            PipeHandlers<Product![
+                Multiply<Symbol!("foo")>,
+                Add<Symbol!("bar")>,
+                Multiply<Symbol!("baz")>,
+            ]>,
+    }
+}
+// context.compute(PhantomData::<()>, 5) runs ((5*foo)+bar)*baz
+```
+
+Dispatch routes an extensible-data input to per-variant handlers: `#[cgp_auto_dispatch]` generates a
+handler from a trait, and the combinators `MatchWithHandlers` / `MatchWithValueHandlers` /
+`ExtractFieldAndHandle` match an enum's variants to sub-handlers, proving exhaustiveness without a
+wildcard. Monadic handlers (`PipeMonadic`, `BindOk`, `BindErr`, the identity/ok/err monads) compose
+handlers through a monad. The handler family is broad — read [handlers](references/handlers.md) for
+the full set, including `Send`-bound recovery for async trait methods.
+
+---
+
+# Extensible data
+
+CGP can build and read structs and enums generically, by their named fields and variants. The
+`#[derive(HasFields)]` derive exposes a type's whole field list; `#[derive(CgpData)]` (and the
+record/variant-specific `CgpRecord`/`CgpVariant`) derive the full extensible-data machinery:
+
+```rust
+#[derive(CgpData)]
+pub struct Person {
+    pub first_name: String,
+    pub last_name: String,
+}
+```
+
+Records are built field-by-field through the builder family (`HasBuilder`, `BuildField`) — the
+**extensible builder pattern** assembles a context from independent per-field outputs. Variants are
+constructed with `FromVariant`, deconstructed with the `ExtractField` extractor family, and the
+**extensible visitor pattern** handles each variant. The type-level spines underneath are the
+product list (`Product![A, B, C]` over `Cons`/`Nil`) for records and the sum list (`Sum![A, B]` over
+`Either`/`Void`) for variants. Structural **casts** convert between shapes — `CanUpcast` widens a
+smaller enum into a larger one, `CanDowncast` narrows, `CanBuildFrom` rebuilds a record from a
+superset. Dispatching extensible-data inputs to handlers uses the dispatch combinators above.
+
+---
+
+# Namespaces
+
+Namespaces are reusable, inheritable wiring tables (a preset mechanism) that keep top-level wiring
+short as component counts grow. `cgp_namespace! { new MyNs: ParentNs { … } }` defines a namespace
+(optionally inheriting a parent after the colon); a context then **joins** it inside
+`delegate_components!` with a `namespace MyNs;` statement, after which every lookup it does not wire
+directly forwards through the namespace, so any direct entry overrides just that key. A component
+**registers into** a namespace with the `#[prefix(@path in MyNs)]` attribute on its `#[cgp_component]`
+trait, and a `#[cgp_impl]` provider registers as a per-type default with `#[default_impl(T in DefaultImpls1<Component>)]`,
+which a context pulls in with a `for <T, Provider> in Table { … }` loop.
+
+The underlying mechanism is the `RedirectLookup` provider, which re-routes a component lookup along a
+type-level `Path!`; the `open` statement above is a lightweight special case of it. `DefaultNamespace`
+resolves a default provider when a context does not override one. Read
+[namespaces](references/namespaces.md) for the preset and inheritance syntax.
+
+---
+
+# Type-level primitives: a decoder ring
+
+CGP encodes lists, strings, and numbers as types. You mostly use the sugared macros and only need to
+*recognize* the expanded forms in errors:
+
+- **`Symbol!("name")`** — a type-level string (field-name tag). Expands to `Symbol<4, Chars<'n', Chars<'a', Chars<'m', Chars<'e', Nil>>>>`. The leading length works around missing const-generics.
+- **`Product![A, B, C]`** — a type-level list. Expands to `Cons<A, Cons<B, Cons<C, Nil>>>`. `product![…]` is the value-level form. Used for field lists and handler pipelines.
+- **`Sum![A, B]`** — a type-level sum (the dual of `Product!`), over the `Either`/`Void` spine. Used for enum variant lists.
+- **`Index<N>`** — a type-level natural number, tags tuple-struct fields.
+- **`Field`** — a value paired with its type-level name tag.
+- **`Path!`** / `PathCons` — a type-level path, used by namespaces and `RedirectLookup`.
+- **`Life<'a>`** — a lifetime lifted into a type, used when a component has lifetime parameters.
+- **`MRef`** — an owned-or-borrowed value.
+
+Prefer the sugar (`Symbol!`, `Product!`) and the readable names (`Cons`/`Nil`) in anything you write.
+
+---
+
+# Sub-skills: load the one that owns your task
+
+The primer gave you the shape of every construct; each sub-skill below is the ground truth for one
+area — the exact grammar, the full expansion, the corner cases, and worked examples. **Loading the
+relevant sub-skill is not optional polish; it is the step that turns a plausible guess into correct
+code.** Every entry names what it adds beyond this primer *and* what you would be guessing at without
+it, so you can see the risk of skipping it. Load a sub-skill whenever your task touches its area —
+reading it, writing it, reviewing it, or debugging an error that mentions it — and re-load it when
+you move into an unfamiliar corner. When a task spans several areas, load each one; they cross-link,
+and following those links is expected, not a detour.
+
+Two of the sub-skills are cross-cutting rather than construct-specific, and one of them applies to almost every task. Start with **[references/macro-grammar.md](references/macro-grammar.md)** for any task that writes, edits, or debugs CGP syntax: it is the single reference for the formal grammar of every macro, the invariant each expansion preserves, and a decoder for the compiler errors CGP produces. *Without it* you are guessing which attribute forms parse, what a macro emits, and what an `IsProviderFor` or `DelegateComponent` error is actually telling you. Reach for **[references/modern-idioms.md](references/modern-idioms.md)** whenever you read or modernize existing CGP: it maps every legacy, explicit form to the modern idiom you should prefer, both to write vanilla-looking code and to decode the inside-out provider impls, hand-written `where` bounds, `Self::Type` paths, and `UseDelegate` tables you meet in older code. *Without it* you will either propagate outdated syntax or fail to recognize that legacy code and modern code mean the same thing.
+
+The remaining sub-skills each own one construct family:
+
+- **[references/components.md](references/components.md)** — `#[cgp_component]` and the full expansion (consumer/provider traits, the two blanket impls, the `…Component` marker), why `IsProviderFor` exists, and the three provider-writing macros (`#[cgp_impl]`, `#[cgp_provider]`, `#[cgp_new_provider]`). *Without it* you will misjudge what `self`/`Self` mean inside a provider and how the blanket impls route a call. Load it before writing any component or provider.
+- **[references/wiring.md](references/wiring.md)** — `DelegateComponent`, every `delegate_components!` form (arrays, `new`, generic tables), `open` per-type dispatch, direct consumer-trait impls, `UseContext` and its circular-dependency trap, the legacy `UseDelegate` tables, and the other providers you see in tables (`WithProvider` and its `WithField`/`WithType`/`WithContext` aliases, `UseDefault`). *Without it* you will not know when a hand-written impl collides with the table, why `UseContext` overflows, or what a `WithField<…>` entry means. Load it before wiring any context.
+- **[references/checking.md](references/checking.md)** — why wiring is lazy, how check traits and `CanUseComponent` force readable errors, every `check_components!` / `delegate_and_check_components!` option (`#[check_trait]`, `#[check_providers]`, `#[check_params]`, `#[skip_check]`), and a debugging playbook. *Without it* you cannot localize a broken wiring or read the error it throws. Load it whenever a wiring fails to compile.
+- **[references/error-extraction.md](references/error-extraction.md)** — the **fallback for when `cargo-cgp` is not available, or leaves an error largely unrewritten** (see [Tooling](#tooling-use-cargo-cgp-for-readable-errors) first — `cargo-cgp`'s `[CGP-Exxx]` headline and root-cause tree already are the compact summary this sub-skill produces, so reach for the sub-skill only when the tool is absent or passes the error through). It covers how to reduce a long raw CGP compile error to a compact, root-cause-first summary, the hidden-versus-surfaced distinction that decides whether the root cause is even present in the output, how to confirm a suspected cause by grepping for one signature line, and how to delegate the reading to a sub-agent so a wall of generated-type errors does not consume your context. *Without it* you will read a cascade inline, chase a cause a hidden error does not contain, or hand back raw output instead of the few facts that matter.
+- **[references/functions-and-getters.md](references/functions-and-getters.md)** — `HasField`/`#[derive(HasField)]`, `#[cgp_fn]`, `#[implicit]` and its access rules, `#[uses]`/`#[extend]`/`#[extend_where]`/`#[impl_generics]`, the getters `#[cgp_auto_getter]`/`#[cgp_getter]`/`UseField`/`WithField`, and `ChainGetters` for nested-context fields. *Without it* you will reach for a getter trait where an implicit argument is idiomatic, or misapply the `.clone()`/`.as_str()`/`&mut` field-access rules. Load it for the ergonomic day-to-day surface.
+- **[references/abstract-types.md](references/abstract-types.md)** — `#[cgp_type]`, the built-in `HasType`/`TypeProvider`, wiring with `UseType<T>` (and `UseDelegatedType` for table-chosen types), importing types with the `#[use_type]` attribute (distinct from the `UseType` provider), and the `WithType`/`WithDelegatedType` adapters. *Without it* you will confuse the provider and the attribute and write `Self::` paths by hand. Load it for any associated-type abstraction.
+- **[references/higher-order-providers.md](references/higher-order-providers.md)** — providers parameterized by other providers, the stray `<Self>` on the inner bound, `#[use_provider]`, `UseContext` defaults, generic-parameter components, and cross-context dependencies. *Without it* you will call the inner provider as a method instead of `Provider::method(self)` and misplace the context slot. Load it before composing providers.
+- **[references/error-handling.md](references/error-handling.md)** — `HasErrorType`, `CanRaiseError`/`CanWrapError`, the backend providers (`RaiseFrom`, `DebugError`, …), and — critically — which names come from the prelude versus `cgp::core::error` / `cgp::extra::error`. *Without it* you will fail to import the wiring keys and backends. Load it for any fallible CGP code.
+- **[references/handlers.md](references/handlers.md)** — the `Computer`/`TryComputer`/`Producer`/`Handler`/runner family across its three axes, `#[cgp_computer]`/`#[cgp_producer]`/`#[cgp_auto_dispatch]`, the combinators (`PipeHandlers`, `Promote*`, dispatch matchers), monadic handlers, the `HasRuntime`/`HasRuntimeType` runtime components, and the `Send`-recovery pattern. *Without it* you will pick the wrong family member or miswire a pipeline. Load it for computation and I/O pipelines.
+- **[references/extensible-data.md](references/extensible-data.md)** — the `CgpData`/`CgpRecord`/`CgpVariant` derives, the builder and extractor families (with the optional/defaulted-field extension), `Product!`/`Sum!` spines and their `AppendProduct`/`ConcatProduct`/`MapFields` algebra, structural casts (`CanUpcast`/`CanDowncast`/`CanBuildFrom`), and the builder/visitor patterns. *Without it* you will miss the compile-time exhaustiveness guarantees and the single-payload variant rule. Load it for generic struct/enum manipulation.
+- **[references/namespaces.md](references/namespaces.md)** — `cgp_namespace!`, the `namespace`/`for … in` statements that join a namespace, the `#[prefix]`/`#[default_impl]` attributes that register into one, `RedirectLookup`, `Path!`, and the `DefaultNamespace` family. *Without it* you cannot read or write preset/inheritance wiring. Load it whenever wiring is grouped or inherited.
+- **[references/type-level-primitives.md](references/type-level-primitives.md)** — `Symbol!`/`Chars`, `Product!`/`Cons`/`Nil`, `Sum!`/`Either`/`Void`, `Index`, `Field`, `Path!`/`PathCons`, `Life`, `MRef`, and the `StaticFormat` recovery traits. *Without it* you cannot decode the long nested types in error messages and expansions. Load it as the decoder ring.
+- **[references/modularity-hierarchy.md](references/modularity-hierarchy.md)** — the five-level spectrum from a plain blanket trait to per-provider wiring, and which coherence rule each level escapes. *Without it* you will reach for more CGP machinery than a problem needs. Load it when deciding *how much* CGP to apply.
+
+## Exhaustive online reference
+
+For the exact macro expansion of any construct, every accepted syntax form, corner cases, or the
+implementing source, consult the online knowledge base at
+**https://github.com/contextgeneric/cgp-knowledge-base** — CGP's own section is
+[`cgp/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp), whose `reference/`,
+`concepts/`, `guides/`, and `errors/` directories are the authoritative, exhaustive record, and the
+worked [`examples/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/examples) sit at
+the base's top level beside it. The base also documents `cargo-cgp`, under
+[`cargo-cgp/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cargo-cgp). Fetch the
+relevant page when a detail is not covered here; do not assume a local copy exists, since this skill
+is deployed on its own.
+
+---
+
+# Instructions for explaining CGP to users
+
+Assume by default that the user has only basic Rust experience and is new to CGP, but do not
+over-explain: when code merely uses CGP concepts, write or modify it without lecturing, and add
+explanation only when asked. When you do explain, assume unfamiliarity with advanced Rust (generics,
+traits, blanket impls, coherence) and with functional/type-level programming — describe type-level
+tables, lists, and strings through familiar analogies such as a map or a lookup table, and expand on
+advanced Rust as needed. Keep the simplified picture front and center: present wiring as choosing a
+table entry, and keep `IsProviderFor`, `DelegateComponent`, and generated blanket impls out of the
+explanation unless the user is asking specifically about the internals. One caveat when you reach
+for an analogy: the "table lookup" is resolved at compile time and compiles down to direct static
+calls, so if you use a runtime-flavored analogy like a vtable, say explicitly that — unlike a real
+vtable — CGP's resolution is static and zero-cost, with no runtime table or dynamic dispatch. Never
+leave a reader thinking CGP wiring has runtime lookup overhead.
+
+When asked to explain a specific piece of code, look up the definitions it depends on before
+answering. To explain a `delegate_components!` entry, find the consumer and provider traits behind
+the component key and the body of the provider it maps to. To explain a provider, read its own
+definition and the definitions of every capability in its `where` clause. To explain how a context
+implements something, follow its wiring to see which providers are chosen and trace a method call
+through them — for instance, if `NameGetterComponent` is wired to `UseField<Symbol!("first_name")>`,
+then a `self.name()` call inside another provider returns the context's `first_name` field.
