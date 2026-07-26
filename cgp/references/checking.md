@@ -22,10 +22,8 @@ pub trait CanGreet {
 }
 
 #[cgp_impl(new GreetHello)]
-impl Greeter
-where
-    Self: HasName,
-{
+#[uses(HasName)]
+impl Greeter {
     fn greet(&self) {
         println!("Hello, {}!", self.name());
     }

@@ -4,6 +4,20 @@ A spectrum of how decoupled an implementation can be from the type it serves, fr
 
 CGP is not all-or-nothing. The same capability — here, serializing a value with Serde — can be expressed at several levels of modularity, each more decoupled than the last and each carrying more machinery in exchange. This page walks the spectrum on one running example so a reader can stop at the first level that solves the problem rather than reaching for the heaviest tool by reflex. Assume `use cgp::prelude::*;` throughout; the CGP version is v0.8.0.
 
+## Two questions decide the level
+
+Before the levels, the two things that actually vary, because the level numbers name consequences while these name causes.
+
+**What is the `Self` type?** Either a **value context** — the data the capability operates on, like the `Vec<u8>` being serialized — or an **environmental context**, a type that exists to supply choices and capabilities rather than to be operated on, like an application. Both are contexts: both sit in `Self` and both carry a wiring table. An environmental context often has no fields at all, since its whole job is to be a name the table hangs off.
+
+**What does the capability target?** Either `Self` (**self-targeted**: `CanGreet`, `HasErrorType`, every getter) or a type parameter that `Self` only decides for (**parameter-targeted**: `CanSerializeValue<Value>`, `CanCalculateArea<Shape>`). A parameter alone does not settle this — in `CanCompute<Code, Input>` the target is `Input` while `Code` is a selector the wiring dispatches on.
+
+Three combinations occur: a **value context** targeting `Self` (Level 3's retrofit case), an **environmental context** targeting `Self` (also Level 3, and where most CGP code lives), and an **environmental context** targeting a parameter (Levels 4–5).
+
+**The escape from coherence happens when `Self` becomes a type you own, not when a parameter appears.** This is the part most easily misread. Wired on a foreign value type, a self-targeted component still gets one provider program-wide. Wired on an environmental context, the constraint "one wiring per type" stops binding, because you can define a second context: `App` and `TestApp` each choose their own `CanSendEmail` provider with no parameter anywhere. What Level 4's parameter adds is the ability to make that choice about types you do *not* own.
+
+Vanilla Rust idiomatically supports only the first combination — `impl Display for String` — which is why a Rust programmer arrives with no vocabulary for the others. The other two are legal but unrewarding: an environmental context works until you factor two implementations into blanket impls and they overlap, and a parameter-targeted trait on an application type compiles fine but needs a hand-written body for every context-and-type pair. CGP's contribution is making the implementations reusable, which is what turns each arrangement into a technique.
+
 ## The coherence problem the hierarchy escapes
 
 What forces this hierarchy to exist is Rust's coherence rules, which guarantee that every trait
@@ -71,37 +85,47 @@ The gain is that different types can be serialized differently. The cost is dupl
 
 ## Level 3 — multiple implementations per type, globally unique wiring
 
-Applying basic CGP to a vanilla trait removes the duplication of Level 2 by turning the shared logic into a reusable [provider](components.md) and letting each type [wire](wiring.md) to it. The trait keeps its original shape; `#[cgp_component]` generates the [consumer trait](components.md) and [provider trait](components.md) pair, `#[cgp_impl(new ...)]` defines a named provider once, and `delegate_components!` points each type at it:
+Applying basic CGP to a vanilla trait removes the duplication of Level 2 by turning the shared logic into a reusable [provider](components.md) and letting each type [wire](wiring.md) to it. The trait keeps its original shape, which makes the component **self-targeted** and each wired type a **value context**; `#[cgp_component]` generates the [consumer trait](components.md) and [provider trait](components.md) pair, `#[cgp_impl(new ...)]` defines a named provider once, and `delegate_components!` points each type at it. Note that Level 4 below defines a *different* component, `CanSerializeValue<Value>`, rather than revising this one:
 
 ```rust
-#[cgp_component(ValueSerializer)]
+#[cgp_component(SelfSerializer)]
 pub trait Serialize {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
 }
 
-#[cgp_impl(new SerializeBytes)]
-impl<Value: AsRef<[u8]>> ValueSerializer for Value {
+#[cgp_impl(new SerializeSelfAsBytes)]
+#[uses(AsRef<[u8]>)]
+impl SelfSerializer {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> { ... }
 }
 
 delegate_components! {
     Vec<u8> {
-        ValueSerializerComponent: SerializeBytes,
+        SelfSerializerComponent: SerializeSelfAsBytes,
     }
 }
 
 delegate_components! {
     <'a> &'a [u8] {
-        ValueSerializerComponent: SerializeBytes,
+        SelfSerializerComponent: SerializeSelfAsBytes,
     }
 }
 ```
 
-The gain is real reuse without modifying the interface: `Serialize` is unchanged, so a type can still implement it directly without opting into CGP at all, and existing users of the trait are unaffected. The `ValueSerializer` provider trait removes the need for ad-hoc interfaces like `CanSerializeBytes`, and `delegate_components!` removes the manual forwarding of Level 2. The limitation is that coherence still binds the wiring itself: each type carries one global wiring, so a `Vec<u8>` entry conflicts with any overlapping `Vec<T>` entry, the choice cannot be overridden per context, and the orphan rule still means you can only wire `Vec<u8>` from a crate that owns either `Serialize` or `Vec`.
+The gain is real reuse without modifying the interface: `Serialize` is unchanged, so a type can still implement it directly without opting into CGP at all, and existing users of the trait are unaffected. The `SelfSerializer` provider trait removes the need for ad-hoc interfaces like `CanSerializeBytes`, and `delegate_components!` removes the manual forwarding of Level 2. The limitation is that coherence still binds the wiring itself: each type carries one global wiring, so a `Vec<u8>` entry conflicts with any overlapping `Vec<T>` entry, the choice cannot be overridden per context, and the orphan rule still means you can only wire `Vec<u8>` from a crate that owns either `Serialize` or `Vec`.
+
+**That limitation only bites because the wired type is a value context you do not own, and this level holds a second case where it does not bite at all.** Wire a self-targeted component on an *environmental* context and the same level gives per-application choice, because you control how many contexts exist:
+
+```rust
+delegate_components! { App     { EmailSenderComponent: SendViaSmtp } }
+delegate_components! { TestApp { EmailSenderComponent: RecordEmails } }
+```
+
+No parameter is involved and nothing has been worked around. That is where most CGP code lives — a capability about the application itself, wired per application — so reading Level 3 as only the retrofit case undersells it, and reading Level 4 as the first level with per-context choice is wrong.
 
 ## Level 4 — unique wiring per type, per context
 
-Adding an explicit context parameter fully decouples the implementation from the type, so each context wires its own choices and the orphan rule lifts entirely. The trait changes shape: the original `Self` becomes an explicit `Value` parameter, so the component now dispatches on which concrete value type it serializes. Each context then folds its per-type choices straight into its own table with the `open` statement of `delegate_components!`:
+Making the component **parameter-targeted** fully decouples the implementation from the type, so each context wires its own choices and the orphan rule lifts entirely. The trait changes shape: the original `Self` becomes an explicit `Value` parameter and `Self` is now always an **environmental context**, so the component dispatches on which concrete value type it serializes. What this adds over Level 3's environmental case is narrow and worth stating precisely — Level 3 already lets each context you define make its own choice, so what Level 4 buys is making that choice about types you do *not* own. Each context then folds its per-type choices straight into its own table with the `open` statement of `delegate_components!`:
 
 ```rust
 #[cgp_component(ValueSerializer)]
@@ -169,7 +193,9 @@ Here `Vec<Vec<u8>>` serializes its inner `Vec<u8>` as hex strings, while a bare 
 
 ## Choosing a level
 
-Read the spectrum as a ladder and stop at the first rung that fits. Levels 1 and 2 are plain Rust and need no CGP at all — reach for them when one implementation, or one per type, is genuinely all you need. Level 3 buys reuse and swappable providers while leaving the trait and its existing users untouched, the right entry point for retrofitting CGP onto an established trait. Level 4 is the canonical CGP shape, paying a modified interface for full per-context freedom and escape from the orphan rule. Level 5 is a local refinement layered on top of Level 4, used only where a single nested branch must diverge from the context's global choice. Each step up trades ceremony for decoupling, so the discipline is to climb only as far as the problem demands.
+Read the spectrum as a ladder and stop at the first rung that fits. Levels 1 and 2 are plain Rust and need no CGP at all — reach for them when one implementation, or one per type, is genuinely all you need. Level 3 buys reuse and swappable providers while leaving the trait and its existing users untouched: on a value context that is the right entry point for retrofitting CGP onto an established trait, and on an environmental context it is where most CGP code lives. Level 4 pays a modified interface for the ability to choose per context about types you do not own. Level 5 is a local refinement layered on top of Level 4, used only where a single nested branch must diverge from the context's global choice. Each step up trades ceremony for decoupling, so the discipline is to climb only as far as the problem demands.
+
+Two questions settle it faster than walking the levels. **Is the capability about the data, or about the application?** About the data means a value context and Level 3's retrofit case; about the application means an environmental context. **Does it concern a type you do not own, which different applications must treat differently?** If yes, the target moves into a parameter and you are at Level 4; if no, self-targeting is enough. Each arrangement answers a different question rather than representing a different amount of sophistication.
 
 Further reference:
 [coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md)

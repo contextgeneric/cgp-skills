@@ -240,6 +240,27 @@ provider makes the context implement the consumer trait. When you see a provider
 `context: &Context` where the consumer took `&self`, that is the same method — `self` became
 `context`.
 
+**"Context" covers two situations that look alike and behave very differently, and this is the most
+common place a reader's model of CGP breaks.** A **value context** is a context that *is* the data the
+capability operates on — the `String` in `String: CanEncode`, the `Rectangle` in
+`Rectangle: CanCalculateArea`. An **environmental context** is a type that exists to supply choices and
+capabilities rather than to be operated on: an application, a test harness, a service. It is the far more
+common kind in real CGP code, and it frequently has no fields at all — `struct App;` is a complete
+context, because its whole job is to be a name the wiring table hangs off. Both sit in the `Self` position
+and both carry a wiring table, so nothing in a signature distinguishes them.
+
+A second, independent distinction describes the **component** rather than its context. A component is
+**self-targeted** when the capability is about the `Self` type (`CanGreet`, `HasErrorType`, every getter),
+and **parameter-targeted** when it is about a type parameter while `Self` only decides
+(`CanEncodeValue<Value>`, `CanCalculateArea<Shape>`). A parameter alone does not settle it: in
+`CanCompute<Code, Input>` the target is `Input` while `Code` is a *selector* the wiring dispatches on, and
+a component may carry both. Which pair a capability uses decides how many independent choices are
+available — a self-targeted component wired on a foreign value type gets one provider program-wide, while
+an environmental context can be defined as many times as needed — and
+[modularity-hierarchy](references/modularity-hierarchy.md) works out which to reach for. **When you
+explain CGP to a user, say which arrangement the example is in**, because moving from a value context to
+an environmental one changes no signature and readers otherwise lose track of what a context is.
+
 A persistent source of confusion to avoid: inside a provider, `self`/`Self` (in `#[cgp_impl]`) or
 the `context`/`Context` parameter (in the raw provider-trait form) always refer to the **context**,
 never to the provider struct. The provider struct is a pure type-level name with no fields and no
@@ -253,9 +274,10 @@ To follow most CGP code you only need to recognize a handful of shapes:
 - `#[cgp_component(Greeter)] trait CanGreet { fn greet(&self); }` defines a component. `CanGreet`
   is the consumer trait you call; `Greeter<Context>` is the provider trait implementations target;
   `GreeterComponent` is the wiring key.
-- `#[cgp_impl(new GreetHello)] impl Greeter where Self: HasName { fn greet(&self) { … } }` writes a
+- `#[cgp_impl(new GreetHello)] #[uses(HasName)] impl Greeter { fn greet(&self) { … } }` writes a
   provider named `GreetHello` for the `Greeter` component. Inside, `self`/`Self` mean the
-  *context*, and the `where` clause lists impl-side dependencies.
+  *context*, and `#[uses]` lists the impl-side dependencies — it desugars to `where Self: HasName`,
+  which is the form you read in older code.
 - `#[cgp_fn] fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 { … }`
   defines a single-implementation capability as a blanket-impl trait, pulling `width`/`height` from
   the context's fields automatically.
@@ -380,10 +402,8 @@ shape:
 
 ```rust
 #[cgp_impl(new GreetHello)]
-impl Greeter
-where
-    Self: HasName,
-{
+#[uses(HasName)]
+impl Greeter {
     fn greet(&self) {
         println!("Hello, {}!", self.name());
     }
@@ -391,7 +411,9 @@ where
 ```
 
 The provider name goes in the attribute argument; a leading `new` keyword also declares the
-`struct GreetHello;`. **Prefer the unqualified `impl Greeter` form and let the macro insert the
+`struct GreetHello;`. The dependency is declared with [`#[uses]`](#uses-extend-extend_where) rather than a
+hand-written `where Self: HasName` clause, which is the preferred form and desugars to exactly that bound.
+**Prefer the unqualified `impl Greeter` form and let the macro insert the
 context parameter** — omitting `for Context` is what makes a provider read like an ordinary trait
 impl. Write the explicit `impl<Context> Greeter for Context` only when you must bound or name the
 context readably (for example a lifetime or HRTB the sugar cannot express); it must then be declared
@@ -469,9 +491,10 @@ replaces; only equality on a trait you would never `#[use_type]` from stays an e
 reference to load whenever you read or modernize existing CGP — see
 [modern-idioms](references/modern-idioms.md).
 
-The provider's `where` clause is where **impl-side dependencies** live: `GreetHello` requires
-`Self: HasName`, but `CanGreet` exposes no such bound, so a caller bounding on `CanGreet` never sees
-`HasName`. The wiring satisfies each dependency by resolving it through the same context.
+The provider's `where` clause is where **impl-side dependencies** live, whether you write it by hand or let
+`#[uses]` generate it: `GreetHello` requires `Self: HasName`, but `CanGreet` exposes no such bound, so a
+caller bounding on `CanGreet` never sees `HasName`. The wiring satisfies each dependency by resolving it
+through the same context.
 
 A consumer trait is still an ordinary trait: when you don't need multiple implementations, write
 `impl CanGreet for Person { … }` directly and skip the provider machinery entirely.
