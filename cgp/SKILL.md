@@ -472,10 +472,13 @@ visible machinery for syntax that reads like ordinary Rust:
   `#[use_type(HasErrorType.Error)]` over `: HasErrorType` + `Self::Error`. When a provider *pins* an
   abstract type to a concrete one — a `where Self: HasErrorType<Error = AppError>` clause — express
   that with the equality form `#[use_type(HasErrorType.{Error = AppError})]`, which emits the same
-  `Self: HasErrorType<Error = AppError>` bound; the right-hand side may even name another imported
-  alias (`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]`
-  unifies two abstract types). The equality form is a `#[cgp_impl]`/`#[cgp_fn]` tool — it is rejected
-  on `#[cgp_component]`.
+  `Self: HasErrorType<Error = AppError>` bound; the right-hand side is substituted too, so an
+  imported alias is grounded wherever it appears in it — naming one outright unifies two abstract
+  types (`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]`),
+  and one nested inside a type is grounded in place
+  (`#[use_type(HasDbType.Db, HasTransactionType.{Transaction = Tx<Db>})]` emits
+  `Self: HasTransactionType<Transaction = Tx<<Self as HasDbType>::Db>>`). The equality form is a
+  `#[cgp_impl]`/`#[cgp_fn]` tool — it is rejected on `#[cgp_component]`.
 - **Dispatch a generic-parameter component with the `open` statement or a namespace**, skipping
   `#[derive_delegate]`/`UseDelegate` when defining a new component.
 
