@@ -197,6 +197,39 @@ by resolving it through the same context. See
 value-injection forms (`#[implicit]` arguments and getters) that read fields off the context through
 the same mechanism.
 
+## Give each component one capability
+
+**A component is the unit of wiring, so its method count is the granularity at which a context can make a
+choice — keep it to one capability, which usually means one method.** Two methods in one component can
+never be answered by two different providers, however unrelated they are, so grouping every operation of
+an entity into one trait (`Shape` with `area`, `perimeter`, `scale`, `rotate`) is the shape CGP pays least
+for. Methods belong together only when they always vary together, such as an `encode`/`decode` pair whose
+halves must agree on a format. **Getter components are the deliberate exception**: a `#[cgp_getter]` or
+`#[cgp_auto_getter]` trait declaring `width` and `height` together is idiomatic, because a getter is
+answered by its own method name rather than by a strategy — one `UseFields` provider satisfies every method
+at once by reading the same-named field — so there is no choice to split apart. The trade-off is that
+`UseField` and `WithProvider` are emitted only for a single-method getter trait, so a getter that must be
+wired to a differently named field needs its own component.
+
+Three costs follow from a multi-method component, and they are worth recognizing when reading an existing
+one. Every provider carries the **union of its methods' dependencies**, so a capability needed by one
+method is imposed on all of them and on every context wiring that provider. A
+[higher-order provider](higher-order-providers.md) must **implement every method**, forwarding the ones it
+has no opinion about — a one-method component wraps in four lines, while a wrapper over a five-method
+component is mostly passthrough that grows every time a method is added. And a context or provider that
+needs only part of the surface must **still answer all of it**, which in practice means placeholder
+associated types and `unimplemented!()` bodies, most often in the mock contexts written for tests.
+
+Two checks catch the problem. A consumer trait named after a noun rather than a verb is usually several
+capabilities sharing one component. And if no provider for the trait could ever be reused *whole* by a
+second context, the machinery is not paying for itself — implement the trait directly on the concrete
+context instead, per the section below. When a monolithic trait has to be broken up, split it along the
+axis on which the contexts you actually want differ: the methods whose dependencies are shared across
+those contexts become components with reusable providers, and the ones that must differ get a direct impl
+on each context. The full procedure and its costs are in
+[sizing a component](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/sizing-a-component.md)
+(online).
+
 ## A consumer trait is still an ordinary trait
 
 A consumer trait can also be implemented directly on a context, exactly like a vanilla Rust trait, when code reuse across providers is not the goal. The consumer/provider split is a superset of ordinary traits, not a replacement: the provider machinery is what you opt into when a capability needs more than one implementation, and skipping it costs nothing for the simple case. You write `impl CanGreet for Person { ... }` as usual, and `person.greet()` resolves to that direct impl with no wiring involved.

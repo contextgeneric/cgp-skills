@@ -383,6 +383,18 @@ trait is fine — it is supplied by a const-generic provider struct as usual). S
 [macro-grammar](references/macro-grammar.md) for the full argument grammar and
 [components](references/components.md) for the complete expansion.
 
+**Give each component one capability, which usually means one method.** The component is the unit of
+wiring, so its method count is the granularity at which a context can choose: two methods in one
+component can never be answered by two different providers. Grouping every operation of an entity into
+one trait — `Shape` with `area`, `perimeter`, `scale`, `rotate` — is the shape CGP pays least for, because
+each provider then carries the union of every method's dependencies, a higher-order provider has to
+forward the methods it has no opinion about, and a context needing part of the surface must still answer
+all of it with placeholder types and `unimplemented!()` bodies. A consumer trait named after a noun rather
+than a verb is the usual sign. When you write or review a component, check that a second context could
+plausibly reuse one of its providers *whole*; if not, implement the trait directly on the concrete context
+and skip the machinery. [components](references/components.md) carries the costs and the procedure for
+splitting a trait that has already grown.
+
 ## `IsProviderFor` and error messages
 
 `IsProviderFor<Component, Context, Params>` is an empty marker trait that rides as a supertrait on
@@ -1029,7 +1041,7 @@ Two of the sub-skills are cross-cutting rather than construct-specific, and one 
 
 The remaining sub-skills each own one construct family:
 
-- **[references/components.md](references/components.md)** — `#[cgp_component]` and the full expansion (consumer/provider traits, the two blanket impls, the `…Component` marker), why `IsProviderFor` exists, and the three provider-writing macros (`#[cgp_impl]`, `#[cgp_provider]`, `#[cgp_new_provider]`). *Without it* you will misjudge what `self`/`Self` mean inside a provider and how the blanket impls route a call. Load it before writing any component or provider.
+- **[references/components.md](references/components.md)** — `#[cgp_component]` and the full expansion (consumer/provider traits, the two blanket impls, the `…Component` marker), why `IsProviderFor` exists, the three provider-writing macros (`#[cgp_impl]`, `#[cgp_provider]`, `#[cgp_new_provider]`), and how many methods a component should carry — with the three costs a monolithic entity trait pays and how to split one. *Without it* you will misjudge what `self`/`Self` mean inside a provider, how the blanket impls route a call, and how coarse a component can get before its providers stop being reusable. Load it before writing any component or provider.
 - **[references/wiring.md](references/wiring.md)** — `DelegateComponent`, every `delegate_components!` form (arrays, `new`, generic tables), `open` per-type dispatch, direct consumer-trait impls, `UseContext` and its circular-dependency trap, the legacy `UseDelegate` tables, and the other providers you see in tables (`WithProvider` and its `WithField`/`WithType`/`WithContext` aliases, `UseDefault`). *Without it* you will not know when a hand-written impl collides with the table, why `UseContext` overflows, or what a `WithField<…>` entry means. Load it before wiring any context.
 - **[references/checking.md](references/checking.md)** — why wiring is lazy, how check traits and `CanUseComponent` force readable errors, every `check_components!` / `delegate_and_check_components!` option (`#[check_trait]`, `#[check_providers]`, `#[check_params]`, `#[skip_check]`), and a debugging playbook. *Without it* you cannot localize a broken wiring or read the error it throws. Load it whenever a wiring fails to compile.
 - **[references/error-extraction.md](references/error-extraction.md)** — the **fallback for when `cargo-cgp` is not available, or leaves an error largely unrewritten** (see [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) first — `cargo-cgp`'s `[CGP-Exxx]` headline and root-cause tree already are the compact summary this sub-skill produces, so reach for the sub-skill only when the tool is absent or passes the error through). It covers how to reduce a long raw CGP compile error to a compact, root-cause-first summary, the hidden-versus-surfaced distinction that decides whether the root cause is even present in the output, how to confirm a suspected cause by grepping for one signature line, and how to delegate the reading to a sub-agent so a wall of generated-type errors does not consume your context. *Without it* you will read a cascade inline, chase a cause a hidden error does not contain, or hand back raw output instead of the few facts that matter.
