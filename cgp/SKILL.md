@@ -383,17 +383,21 @@ trait is fine — it is supplied by a const-generic provider struct as usual). S
 [macro-grammar](references/macro-grammar.md) for the full argument grammar and
 [components](references/components.md) for the complete expansion.
 
-**Give each component one capability, which usually means one method.** The component is the unit of
-wiring, so its method count is the granularity at which a context can choose: two methods in one
-component can never be answered by two different providers. Grouping every operation of an entity into
-one trait — `Shape` with `area`, `perimeter`, `scale`, `rotate` — is the shape CGP pays least for, because
-each provider then carries the union of every method's dependencies, a higher-order provider has to
-forward the methods it has no opinion about, and a context needing part of the surface must still answer
-all of it with placeholder types and `unimplemented!()` bodies. A consumer trait named after a noun rather
-than a verb is the usual sign. When you write or review a component, check that a second context could
-plausibly reuse one of its providers *whole*; if not, implement the trait directly on the concrete context
-and skip the machinery. [components](references/components.md) carries the costs and the procedure for
-splitting a trait that has already grown.
+**A component trait may declare as many items as any Rust trait; what to group is the items one provider
+choice decides together.** Everything in one component is answered by one provider, so items settled by one
+decision belong together and items settled by different decisions do not. Most application capabilities are
+one decision and so one method — which is why single-method components dominate — but a method plus the
+associated type it produces is one decision too, which is why CGP's own `CanCompute` and `CanHandle`
+declare `type Output` beside their method, and a getter component groups several field reads because one
+`UseFields` provider answers them all by name. What costs reuse is grouping *different* decisions, as an
+entity trait does (`Shape` with `area`, `perimeter`, `scale`, `rotate`): each provider then carries the
+union of every method's dependencies, a higher-order provider must forward the methods it has no opinion
+about, and a context needing part of the surface must still answer all of it with placeholder types and
+`unimplemented!()` bodies. A consumer trait named after a noun rather than a verb is the usual sign. When
+you write or review one, check that a second context could plausibly reuse one of its providers *whole*; if
+not, implement the trait directly on the concrete context and skip the machinery.
+[components](references/components.md) carries the two multi-item cases, the costs, and the procedure for
+splitting a trait that has grown past one decision.
 
 ## `IsProviderFor` and error messages
 
@@ -1084,6 +1088,15 @@ for an analogy: the "table lookup" is resolved at compile time and compiles down
 calls, so if you use a runtime-flavored analogy like a vtable, say explicitly that — unlike a real
 vtable — CGP's resolution is static and zero-cost, with no runtime table or dynamic dispatch. Never
 leave a reader thinking CGP wiring has runtime lookup overhead.
+
+**Never leave a reader thinking a CGP trait is limited to one item, either.** Because single-decision
+components dominate idiomatic CGP, an explanation built only from one-method traits reads as a restriction
+the macros impose, and a reader who believes their traits are being capped pushes back on the whole
+paradigm rather than on the guidance. So say plainly, whenever the subject comes up, that a component trait
+is an ordinary trait taking as many methods, associated types, and consts as any other — CGP's own
+`CanCompute` and `CanHandle` carry an associated `Output` beside their method — and present the grouping
+guidance the way [components](references/components.md) frames it: a trade-off about how much reuse a
+provider can collect, decided by the author, never a rule about item counts.
 
 When asked to explain a specific piece of code, look up the definitions it depends on before
 answering. To explain a `delegate_components!` entry, find the consumer and provider traits behind

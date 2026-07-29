@@ -197,36 +197,40 @@ by resolving it through the same context. See
 value-injection forms (`#[implicit]` arguments and getters) that read fields off the context through
 the same mechanism.
 
-## Give each component one capability
+## Which items belong in one component
 
-**A component is the unit of wiring, so its method count is the granularity at which a context can make a
-choice — keep it to one capability, which usually means one method.** Two methods in one component can
-never be answered by two different providers, however unrelated they are, so grouping every operation of
-an entity into one trait (`Shape` with `area`, `perimeter`, `scale`, `rotate`) is the shape CGP pays least
-for. Methods belong together only when they always vary together, such as an `encode`/`decode` pair whose
-halves must agree on a format. **Getter components are the deliberate exception**: a `#[cgp_getter]` or
-`#[cgp_auto_getter]` trait declaring `width` and `height` together is idiomatic, because a getter is
-answered by its own method name rather than by a strategy — one `UseFields` provider satisfies every method
-at once by reading the same-named field — so there is no choice to split apart. The trade-off is that
-`UseField` and `WithProvider` are emitted only for a single-method getter trait, so a getter that must be
-wired to a differently named field needs its own component.
+**A component trait may declare as many items as any Rust trait — the question is not how many, but how
+many independent *choices* they represent.** Everything in one component is answered by one provider, so
+group the items a single provider choice decides together and separate the ones different choices decide.
+Most application capabilities are one decision and therefore one method, which is why single-method
+components dominate; the count follows from the principle rather than being a limit.
 
-Three costs follow from a multi-method component, and they are worth recognizing when reading an existing
-one. Every provider carries the **union of its methods' dependencies**, so a capability needed by one
-method is imposed on all of them and on every context wiring that provider. A
-[higher-order provider](higher-order-providers.md) must **implement every method**, forwarding the ones it
-has no opinion about — a one-method component wraps in four lines, while a wrapper over a five-method
-component is mostly passthrough that grows every time a method is added. And a context or provider that
-needs only part of the surface must **still answer all of it**, which in practice means placeholder
-associated types and `unimplemented!()` bodies, most often in the mock contexts written for tests.
+Two groupings of several items are right rather than merely allowed. **A method plus the associated type it
+produces**: a provider that answers *how* also answers *what comes back*, which is why CGP's own
+`CanCompute`, `CanHandle`, and `CanProduce` each declare `type Output` beside their method, and why a
+`CanQueryDatabase` with `type Row` and `query` is good design — splitting `Row` out would let a context
+pair the Postgres querier with the SQLite row type. **A getter component grouping several field reads**: a
+getter is answered by its own method name rather than by a strategy, so one `UseFields` provider satisfies
+every method at once, and there is nothing to split. The trade-off there is that `UseField` and
+`WithProvider` are emitted only for a single-method getter trait, so a getter wired to a differently named
+field needs its own component.
 
-Two checks catch the problem. A consumer trait named after a noun rather than a verb is usually several
-capabilities sharing one component. And if no provider for the trait could ever be reused *whole* by a
+Grouping items that answer to *different* choices costs three things, and the cost rises with how unrelated
+they are rather than with the count. Every provider carries the **union of its methods' dependencies**, so
+a capability one method needs is imposed on all of them and on every context wiring that provider. A
+[higher-order provider](higher-order-providers.md) must **implement every item**, forwarding the ones it
+has no opinion about — a single-decision component wraps in four lines, while a wrapper over an entity
+trait is mostly passthrough that grows with every method added. And a context or provider needing part of
+the surface must **still answer all of it**, which in practice means placeholder associated types and
+`unimplemented!()` bodies, most often in mock contexts written for tests.
+
+Two checks catch a component that has grown past one decision. A consumer trait named after a noun rather
+than a verb usually holds several. And if no provider for the trait could ever be reused *whole* by a
 second context, the machinery is not paying for itself — implement the trait directly on the concrete
-context instead, per the section below. When a monolithic trait has to be broken up, split it along the
-axis on which the contexts you actually want differ: the methods whose dependencies are shared across
-those contexts become components with reusable providers, and the ones that must differ get a direct impl
-on each context. The full procedure and its costs are in
+context instead, per the section below. To break one up, split along the axis on which the contexts you
+actually want differ: the methods whose dependencies are shared across those contexts become components
+with reusable providers, and the ones that must differ get a direct impl on each context. The full
+procedure and its costs are in
 [sizing a component](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/sizing-a-component.md)
 (online).
 
