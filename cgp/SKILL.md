@@ -308,7 +308,8 @@ wrong, it is what you *read* in generated code and legacy wiring, not what you *
 | require a capability | `#[uses(Trait)]` | `where Self: Trait` |
 | require an inner provider | `#[use_provider(P: Trait)]` | `where P: Trait<Self>` |
 | name an abstract type (e.g. `Error`) | `#[use_type(Trait.Type)]` + the bare alias | `: Trait` supertrait + `Self::Type` |
-| pass several args to `#[uses]` / `#[use_type]` / `#[use_provider]` | one attribute, comma-separated | repeating the same attribute |
+| pass several args to `#[uses]` / `#[use_type]` | one attribute, comma-separated | repeating the same attribute |
+| bind several inner providers with `#[use_provider]` | one attribute per provider | a comma-separated list of pairs — it does not parse |
 | add a capability supertrait | `#[extend(Trait)]` | native `pub trait …: Supertrait` |
 | dispatch a component per type | the `open` statement (or a namespace) | `#[derive_delegate]` + `UseDelegate<new …>` tables |
 | verify a context is fully wired | separate `check_components!` (or `delegate_and_check_components!` for a basic starter context) | leaving a context's wiring unchecked |

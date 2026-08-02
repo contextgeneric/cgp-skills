@@ -37,7 +37,14 @@ impl<InnerCalculator> AreaCalculator {
 }
 ```
 
-The author writes `InnerCalculator: AreaCalculator` and the macro inserts the context type at index 0 of the trait's generic arguments, emitting `InnerCalculator: AreaCalculator<Self>` into the `where` clause — the two snippets above are equivalent. The shape it parses is `Provider: Trait`: a provider type, a colon, and one or more provider-trait bounds joined by `+`; the trait may carry further generic arguments after the context slot, preserved in order behind the inserted `Self`. To bind several inner providers, list them all in one attribute separated by commas — `#[use_provider(A: TraitA, B: TraitB)]` — rather than stacking a separate attribute per provider; the combined form reads as a single dependency list, and stacked attributes behave identically but are for when a real reason calls for it. The same attribute works on `#[cgp_fn]`.
+The author writes `InnerCalculator: AreaCalculator` and the macro inserts the context type at index 0 of the trait's generic arguments, emitting `InnerCalculator: AreaCalculator<Self>` into the `where` clause — the two snippets above are equivalent. The shape it parses is `Provider: Trait`: a provider type, a colon, and one or more provider-trait bounds joined by `+`; the trait may carry further generic arguments after the context slot, preserved in order behind the inserted `Self`. To bind several inner providers, write **one attribute per provider**:
+
+```rust
+#[use_provider(A: AreaCalculator)]
+#[use_provider(P: PerimeterCalculator)]
+```
+
+Stacking is the intended form here rather than a fallback, because a comma-separated list of pairs does *not* parse — after the first trait the parser is continuing that provider's bound list, so `#[use_provider(A: TraitA, B: TraitB)]` fails with `expected +`. What the `+` does join is several trait bounds on *one* provider: `#[use_provider(Inner: AreaCalculator + PerimeterCalculator)]`. This makes `#[use_provider]` the exception to the one-attribute-comma-separated convention that `#[uses]` and `#[use_type]` follow, so the habit transfers wrongly. The same attribute works on `#[cgp_fn]`.
 
 What `#[use_provider]` does *not* do is rewrite the body. It completes the bound only; the inner provider is still invoked as the associated function `InnerCalculator::area(self)`, with `self` passed as the explicit context. There is no call-site form — a bare `#[use_provider(InnerCalculator)]` on an expression is not accepted, and no pass turns `receiver.method(args)` into `Provider::method(receiver, args)`. The body must spell the associated-function call out itself. Calling the inner provider as a method (`self.area()`) would instead route through whatever provider the context has wired for the component, a different dispatch and usually not what a higher-order provider wants.
 
