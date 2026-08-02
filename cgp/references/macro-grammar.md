@@ -166,23 +166,32 @@ OpenStmt      -> `open` ( `{` Type ( `,` Type )* `,`? `}` | Type ) `;`
 
 Mapping       -> Key `:`  ProviderValue
                | Key `->` ProviderValue
-               | Key `=>` Path
+               | Key `=>` PathValue
 
 Key           -> SingleKey | MultiKey | PathKey
 SingleKey     -> Generics? Type
 MultiKey      -> `[` SingleKey ( `,` SingleKey )* `,`? `]`
-PathKey       -> Generics? Path
+PathKey       -> Generics? `@` PathHead
+
+PathHead      -> PathSegment ( `.` PathHead )?
+               | `[` PathSegment ( `,` PathSegment )* `,`? `]` ( `.` PathHead )?
+               | `{` PathHead ( `,` PathHead )* `,`? `}`
+
+PathSegment   -> Generics? Type
+
+PathValue     -> `@` PathSegment ( `.` PathSegment )*
 
 ProviderValue -> Type
-               | IDENTIFIER `<` `new` TargetType `{` TableBody `}` `>`
+               | IDENTIFIER `<` `new` InnerTable `>`
 
-Path          -> `@` PathSegment ( `.` PathSegment )*
-PathSegment   -> Type
+InnerTable    -> IDENTIFIER GenericArgs? `{` TableBody `}`
 ```
 
-Every **statement must lead the block, before any mapping** — the parser reads statements first, so an `open`, `namespace`, or `for` written after a `Key: Value` line fails to parse (see error decoding below). A leading `Generics` list makes the whole table generic over the target; `new` also emits the target struct. Of the three mapping operators, `` `:` `` (map to a provider) is the common one, while `` `->` `` (delegate to the value's own entry) and `` `=>` `` (redirect along an `@`-path) belong to the namespace machinery. A `Key` may be one type, a bracketed list expanding to one entry each, or an `@`-path. The nested-table `ProviderValue` form (`UseDelegate<new Inner { … }>`) defines an inner table in place — the legacy dispatch form. An `OpenStmt` opens one component (braces optional) or several (braces required) for per-value `@Component.Key: Provider` wiring folded into the context's own table. **No attributes are accepted** on the table or any entry; an unknown attribute is a spanned error, not silently dropped. See [wiring](wiring.md).
+Every **statement must lead the block, before any mapping** — the parser reads statements first, so an `open`, `namespace`, or `for` written after a `Key: Value` line fails to parse (see error decoding below). A leading `Generics` list makes the whole table generic over the target; `new` also emits the target struct. Of the three mapping operators, `` `:` `` (map to a provider) is the common one. `` `->` `` forwards the key to *another table's* entry for that same key, adding a `Value: DelegateComponent<Key>` bound — a plain-wiring form with no namespace involved. `` `=>` `` redirects the lookup along an `@`-path and is the namespace mechanism, of which `open` is the sugared special case. The parser accepts any operator against any key form, but far fewer combinations are useful than the grammar allows.
 
-**Expansion invariant.** Each plain `Key: Provider` entry emits a `DelegateComponent<Key>` impl with `Delegate = Provider` plus a forwarding `IsProviderFor` impl that threads the provider's dependencies back through the target. An `open Component;` header emits `DelegateComponent<Component>` = `RedirectLookup<Target, PathCons<Component, Nil>>`, and each `@Component.Value: Provider` entry stores that provider under the path key `PathCons<Component, PathCons<Value, Nil>>` on the target; the `RedirectLookup` impl appends the dispatch parameter onto the path at resolution time.
+A `Key` may be one type, a bracketed list expanding to one entry each, or an `@`-path. **The two grouping forms inside a path key are different and are easy to confuse**: a bracketed group holds alternative segments for *one position* and may be followed by `` `.` `` and more path (`@app.[FooComponent, BarComponent].[u64, String]`), while a braced group holds alternative *whole tails* and ends the path, so only it can nest and its alternatives may differ in length (`@app.{ErrorRaiserComponent.{&'static str, String}, ErrorWrapperComponent}`). Both fan out to the cartesian product with the rest of the path. A `PathValue` — the right side of a `` `=>` `` — takes no groups. The nested-table `ProviderValue` form (`UseDelegate<new Inner { … }>`) defines an inner table in place — the legacy dispatch form, whose inner name may itself carry generics (`UseDelegate<new BarValue<T> { … }>`) and whose wrapper need not be `UseDelegate`. An `OpenStmt` opens one component (braces optional) or several (braces required) for per-value `@Component.Key: Provider` wiring folded into the context's own table. **No attributes are accepted** on the table or any entry; an unknown attribute is a spanned error, not silently dropped. See [wiring](wiring.md).
+
+**Expansion invariant.** Each plain `Key: Provider` entry emits a `DelegateComponent<Key>` impl with `Delegate = Provider` plus a forwarding `IsProviderFor` impl that threads the provider's dependencies back through the target. An `open Component;` header emits `DelegateComponent<Component>` = `RedirectLookup<Target, PathCons<Component, Nil>>`, and each `@Component.Value: Provider` entry stores that provider under the path key `PathCons<Component, PathCons<Value, __Wildcard__>>` on the target — **the tail is a generic `__Wildcard__` parameter, not `Nil`**, so one entry answers a redirect of any length; the `RedirectLookup` impl appends the dispatch parameter onto the path at resolution time. An `open C;` header and a `C => @C,` mapping produce the identical impl.
 
 ## `delegate_and_check_components!`
 
@@ -201,7 +210,7 @@ EntryAttr        -> `#` `[` `check_params` `(` Type ( `,` Type )* `,`? `)` `]`
                   | `#` `[` `skip_check` `]`
 ```
 
-`Mapping`, `Key`, `ProviderValue`, and `Statement` are exactly `delegate_components!`'s. This macro wires each entry and derives a check for it, so its check trait defaults to `__CanUse{Context}` (distinct from `check_components!`'s `__Check{Context}`, so both fit one module). Each mapping carries at most one `EntryAttr`; `#[check_params(…)]` supplies the concrete generic parameters a parameterized component's check needs, and `#[skip_check]` wires without checking — the two are mutually exclusive. See [checking](checking.md).
+`Mapping`, `Key`, `ProviderValue`, and `Statement` are exactly `delegate_components!`'s, so the **wiring** half accepts everything that macro does. The **check** half does not: a check entry is derived only from a mapping keyed on a component *name* (a `SingleKey` or `MultiKey`, under either `` `:` `` or `` `->` ``), so an `@`-path key, a `` `=>` `` redirect, and every `open`/`namespace`/`for` statement is wired and left **silently unchecked** — no warning marks the gap, which is the practical reason larger codebases keep the two macros apart. Its check trait defaults to `__CanUse{Context}` (distinct from `check_components!`'s `__Check{Context}`, so both fit one module). Each mapping carries at most one `EntryAttr`; `#[check_params(…)]` supplies the concrete generic parameters a parameterized component's check needs, and `#[skip_check]` wires without checking — the two are mutually exclusive. See [checking](checking.md).
 
 ## `check_components!`
 

@@ -552,6 +552,15 @@ component to a sub-provider, so other contexts can delegate a whole group of com
 reusable unit. A leading **generic list** (`delegate_components! { <T> MyContext<T> { … } }`) wires a
 whole family of contexts at once.
 
+Two further **operators** stand where the `:` does, and you will meet both when reading real wiring.
+`Key -> OtherTable` forwards the key to *that table's* own entry for the same key instead of naming a
+provider, and `Key => @path` redirects the lookup along a type-level path, of which the `open`
+statement below is the sugared special case. Those, the `@`-path key forms, and the `namespace` and
+`for` statements are the rest of one shared body grammar that `cgp_namespace!` and
+`delegate_and_check_components!` reuse wholesale; [wiring](references/wiring.md) and
+[macro-grammar](references/macro-grammar.md) carry it in full, and all of the forms combine inside a
+single block.
+
 The target of `delegate_components!` is therefore not always a context: it is either a concrete
 context (as `Person` is above) or an aggregate provider (as `MyComponents` is). This distinction
 governs checking — an aggregate provider is dispatched *to* by contexts and is never its own context,
@@ -594,10 +603,12 @@ The `open … ;` header opens one or more components for per-value wiring and **
 block (it comes before any plain `Component: Provider` mappings, or the macro fails to parse). The
 braces are optional when opening a single component (`open AreaCalculatorComponent;`); use the
 braced list `open { A, B };` to open several at once. Each
-`@Component.Key: Provider` entry then assigns a provider for one value of the dispatch parameter; a
-brace group on the final segment shares one provider across several values
-(`@AreaCalculatorComponent.{u32, u64, bool}: SomeProvider`), and a key may carry generics
-(`@SomeComponent.<'a, T> &'a T: SomeProvider`). `open` works through the `RedirectLookup` impl that
+`@Component.Key: Provider` entry then assigns a provider for one value of the dispatch parameter. Two
+grouping forms share one provider across several values and are **not** interchangeable: a braced group
+holds whole path *tails* and ends the path (`@AreaCalculatorComponent.{u32, u64, bool}: SomeProvider`),
+while a bracketed group holds alternatives for *one segment* and may be followed by more path
+(`@app.[FooComponent, BarComponent].[u64, String]: P` writes all four combinations). A key may also
+carry generics (`@SomeComponent.<'a, T> &'a T: SomeProvider`). `open` works through the `RedirectLookup` impl that
 every `#[cgp_component]` already generates, so it needs no extra attribute on the component. It does
 not combine with a joined namespace (`#[prefix(...)]`); that is the full namespace feature.
 
