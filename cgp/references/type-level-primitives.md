@@ -172,14 +172,14 @@ It is one of the getter return modes recognized by the field macros, parallel to
 
 ## `StaticFormat`: recovering strings and paths
 
-The type-level encodings need a way back to runtime data, and three traits provide it. `StaticFormat` recovers a type-level string *lazily* by writing into a formatter — it backs the `Display` impls on `Symbol` and `Chars`, recursing down the `Chars` spine to emit each character, so any symbol prints with `to_string()` or `{}`:
+The type-level encodings need a way back to runtime data, and three traits provide it. **Each is imported from a different place: `ConcatPath` is in the prelude, `StaticString` comes from `cgp::core::field::traits`, and `StaticFormat` from `cgp::core::base::traits`** — the module through which `cgp-core` re-exports `cgp-base`, which also reaches `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol`. `StaticFormat` recovers a type-level string *lazily* by writing into a formatter — it backs the `Display` impls on `Symbol` and `Chars`, recursing down the `Chars` spine to emit each character, so any symbol prints with `to_string()` or `{}`:
 
 ```rust
 let s = <Symbol!("hello")>::default();
 assert_eq!(s.to_string(), "hello");
 ```
 
-`StaticString` recovers it *eagerly*, as a compile-time `&'static str` constant: a blanket impl walks the `Chars` list and UTF-8-encodes it into a `[u8; LEN]` at const-evaluation time — which is the consumer that `Symbol`'s `LEN` byte length exists to size — then validates the bytes as a `&'static str`. Use `Display` when a runtime value will do; use `StaticString::VALUE` when a `const` is needed or in a hot path. Both round-trip multi-byte Unicode faithfully:
+`StaticString` recovers it *eagerly*, as a compile-time `&'static str` constant: a blanket impl walks the `Chars` list and UTF-8-encodes it into a `[u8; LEN]` at const-evaluation time — which is the consumer that `Symbol`'s `LEN` byte length exists to size — then validates the bytes as a `&'static str`. Use `Display` when a runtime value will do, `StaticString::VALUE` when a `const` is needed or in a hot path, and a `StaticFormat` bound only where there is no value to format — its method is an associated function, so it writes a type's characters without one. Both round-trip multi-byte Unicode faithfully:
 
 ```rust
 use cgp::core::field::traits::StaticString;
@@ -189,7 +189,7 @@ assert_eq!(<Symbol!("世界你好") as StaticString>::VALUE, "世界你好");
 `ConcatPath` works one level up, joining two `PathCons` paths into one as a pure type-level computation — it keeps each `Head` and splices the second path on where the first reaches `Nil`, the operation behind composing nested accessors:
 
 ```rust
-type Joined = <Path!(@a.b) as ConcatPath<Path!(@c.d)>>::Output; // the path a.b.c.d
+type Joined = <Path!(@a.b) as ConcatPath<Path!(@c.d)>>::Output; // the path @a.b.c.d
 ```
 
 ## Further reference

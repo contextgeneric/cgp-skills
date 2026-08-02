@@ -329,11 +329,29 @@ that uses CGP:
 use cgp::prelude::*;
 ```
 
+**A substantial minority of CGP's public traits and markers are *not* in the prelude, and a missing
+import is the single likeliest reason agent-written CGP fails to compile.** The prelude carries the
+constructs everyday code uses; the rest are imported from one of six homes, and knowing the list is
+faster than guessing:
+
+| Import from | What lives there |
+|---|---|
+| `cgp::core::field::traits` | `TakeField`, `FinalizeExtractResult`, `StaticString`, `AppendProduct`, `ConcatProduct`, `MapFields`, `TransformMap`, `TransformMapFields`, `MapField`, `FieldMapper` |
+| `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsOptional` and `IsOwned` |
+| `cgp::core::base::traits` | `StaticFormat` (and `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, `Symbol`) |
+| `cgp::core::component` | `DefaultImpls1`, `DefaultImpls2` |
+| `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the backend providers |
+| `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
+| `cgp::extra::field::impls` | the whole optional-field layer — `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
+
+The traps worth memorizing are the casts and the optional-field layer, because both read as core
+vocabulary and neither is in the prelude, and the neighbouring pairs that disagree: `ConcatPath` is in
+the prelude while `StaticString` and `StaticFormat` are not, `DefaultNamespace` is while
+`DefaultImpls1`/`DefaultImpls2` are not, and every builder trait is except `TakeField`.
+
 This skill describes CGP **v0.8.0** (and cargo-cgp **v0.1.0-alpha** — see
 [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on the host and
-reconciling a mismatch). A few names are intentionally *not* in the prelude and must be
-imported from their module — most notably the error-handling wiring keys and backends (see Error
-handling below). Inside documentation code blocks you may omit the prelude import for brevity.
+reconciling a mismatch). Inside documentation code blocks you may omit the prelude import for brevity.
 
 ---
 
