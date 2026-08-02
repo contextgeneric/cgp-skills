@@ -476,9 +476,10 @@ visible machinery for syntax that reads like ordinary Rust:
   than a getter trait — this is the default for *any* field a provider reads from its own context,
   including one several providers each read. An implicit argument reads only from `self` and takes a
   plain `&T` by reference without cloning. Use `#[cgp_auto_getter]` sparingly, only where an implicit
-  argument cannot reach: a getter for a field on *another* type required as a `where` bound on it
-  (`Request: HasBasicAuthHeader<Self>`), an accessor other code depends on as a named capability, or a
-  getter carrying an associated type inferred from the field. Reserve `#[cgp_getter]` for the advanced
+  argument cannot reach: a getter for a field on *another* type — taking that type as the getter's first
+  argument in place of `self` (`fn foo_bar(foo: &Self::Foo) -> &Self::Bar`), or required as a `where`
+  bound on it (`Request: HasBasicAuthHeader<Self>`) — an accessor other code depends on as a named
+  capability, or a getter carrying an associated type inferred from the field. Reserve `#[cgp_getter]` for the advanced
   case of choosing the source field per context.
 - **Add non-type capability supertraits with [`#[extend(...)]`](references/functions-and-getters.md)**
   rather than native `: Supertrait` syntax, which reads as OOP-style inheritance rather than a
@@ -767,9 +768,11 @@ An `#[implicit]` argument (above) is the default way to read a context field, so
 used *sparingly* — only where an implicit argument cannot reach. Because an implicit argument reads
 only from the provider's own `self` (and takes a plain `&T` by reference, no clone), it covers every
 same-context read, even a field several providers each consume. A getter trait earns its keep in
-three cases it cannot handle: a field that lives on a type *other* than the provider's context, where
-the getter is required as a `where` bound on that type (`Request: HasBasicAuthHeader<Self>`, so there
-is no `self` field to read); an accessor other code depends on as a *named* capability through
+three cases it cannot handle: a field that lives on a type *other* than the provider's context, which a
+getter reaches in two ways — by taking that type as its first argument instead of `self`
+(`fn foo_bar(foo: &Self::Foo) -> &Self::Bar`, called as `App::foo_bar(&foo)`), or by being required as a
+`where` bound on it (`Request: HasBasicAuthHeader<Self>`) — since either way there is no `self` field to
+read; an accessor other code depends on as a *named* capability through
 `#[uses(HasName)]` or a supertrait; and a getter carrying an *associated type inferred from the
 field* so the type stays abstract for callers.
 

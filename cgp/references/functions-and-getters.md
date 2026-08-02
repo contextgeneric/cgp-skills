@@ -124,7 +124,7 @@ pub fn greet(&self, #[implicit] name: &str) {
 // binding: let name: &str = self.get_field(PhantomData::<Symbol!("name")>).as_str();
 ```
 
-Three rules constrain where `#[implicit]` may appear. The function must take `self` as its first argument, since the field is read from it; the argument pattern must be a bare identifier, not a destructuring or `mut` pattern (clone inside the body for a mutable local); and a mutable implicit argument — one whose type carries a `&mut` (a `&mut T`, `&mut [T]`, `Option<&mut T>`, or `Option<&mut str>`) — must be the *only* implicit argument (and needs a `&mut self` receiver), since it reads through `get_field_mut` and borrows the whole context exclusively — immutable implicits are shared borrows and combine freely in any number. The access mode follows the argument's own type, not the receiver's: only an argument carrying a `&mut` reads through `get_field_mut` (a `&mut [T]` via an `AsMut<[T]>` field, an `Option<&mut T>` via `.as_mut()`, an `Option<&mut str>` via `.as_deref_mut()` on an `Option<String>` field). `#[implicit]` is usable in both `#[cgp_fn]` and the methods of a `#[cgp_impl]` provider, with the same desugaring in each — inside `#[cgp_impl]` the `HasField` bounds simply join the provider impl's `where` clause.
+Three rules constrain where `#[implicit]` may appear. The function must take `self` as its first argument, since the field is read from it; the argument pattern must be a bare identifier, not a destructuring or `mut` pattern (clone inside the body for a mutable local); and a mutable implicit argument — one whose type carries a `&mut` (a `&mut T`, `&mut [T]`, `Option<&mut T>`, or `Option<&mut str>`) — must be the *only* implicit argument (and needs a `&mut self` receiver), since it reads through `get_field_mut` and borrows the whole context exclusively — immutable implicits are shared borrows and combine freely in any number. The access mode follows the argument's own type, not the receiver's: only an argument carrying a `&mut` reads through `get_field_mut` (a `&mut [T]` via an `AsMut<[T]>` field, an `Option<&mut T>` via `.as_mut()`, an `Option<&mut str>` via `.as_deref_mut()` on an `Option<String>` field). One further form has no mutable mirror at all: an [`MRef<'_, T>`](type-level-primitives.md) argument reads a plain `T` field and wraps the borrow as `MRef::Ref(..)`, so it stays a shared `HasField` read even under a `&mut self` receiver — the owned-or-borrowed form, for a body that should not force the context to commit to one. `#[implicit]` is usable in both `#[cgp_fn]` and the methods of a `#[cgp_impl]` provider, with the same desugaring in each — inside `#[cgp_impl]` the `HasField` bounds simply join the provider impl's `where` clause.
 
 ## Importing capabilities: `#[uses]`
 
@@ -196,7 +196,7 @@ where
 }
 ```
 
-That generated blanket impl is the point of the macro, and it follows the same access rules as `#[implicit]`: a plain `&T` return reads a `T` field directly, while the `&str` shorthand reads a `String` field and appends `.as_str()`. Other shorthands include `Option<&T>` (an `Option<T>` field via `.as_ref()`), `Option<&str>` (an `Option<String>` field via `.as_deref()`), `&[T]` (a field implementing `AsRef<[T]>`), an owned type — path, tuple, or array — via `.clone()`, and, with a `&mut self` receiver, the mutable mirrors `&mut T`, `&mut [T]` (a field implementing `AsMut<[T]>`, via `.as_mut()`), `Option<&mut T>` (via `.as_mut()`), and `Option<&mut str>` (an `Option<String>` field via `.as_deref_mut()`) — all through `get_field_mut`. A trait may declare several methods, each mapping independently to its own field — `fn width(&self) -> &f64; fn height(&self) -> &f64;` produces one `where` predicate and one body per field in the same impl.
+That generated blanket impl is the point of the macro, and it follows the same access rules as `#[implicit]`: a plain `&T` return reads a `T` field directly, while the `&str` shorthand reads a `String` field and appends `.as_str()`. Other shorthands include `Option<&T>` (an `Option<T>` field via `.as_ref()`), `Option<&str>` (an `Option<String>` field via `.as_deref()`), `&[T]` (a field implementing `AsRef<[T]>`), [`MRef<'_, T>`](type-level-primitives.md) (a `T` field wrapped as `MRef::Ref(..)`, for a getter that may lend or produce its value), an owned type — path, tuple, or array — via `.clone()`, and, with a `&mut self` receiver, the mutable mirrors `&mut T`, `&mut [T]` (a field implementing `AsMut<[T]>`, via `.as_mut()`), `Option<&mut T>` (via `.as_mut()`), and `Option<&mut str>` (an `Option<String>` field via `.as_deref_mut()`) — all through `get_field_mut`. A trait may declare several methods, each mapping independently to its own field — `fn width(&self) -> &f64; fn height(&self) -> &f64;` produces one `where` predicate and one body per field in the same impl.
 
 A single getter may also declare a local associated type and use it as its return type, which lets the abstract type be inferred from the field. The trait must then contain exactly one method returning `&Self::AssocType`; the macro lifts the type into a generic parameter on the impl and binds it through the `HasField` `Value`:
 
@@ -210,6 +210,20 @@ pub trait HasName {
 //   where Name: Display, __Context__: HasField<Symbol!("name"), Value = Name>
 //   { type Name = Name; … }
 ```
+
+Two further getter-method shapes are accepted, and the common case shows neither. **The first argument need not be `self`** — a typed reference stands in for it, which is how a getter reads a field of a type the context only *names*:
+
+```rust
+#[cgp_auto_getter]
+pub trait HasFooBar: HasFooType + HasBarType {
+    fn foo_bar(foo: &Self::Foo) -> &Self::Bar;
+}
+// → bound falls on __Context__::Foo, not on the context:
+//   __Context__::Foo: HasField<Symbol!("foo_bar"), Value = __Context__::Bar>
+//   and the method is called as an associated function: App::foo_bar(&foo)
+```
+
+`Self` inside the argument and return types is rewritten to the context, and `&` versus `&mut` decides the access mode exactly as a receiver would. This is the one getter shape an `#[implicit]` argument cannot reach, since there is no `self` field to read. **And a getter method may take one further argument, which must be a `PhantomData`** — `fn foo(&self, _tag: PhantomData<Foo>) -> &Foo;`. It is forwarded to the generated method untouched and takes no part in the field lookup; anything else in that position is rejected. Both shapes hold identically for `#[cgp_getter]`, which shares this parser.
 
 A context gains the getter just by deriving `HasField` with a matching field — `person.name()` resolves through the blanket impl with no wiring. The cost of that simplicity is rigidity: the field name *must* equal the method name, and there is no way to swap the implementation. When you need either, `#[cgp_getter]` provides it — but that is an advanced tool, not a routine next step.
 
@@ -294,7 +308,7 @@ The explicit form is more verbose but requires no understanding of `HasField` or
 
 ## Choosing between the constructs
 
-For reading a field into a provider — the common case — an `#[implicit]` argument is the default: it keeps the access local and the code reading like a plain function, whether the value is used once or throughout the body, and it applies to any field on the provider's own context, even one several providers each read. Promote a field to a getter trait only when an implicit argument cannot reach it — the field lives on another type and the getter is a `where` bound on it, the accessor must be a named capability other code depends on, or it carries an associated type inferred from the field — and then use `#[cgp_auto_getter]` when the field name matches the method name (the usual getter), and `#[cgp_getter]` (with `UseField`) as the advanced tool reserved for when the source field name must be chosen per context at wiring time. For a whole capability rather than a single field, `#[cgp_fn]` defines one with no wiring when a single implementation suffices, and a full [component](components.md) when many providers must coexist. All of them rest on the same `HasField` machinery and the same access rules, so mixing them carries no conceptual overhead.
+For reading a field into a provider — the common case — an `#[implicit]` argument is the default: it keeps the access local and the code reading like a plain function, whether the value is used once or throughout the body, and it applies to any field on the provider's own context, even one several providers each read. Promote a field to a getter trait only when an implicit argument cannot reach it — the field lives on another type — reached either by taking that type as the getter's first argument instead of `self`, or by requiring the getter as a `where` bound on it — the accessor must be a named capability other code depends on, or it carries an associated type inferred from the field — and then use `#[cgp_auto_getter]` when the field name matches the method name (the usual getter), and `#[cgp_getter]` (with `UseField`) as the advanced tool reserved for when the source field name must be chosen per context at wiring time. For a whole capability rather than a single field, `#[cgp_fn]` defines one with no wiring when a single implementation suffices, and a full [component](components.md) when many providers must coexist. All of them rest on the same `HasField` machinery and the same access rules, so mixing them carries no conceptual overhead.
 
 ## Further reference
 
