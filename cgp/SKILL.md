@@ -662,11 +662,13 @@ complexity.
 
 One case makes `delegate_and_check_components!` not just unnecessary but wrong: an **aggregate
 provider** (the `new MyComponents { … }` table above). That target is a provider other contexts
-delegate to, not a context itself — it has no fields and never implements a provider trait with
-itself in the context position — so the check's `CanUseComponent` assertion on it cannot hold and the
-macro would report spurious failures. Wire an aggregate provider with plain `delegate_components!`;
-it is verified indirectly when a real context that delegates to it is checked, or directly with a
-`#[check_providers(...)]` block that asserts `IsProviderFor` on it. Finally, not every unsatisfied
+delegate to, not a context itself, so the check's `CanUseComponent` assertion asks whether the bundle
+can use each component *as a context* — a role it never plays, making the answer uninformative either
+way. It passes vacuously when the bundled providers need nothing from their context, and fails
+blaming the bundle when any of them needs a field or a type the real context would have supplied.
+Wire an aggregate provider with plain `delegate_components!`; it is verified indirectly when a real
+context that delegates to it is checked, or directly with a `#[check_providers(...)]` block that
+asserts `IsProviderFor` on it. Finally, not every unsatisfied
 bound is a CGP component — some are ordinary or blanket traits that `check_components!` cannot verify.
 
 For a nested [higher-order provider](references/higher-order-providers.md), checking the context
