@@ -11,6 +11,16 @@ enough detail and worked examples to make an agent proficient in that area witho
 is deliberately lighter than a knowledge-base document: it teaches how to read and write CGP, not
 every corner case.
 
+## One `#` per file
+
+Each file carries exactly one top-level heading — its title — and everything below it is `##` or
+deeper. This is ordinary Markdown hygiene, and here it is also load-bearing: these files are published
+on <https://contextgeneric.dev>, whose renderer generates heading anchors for `h2` and `h3` only, so a
+section written as `#` gets no anchor, appears in no table of contents, and cannot be linked to.
+
+Check it with a fence-aware count rather than `grep -c '^# '`, which counts the `#` comments inside
+shell code blocks and will tell you a clean file is broken.
+
 ## The knowledge base is the source of truth
 
 **A skill must never teach syntax the code no longer has.** The CGP source is the single source of
