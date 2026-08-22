@@ -44,7 +44,7 @@ overlap rules never bite, so `GreetHello`, `GreetGoodbye`, and any number of fur
 the same component can all exist at once. See
 [bypassing coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md)
 (online) for why moving `Self` to a parameter is what sidesteps the rules, and
-[modularity hierarchy](modularity-hierarchy.md) for the spectrum of how far to take the split.
+[modularity hierarchy](modularity-hierarchy.md) for the hierarchy of how far to take the split.
 
 ## How the two traits connect
 
