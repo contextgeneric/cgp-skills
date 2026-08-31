@@ -289,7 +289,7 @@ PathInput    -> `@` PathSegment ( `.` PathSegment )*
 PathSegment  -> Type
 ```
 
-Each expands to a fixed spine, and knowing the spine is what lets you read a printed type. `Symbol!("abc")` becomes `Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>` — the leading const is the *byte* length (so `Symbol!("世界")` records `6`), present only because stable Rust cannot compute a `Chars` length in const position. `Product![A, B]` becomes `Cons<A, Cons<B, Nil>>` and `product![…]` builds the matching value; the empty forms are `Product![]`/`product![]` over `Nil`. `Sum![A, B]` becomes `Either<A, Either<B, Void>>`, terminating in the uninhabited `Void` rather than `Nil`. `Path!(@app.error.FooComponent)` becomes a `PathCons` chain in which a lowercase, non-primitive segment is a `Symbol!` and a capitalized or primitive segment stays the named type. See [type-level-primitives](type-level-primitives.md).
+Each expands to a fixed list, and knowing the list is what lets you read a printed type. `Symbol!("abc")` becomes `Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>` — the leading const is the *byte* length (so `Symbol!("世界")` records `6`), present only because stable Rust cannot compute a `Chars` length in const position. `Product![A, B]` becomes `Cons<A, Cons<B, Nil>>` and `product![…]` builds the matching value; the empty forms are `Product![]`/`product![]` over `Nil`. `Sum![A, B]` becomes `Either<A, Either<B, Void>>`, terminating in the uninhabited `Void` rather than `Nil`. `Path!(@app.error.FooComponent)` becomes a `PathCons` chain in which a lowercase, non-primitive segment is a `Symbol!` and a capitalized or primitive segment stays the named type. See [type-level-primitives](type-level-primitives.md).
 
 ---
 

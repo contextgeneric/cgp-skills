@@ -6,7 +6,7 @@ The handful of zero-sized types and type macros that CGP folds strings, numbers,
 
 CGP keys nearly everything by *type*, not by value. A getter looks up a field by a tag type; a [wiring](wiring.md) table selects a [provider](components.md) by a [component](components.md) key type; a [namespace](namespaces.md) re-routes a lookup along a path type. For that to work, things that are normally values — a field name string, a tuple position, a list of fields, a lifetime — have to be encoded as types the compiler can compare and dispatch on. The primitives in this reference are those encodings. Each is a familiar value-level idea lifted into a type: a string becomes a type-level character list, a number becomes a const-generic marker, a list becomes a recursive cons cell, a sum becomes a recursive branch.
 
-These types are almost never written by hand. They are produced by macros (`Symbol!`, `Product!`, `Sum!`, `Path!`) or emitted by derives, and a reader mostly meets them when *decoding a type the compiler prints* — in an error message, a macro-expansion dump, or a hover. (`cargo cgp expand` resugars them back to `Symbol!`/`Product!`/`Path!`, so a raw spine there means the resugaring declined; an error message or a plain `cargo expand` shows them as they are.) This reference is a decoder ring: skim it to read off what a long nested type means. The prose below always uses the readable `Cons`/`Nil`/`Symbol!` forms, which are exactly what the compiler prints — no abbreviations or aliases are substituted for these types.
+These types are almost never written by hand. They are produced by macros (`Symbol!`, `Product!`, `Sum!`, `Path!`) or emitted by derives, and a reader mostly meets them when *decoding a type the compiler prints* — in an error message, a macro-expansion dump, or a hover. (`cargo cgp expand` resugars them back to `Symbol!`/`Product!`/`Path!`, so a raw list there means the resugaring declined; an error message or a plain `cargo expand` shows them as they are.) This reference is a decoder ring: skim it to read off what a long nested type means. The prose below always uses the readable `Cons`/`Nil`/`Symbol!` forms, which are exactly what the compiler prints — no abbreviations or aliases are substituted for these types.
 
 Assume `use cgp::prelude::*;` throughout.
 
@@ -40,7 +40,7 @@ pub enum Either<Head, Tail> { Left(Head), Right(Tail) }
 pub enum Void {}
 ```
 
-`Either<Head, Tail>` is the sum cell — `Left(head)` selects this branch, `Right(tail)` defers to the rest — and `Void`, an empty enum with no values, closes the chain. The `Sum!` macro folds a list of types onto that spine, and a value picks one branch by how deep it sits:
+`Either<Head, Tail>` is the sum cell — `Left(head)` selects this branch, `Right(tail)` defers to the rest — and `Void`, an empty enum with no values, closes the chain. The `Sum!` macro folds a list of types onto that list, and a value picks one branch by how deep it sits:
 
 ```rust
 type Token = Sum![u32, String, bool];
@@ -49,7 +49,7 @@ type Token = Sum![u32, String, bool];
 let t: Token = Either::Right(Either::Left("hi".to_string())); // the String branch
 ```
 
-The terminator is the one real difference from the product spine, and it is load-bearing. A product ends in the constructible `Nil` because an empty record is a valid value; a sum ends in the *uninhabited* `Void` because an empty choice has no value to pick. After an extractor has tried every variant and matched none, the leftover has type `Void` — a value that cannot exist — which the machinery discharges with an empty `match self {}`, making a fully-handled variant match total at compile time with no unreachable runtime branch. An enum's variants are exposed as a `Sum!` of `Field` entries through `HasFields`, mirroring how a struct's fields are a `Product!`.
+The terminator is the one real difference from the product list, and it is load-bearing. A product ends in the constructible `Nil` because an empty record is a valid value; a sum ends in the *uninhabited* `Void` because an empty choice has no value to pick. After an extractor has tried every variant and matched none, the leftover has type `Void` — a value that cannot exist — which the machinery discharges with an empty `match self {}`, making a fully-handled variant match total at compile time with no unreachable runtime branch. An enum's variants are exposed as a `Sum!` of `Field` entries through `HasFields`, mirroring how a struct's fields are a `Product!`.
 
 ## Type-level strings: `Symbol!`, `Symbol`, `Chars`
 
@@ -99,7 +99,7 @@ It is a zero-sized marker: the number lives entirely in the type, so a tuple str
 
 ## `Field`: a named value
 
-`Field<Tag, Value>` is the element type that fills both spines — a value paired with the type-level tag naming it. A bare `Product![String, u8]` records only types and order; wrapping each element as `Field<Symbol!("name"), String>` attaches the name as a phantom type, making the structural representation self-describing so a provider can match on the tag to find the field it wants.
+`Field<Tag, Value>` is the element type that fills both lists — a value paired with the type-level tag naming it. A bare `Product![String, u8]` records only types and order; wrapping each element as `Field<Symbol!("name"), String>` attaches the name as a phantom type, making the structural representation self-describing so a provider can match on the tag to find the field it wants.
 
 ```rust
 pub struct Field<Tag, Value> {
@@ -123,7 +123,7 @@ pub struct Person { pub name: String, pub age: u8 }
 
 ## `Path!` and `PathCons`: type-level routes
 
-A type-level path is a route through nested [wiring](wiring.md) tables, expressed as a single type. Where a bare component key picks one entry out of a context's table, a path points at an entry behind one or more layers of indirection — inside a [namespace](namespaces.md), under a prefix — by listing the segments to walk left to right. `PathCons<Head, Tail>` is the cons cell of that route, terminated by `Nil`, and it differs from the `Cons` product spine in one way: both `Head` and `Tail` are `?Sized`, because a path segment is a pure type-level marker that never needs a known size.
+A type-level path is a route through nested [wiring](wiring.md) tables, expressed as a single type. Where a bare component key picks one entry out of a context's table, a path points at an entry behind one or more layers of indirection — inside a [namespace](namespaces.md), under a prefix — by listing the segments to walk left to right. `PathCons<Head, Tail>` is the cons cell of that route, terminated by `Nil`, and it differs from the `Cons` product list in one way: both `Head` and `Tail` are `?Sized`, because a path segment is a pure type-level marker that never needs a known size.
 
 ```rust
 pub struct PathCons<Head: ?Sized, Tail: ?Sized>(pub PhantomData<Head>, pub PhantomData<Tail>);
@@ -172,7 +172,7 @@ It is one of the getter return modes recognized by the field macros, parallel to
 
 ## `StaticFormat`: recovering strings and paths
 
-The type-level encodings need a way back to runtime data, and three traits provide it. **Each is imported from a different place: `ConcatPath` is in the prelude, `StaticString` comes from `cgp::core::field::traits`, and `StaticFormat` from `cgp::core::base::traits`** — the module through which `cgp-core` re-exports `cgp-base`, which also reaches `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol`. `StaticFormat` recovers a type-level string *lazily* by writing into a formatter — it backs the `Display` impls on `Symbol` and `Chars`, recursing down the `Chars` spine to emit each character, so any symbol prints with `to_string()` or `{}`:
+The type-level encodings need a way back to runtime data, and three traits provide it. **Each is imported from a different place: `ConcatPath` is in the prelude, `StaticString` comes from `cgp::core::field::traits`, and `StaticFormat` from `cgp::core::base::traits`** — the module through which `cgp-core` re-exports `cgp-base`, which also reaches `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol`. `StaticFormat` recovers a type-level string *lazily* by writing into a formatter — it backs the `Display` impls on `Symbol` and `Chars`, recursing down the `Chars` list to emit each character, so any symbol prints with `to_string()` or `{}`:
 
 ```rust
 let s = <Symbol!("hello")>::default();

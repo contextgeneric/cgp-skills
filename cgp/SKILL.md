@@ -94,7 +94,7 @@ what you think they produce.** A wiring failure is always "the emitted impls do 
 impls are generated, so the fastest way past a confusing diagnostic is often to look at them.
 `cargo cgp expand` prints the crate after macro expansion, with CGP's type-level constructs
 **resugared** — a field tag reads `Symbol!("width")`, not the raw `Symbol<5, Chars<'w', …>>`
-spine the compiler prints; a pipeline reads `Product![StepOne, StepTwo]`; a namespace key reads
+list the compiler prints; a pipeline reads `Product![StepOne, StepTwo]`; a namespace key reads
 `Path!(@app.GreeterComponent)` — so the generated code is legible in the same vocabulary as the
 source.
 
@@ -1021,7 +1021,7 @@ pub struct Person {
 Records are built field-by-field through the builder family (`HasBuilder`, `BuildField`) — the
 **extensible builder pattern** assembles a context from independent per-field outputs. Variants are
 constructed with `FromVariant`, deconstructed with the `ExtractField` extractor family, and the
-**extensible visitor pattern** handles each variant. The type-level spines underneath are the
+**extensible visitor pattern** handles each variant. The type-level lists underneath are the
 product list (`Product![A, B, C]` over `Cons`/`Nil`) for records and the sum list (`Sum![A, B]` over
 `Either`/`Void`) for variants. Structural **casts** convert between shapes — `CanUpcast` widens a
 smaller enum into a larger one, `CanDowncast` narrows, `CanBuildFrom` rebuilds a record from a
@@ -1054,7 +1054,7 @@ CGP encodes lists, strings, and numbers as types. You mostly use the sugared mac
 
 - **`Symbol!("name")`** — a type-level string (field-name tag). Expands to `Symbol<4, Chars<'n', Chars<'a', Chars<'m', Chars<'e', Nil>>>>`. The leading length works around missing const-generics.
 - **`Product![A, B, C]`** — a type-level list. Expands to `Cons<A, Cons<B, Cons<C, Nil>>>`. `product![…]` is the value-level form. Used for field lists and handler pipelines.
-- **`Sum![A, B]`** — a type-level sum (the dual of `Product!`), over the `Either`/`Void` spine. Used for enum variant lists.
+- **`Sum![A, B]`** — a type-level sum (the dual of `Product!`), over the `Either`/`Void` list. Used for enum variant lists.
 - **`Index<N>`** — a type-level natural number, tags tuple-struct fields.
 - **`Field`** — a value paired with its type-level name tag.
 - **`Path!`** / `PathCons` — a type-level path, used by namespaces and `RedirectLookup`.
@@ -1089,7 +1089,7 @@ The remaining sub-skills each own one construct family:
 - **[references/higher-order-providers.md](references/higher-order-providers.md)** — providers parameterized by other providers, the stray `<Self>` on the inner bound, `#[use_provider]`, `UseContext` defaults, generic-parameter components, and cross-context dependencies. *Without it* you will call the inner provider as a method instead of `Provider::method(self)` and misplace the context slot. Load it before composing providers.
 - **[references/error-handling.md](references/error-handling.md)** — `HasErrorType`, `CanRaiseError`/`CanWrapError`, the backend providers (`RaiseFrom`, `DebugError`, …), and — critically — which names come from the prelude versus `cgp::core::error` / `cgp::extra::error`. *Without it* you will fail to import the wiring keys and backends. Load it for any fallible CGP code.
 - **[references/handlers.md](references/handlers.md)** — the `Computer`/`TryComputer`/`Producer`/`Handler`/runner family across its three axes, `#[cgp_computer]`/`#[cgp_producer]`/`#[cgp_auto_dispatch]`, the combinators (`PipeHandlers`, `Promote*`, dispatch matchers), monadic handlers, the `HasRuntime`/`HasRuntimeType` runtime components, and the `Send`-recovery pattern. *Without it* you will pick the wrong family member or miswire a pipeline. Load it for computation and I/O pipelines.
-- **[references/extensible-data.md](references/extensible-data.md)** — the `CgpData`/`CgpRecord`/`CgpVariant` derives, the builder and extractor families (with the optional/defaulted-field extension), `Product!`/`Sum!` spines and their `AppendProduct`/`ConcatProduct`/`MapFields` algebra, structural casts (`CanUpcast`/`CanDowncast`/`CanBuildFrom`), and the builder/visitor patterns. *Without it* you will miss the compile-time exhaustiveness guarantees and the single-payload variant rule. Load it for generic struct/enum manipulation.
+- **[references/extensible-data.md](references/extensible-data.md)** — the `CgpData`/`CgpRecord`/`CgpVariant` derives, the builder and extractor families (with the optional/defaulted-field extension), `Product!`/`Sum!` lists and their `AppendProduct`/`ConcatProduct`/`MapFields` algebra, structural casts (`CanUpcast`/`CanDowncast`/`CanBuildFrom`), and the builder/visitor patterns. *Without it* you will miss the compile-time exhaustiveness guarantees and the single-payload variant rule. Load it for generic struct/enum manipulation.
 - **[references/namespaces.md](references/namespaces.md)** — `cgp_namespace!`, the `namespace`/`for … in` statements that join a namespace, the `#[prefix]`/`#[default_impl]` attributes that register into one, `RedirectLookup`, `Path!`, and the `DefaultNamespace` family. *Without it* you cannot read or write preset/inheritance wiring. Load it whenever wiring is grouped or inherited.
 - **[references/type-level-primitives.md](references/type-level-primitives.md)** — `Symbol!`/`Chars`, `Product!`/`Cons`/`Nil`, `Sum!`/`Either`/`Void`, `Index`, `Field`, `Path!`/`PathCons`, `Life`, `MRef`, and the `StaticFormat` recovery traits. *Without it* you cannot decode the long nested types in error messages and expansions. Load it as the decoder ring.
 - **[references/modularity-hierarchy.md](references/modularity-hierarchy.md)** — the five-tier hierarchy from a plain blanket trait to per-provider wiring, and which coherence rule each tier escapes. *Without it* you will reach for more CGP machinery than a problem needs. Load it when deciding *how much* CGP to apply.
