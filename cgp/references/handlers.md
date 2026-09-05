@@ -6,15 +6,15 @@ Assume `use cgp::prelude::*;` throughout. The CGP version is v0.8.0. Every handl
 
 ## The shared shape and the axes
 
-Every handler maps `(context, Code, Input) -> Output`, where `Code` is a phantom tag carried as `PhantomData<Code>` and `Output` is an *associated type* the provider chooses, not a parameter the caller fixes. The `Code` tag holds no data. It exists so one context can host many handlers keyed by distinct tags, and so wiring can dispatch on it. The family is large because real computations differ along independent axes, and each combination gets its own component so a provider declares exactly the capabilities it has.
+Every handler maps `(context, Code, Input) -> Output`, where `Code` is a phantom tag carried as `PhantomData<Code>` and `Output` is an *associated type* the provider chooses, not a parameter the caller fixes. The `Code` tag carries nothing. It exists so one context can host many handlers keyed by distinct tags, and so wiring can dispatch on it. The family is large because real computations differ along independent axes, and each combination gets its own component so a provider declares exactly the capabilities it has.
 
 One axis is **synchronous versus async**. An async component returns a future and its method is `async`, marked by `Async` in the name (`AsyncComputer` is the async `Computer`). Another is **infallible versus fallible**. A fallible component returns `Result<Output, Error>` against the context's abstract error and so supertraits [`HasErrorType`](abstract-types.md), marked by the `Try` prefix. Another is **owned versus by-reference input**. Every base component has a `*Ref` sibling that borrows `&Input` instead of consuming `Input`. The general principle is that you write the *weakest* variant that fits and let combinators promote it upward. An infallible computation is trivially fallible, a sync one trivially async, and an owned-input one can serve a borrow, but never the reverse.
 
-The components, by corner, are these. `Computer`/`CanCompute` is the pure-computation base, synchronous and infallible, with `AsyncComputer` and the `*Ref` variants alongside it. `TryComputer`/`CanTryCompute` is fallible but synchronous. `Handler`/`CanHandle` is the fully general async-and-fallible computation, and the bound a generic consumer targets, because every simpler provider promotes up to it. `Producer`/`CanProduce` sits apart as the no-input case, producing a value from the context and `Code` alone. A related pair, `CanRun`/`CanSendRun`, runs a named task rather than transforming a value.
+The components fall out by corner. `Computer`/`CanCompute` is the pure-computation base, synchronous and infallible, with `AsyncComputer` and the `*Ref` variants alongside it. `TryComputer`/`CanTryCompute` is fallible but synchronous. `Handler`/`CanHandle` is the fully general async-and-fallible computation, and the bound a generic consumer targets, because every simpler provider promotes up to it. `Producer`/`CanProduce` sits apart as the no-input case, producing a value from the context and `Code` alone. A related pair, `CanRun`/`CanSendRun`, runs a named task rather than transforming a value.
 
 ## The computation components
 
-`CanCompute` is the simplest member and the one to reach for first. Its method takes the `Code` tag and the input by value and returns the chosen `Output` with no failure path:
+`CanCompute` is the simplest member and the one to reach for first. Its method takes the `Code` tag and the input by value and returns the chosen `Output` without a failure path:
 
 ```rust
 #[cgp_component(Computer)]
@@ -26,7 +26,7 @@ pub trait CanCompute<Code, Input> {
 }
 ```
 
-The provider trait `Computer<Context, Code, Input>` moves the context into an explicit first parameter, as for any component, and the marker is `ComputerComponent`. The two `#[derive_delegate]` directives let a context route to different providers by `Code` (via `UseDelegate`) or by `Input` type (via the family's `UseInputDelegate`), the basis of [dispatching](#dispatching-over-extensible-data). `AsyncComputer`/`CanComputeAsync` is identical but declares `async fn compute_async` under `#[async_trait]`, and `ComputerRef`/`AsyncComputerRef` borrow the input as `&Input`. None of the four supertrait `HasErrorType`, because none can fail.
+The provider trait `Computer<Context, Code, Input>` moves the context into an explicit first parameter, as for any component, and the marker is `ComputerComponent`. The `#[derive_delegate]` directives let a context route to different providers by `Code` (via `UseDelegate`) or by `Input` type (via the family's `UseInputDelegate`), the basis of [dispatching](#dispatching-over-extensible-data). `AsyncComputer`/`CanComputeAsync` is identical but declares `async fn compute_async` under `#[async_trait]`, and `ComputerRef`/`AsyncComputerRef` borrow the input as `&Input`. None of them supertrait `HasErrorType`, because none can fail.
 
 `CanTryCompute` adds the failure path. It supertraits `HasErrorType` so its `Result` can name the context's abstract error, which keeps a provider generic over the error backend:
 
@@ -61,7 +61,7 @@ pub trait CanHandle<Code, Input> {
 
 A function bounded by `Context: CanHandle<Code, Input>` accepts any wired computation regardless of which capabilities the underlying provider uses. `HandlerRef` borrows the input.
 
-`CanProduce` is the no-input case. It threads no `Input`, only the context and a `Code` tag, so it carries a single `#[derive_delegate(UseDelegate<Code>)]` with no `UseInputDelegate` counterpart and does not supertrait `HasErrorType`:
+`CanProduce` is the no-input case. It takes only the context and a `Code` tag, so it carries a single `#[derive_delegate(UseDelegate<Code>)]` without a `UseInputDelegate` counterpart, and it does not supertrait `HasErrorType`:
 
 ```rust
 #[cgp_component(Producer)]
@@ -103,11 +103,11 @@ A context hosts many tasks by wiring `RunnerComponent` to a `UseDelegate` table 
 
 ## The runtime: `HasRuntimeType` and `HasRuntime`
 
-A runner needs something to run *against*: an executor that can spawn, sleep, open sockets, or read the clock. CGP keeps that runtime abstract, so the same code runs on Tokio in production, a mock in tests, or a single-threaded executor in a benchmark. Two built-in components express it, split because the two questions are independent. `HasRuntimeType` is an [abstract type](abstract-types.md) (`type Runtime`) answering *what* the runtime type is, chosen per context through wiring like any `#[cgp_type]` component. `HasRuntime` is a getter that supertraits `HasRuntimeType` and answers *how to obtain* the runtime value from a borrow of the context (`fn runtime(&self) -> &Self::Runtime`). Code that only names types the runtime exposes bounds on `HasRuntimeType` alone. Code that performs effects bounds on `HasRuntime`. This pair is the seam where context-generic logic meets concrete async machinery, which is why the runner providers reach through it to do their work.
+A runner needs something to run *against*: an executor that can spawn, sleep, open sockets, or read the clock. CGP keeps that runtime abstract, so the same code runs on Tokio in production, a mock in tests, or a single-threaded executor in a benchmark. The built-in `HasRuntimeType` and `HasRuntime` components express it, split because they answer independent questions. `HasRuntimeType` is an [abstract type](abstract-types.md) (`type Runtime`) answering *what* the runtime type is, chosen per context through wiring like any `#[cgp_type]` component. `HasRuntime` is a getter that supertraits `HasRuntimeType` and answers *how to obtain* the runtime value from a borrow of the context (`fn runtime(&self) -> &Self::Runtime`). Code that only names types the runtime exposes bounds on `HasRuntimeType` alone. Code that performs effects bounds on `HasRuntime`. This pair is the seam where context-generic logic meets concrete async machinery, which is why the runner providers reach through it to do their work.
 
 ## Defining handlers from functions
 
-`#[cgp_computer]` turns a plain function into a `Computer` provider and wires the rest of the family by promotion, so a computation as small as "add two numbers" needs no hand-written plumbing:
+`#[cgp_computer]` turns a plain function into a `Computer` provider and wires the rest of the family by promotion, so a computation as small as "add two numbers" needs nothing hand-written:
 
 ```rust
 #[cgp_computer]
@@ -141,7 +141,7 @@ fn magic_number() -> u64 {
 }
 ```
 
-The function must take no parameters, must not be `async`, and must have no generics. A producer's shape is fixed, so the expansion does not vary. The generated `MagicNumber` answers `produce` and, because `PromoteProducer` discards the input that each computer slot supplies, also `compute`, `try_compute`, `handle`, and the `*Ref` forms, every one yielding `42`.
+The function must not take parameters, must not be `async`, and must not have generics. A producer's shape is fixed, so the expansion does not vary. The generated `MagicNumber` answers `produce` and, because `PromoteProducer` discards the input that each computer slot supplies, also `compute`, `try_compute`, `handle`, and the `*Ref` forms, every one yielding `42`.
 
 ## Composing and promoting with handler combinators
 
@@ -200,7 +200,7 @@ delegate_components! {
 }
 ```
 
-Each entry routes one input type (the array form sharing a provider across several), so a `Circle` or `Rectangle` input reaches `ComputeArea` while a whole `Shape` enum reaches the matcher. This input-type dispatch keys on the `Input` parameter through the component's `UseInputDelegate<Input>` directive, which is why it is written as a nested table rather than through the `open` statement. `open` rides the default `RedirectLookup` that keys on the primary `Code` parameter (see [wiring](wiring.md) for the `open` form, which is the modern way to do `Code`-keyed dispatch). The nested-table form is the established way to dispatch on the input type. This concerns only the *wiring*, and the dispatch combinators above are unaffected.
+Each entry routes one input type (the array form shares a provider across several), so a `Circle` or `Rectangle` input reaches `ComputeArea` while a whole `Shape` enum reaches the matcher. This dispatch keys on the `Input` parameter through `UseInputDelegate<Input>`, so it is written as a nested table. The `open` statement of [wiring](wiring.md) rides the default `RedirectLookup`, which keys on the primary `Code` parameter, so `open` is the modern form for `Code`-keyed dispatch while the nested table remains the form for input-keyed dispatch. This concerns only the wiring, and the dispatch combinators above are unaffected.
 
 On the building side, `BuildWithHandlers<Output, Handlers>` starts from an empty builder, pipes it through per-field adapters, and finalizes. `BuildAndSetField<Tag, Provider>` computes and sets one field, and `BuildAndMerge<Provider>` merges a whole record's shared fields. Because finalization is available only when every field is present, omitting a handler for a field is a compile error rather than a runtime half-built value.
 
@@ -213,15 +213,15 @@ PipeMonadic::<ErrMonadic, Product![Increment, Increment, Increment]>::compute(&c
 // 253 -> Ok(254) -> Ok(255) -> Err("overflow"); the third overflow becomes the output
 ```
 
-CGP ships a small set of monad markers. `IdentMonadic` threads every value forward and never short-circuits, recovering plain `PipeHandlers` composition. `ErrMonadic` short-circuits on `Err` and continues on `Ok`, the `?`-style early return where the first error wins. `OkMonadic` is the mirror, stopping at the first `Ok`, which suits retry-until-success and is what the dispatch matcher loop runs under. The two `Result`-branching markers have transformer forms, `OkMonadicTrans<M>` and `ErrMonadicTrans<M>`, that stack their behavior on a base monad. So a pipeline over a nested `Result<Result<T, E>, F>` can short-circuit on the outer error while threading the inner result.
+CGP ships a small set of monad markers. `IdentMonadic` threads every value forward and never short-circuits, recovering plain `PipeHandlers` composition. `ErrMonadic` short-circuits on `Err` and continues on `Ok`, the `?`-style early return where the first error wins. `OkMonadic` is the mirror, stopping at the first `Ok`, which suits retry-until-success, and the dispatch matcher loop runs under it. Both `Result`-branching markers have transformer forms, `OkMonadicTrans<M>` and `ErrMonadicTrans<M>`, that stack their behavior on a base monad. So a pipeline over a nested `Result<Result<T, E>, F>` can short-circuit on the outer error while threading the inner result.
 
 The per-step providers `BindOk<M, Cont>` and `BindErr<M, Cont>` implement a single bind and are the pieces `PipeMonadic` composes internally. They can also be dropped into a `PipeHandlers` list directly for step-by-step control. `BindErr` runs `Cont` on an `Ok` payload and short-circuits an `Err`, and `BindOk` is its mirror. `PipeMonadic` also implements the fallible and async-fallible components by demoting each provider through `TryPromote`, applying `ErrMonadic` as a transformer over `M`, and re-wrapping. So a monadic pipeline reached through `try_compute` or `handle` short-circuits on the context's error type as well.
 
 ## Recovering `Send` bounds
 
-An async trait method advertises a future whose auto-traits the caller cannot name. The `#[async_trait]` rewrite turns `async fn handle(..)` into `fn handle(..) -> impl Future<..>` with no boxing and no `Send`, which is faithful and zero-cost but drops the `Send` guarantee. The bound matters when the future is spawned onto a work-stealing executor (the default Tokio runtime an Axum server uses), which may migrate a suspended task between threads. The clause you want, "the future of `handle` is `Send` for any arguments," is Return Type Notation (`handle(..): Send`), which stable Rust does not yet offer.
+An async trait method advertises a future whose auto-traits the caller cannot name. The `#[async_trait]` rewrite turns `async fn handle(..)` into `fn handle(..) -> impl Future<..>` without boxing and without a `Send` bound, which is faithful and zero-cost but drops the `Send` guarantee. The bound matters when the future is spawned onto a work-stealing executor (the default Tokio runtime an Axum server uses), which may migrate a suspended task between threads. The clause you want, "the future of `handle` is `Send` for any arguments," is Return Type Notation (`handle(..): Send`), which stable Rust does not yet offer.
 
-The workaround is a second, ordinary trait whose method states `+ Send` directly in its return type, sidestepping RTN:
+The workaround is another, ordinary trait whose method states `+ Send` directly in its return type, sidestepping RTN:
 
 ```rust
 pub trait CanHandleApiSend<Api>:

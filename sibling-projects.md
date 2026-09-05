@@ -2,9 +2,9 @@
 
 The Context-Generic Programming ecosystem is split across several repositories that are developed
 together. This file records where each one lives and which revision of it to read. An agent working
-here often needs one of them, whether to verify a claim against another project's source, to revise
-a document that a change here affects, or to keep a fixture and the prose that describes it in step.
-Treat this table as the authoritative list of what exists alongside this repository.
+here often needs one of them, to verify a claim against another project's source or to revise a
+document that a change here affects. Treat this table as the authoritative list of what exists
+alongside this repository.
 
 The skills here distill the knowledge base, which is their source of truth. A change to a CGP
 construct lands there first, and the matching sub-skill is revised in the same change.

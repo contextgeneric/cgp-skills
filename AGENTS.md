@@ -16,8 +16,8 @@ to read and write CGP, not every corner case.
 Each file carries exactly one top-level heading, its title, and everything below it is `##` or
 deeper. This is ordinary Markdown hygiene, and here it also matters for publishing. These files are
 published on <https://contextgeneric.dev>, whose renderer generates heading anchors for `h2` and `h3`
-only. A section written as `#` gets no anchor, appears in no table of contents, and cannot be linked
-to.
+only. A section written as `#` gets neither an anchor nor a table-of-contents entry, so it cannot be
+linked to.
 
 Check it with a fence-aware count rather than `grep -c '^# '`. The plain grep counts the `#` comments
 inside shell code blocks and reports a clean file as broken.
@@ -45,9 +45,9 @@ plainly what needs updating there.
 
 ## A skill must be self-contained
 
-A skill is copied out of this repository and run on its own, so **no relative link may point outside
-its own directory**. A link to a knowledge-base path or a repository path will not resolve where the
-skill runs. Cross-links between sub-skills are plain relative filenames, such as
+A skill is copied out of this repository and run on its own, so **a relative link must never point
+outside the skill's own directory**. A link to a knowledge-base path or a repository path will not
+resolve where the skill runs. Cross-links between sub-skills are plain relative filenames, such as
 `[wiring](wiring.md)`. For the exhaustive detail a skill leaves out, link to the online knowledge base
 as an absolute URL (`https://github.com/contextgeneric/cgp-knowledge-base/blob/main/<path>` for a
 file, `…/tree/main/<path>` for a directory) and ask the agent to fetch it when needed, rather than

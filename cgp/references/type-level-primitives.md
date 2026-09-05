@@ -1,18 +1,18 @@
 # Type-level primitives
 
-The handful of zero-sized types and type macros that CGP folds strings, numbers, lists, choices, and routes into the type system, so the compiler can match a field name or a wiring route through trait resolution alone.
+This file covers the zero-sized types and type macros with which CGP folds strings, numbers, lists, choices, and routes into the type system, so the compiler can match a field name or a wiring route through trait resolution alone.
 
 ## The idea
 
 CGP keys nearly everything by *type*, not by value. A getter looks up a field by a tag type. A [wiring](wiring.md) table selects a [provider](components.md) by a [component](components.md) key type. A [namespace](namespaces.md) re-routes a lookup along a path type. For that to work, things that are normally values (a field name string, a tuple position, a list of fields, a lifetime) have to be encoded as types the compiler can compare and dispatch on. The primitives in this reference are those encodings. Each is a familiar value-level idea lifted into a type. A string becomes a type-level character list, a number becomes a const-generic marker, a list becomes a recursive cons cell, and a sum becomes a recursive branch.
 
-These types are almost never written by hand. They are produced by macros (`Symbol!`, `Product!`, `Sum!`, `Path!`) or emitted by derives, and a reader mostly meets them when *decoding a type the compiler prints*, in an error message, a macro-expansion dump, or a hover. `cargo cgp expand` resugars them back to `Symbol!`/`Product!`/`Path!`, so a raw list there means the resugaring declined. An error message or a plain `cargo expand` shows them as they are. This reference is a decoder ring. Skim it to read off what a long nested type means. The prose below always uses the readable `Cons`/`Nil`/`Symbol!` forms, which are exactly what the compiler prints. No abbreviations or aliases are substituted for these types.
+These types are almost never written by hand. They are produced by macros (`Symbol!`, `Product!`, `Sum!`, `Path!`) or emitted by derives, and a reader mostly meets them when *decoding a type the compiler prints*, in an error message, a macro-expansion dump, or a hover. `cargo cgp expand` resugars them back to `Symbol!`/`Product!`/`Path!`, so a raw list there means the resugaring declined. An error message or a plain `cargo expand` shows them as they are. This reference is a decoder ring. Skim it to read off what a long nested type means. The prose below always uses the readable `Cons`/`Nil`/`Symbol!` forms, which are exactly what the compiler prints, and never replaces them with abbreviations or aliases.
 
 Assume `use cgp::prelude::*;` throughout.
 
 ## Type-level lists: `Product!`, `Cons`, `Nil`
 
-A type-level list is a compile-time linked list, the analogue of a tuple that generic code can take apart one element at a time. It is built from two cells. `Cons<Head, Tail>` is a pair holding the first element and the rest of the list, and `Nil` is a unit struct marking the end. Chained to the right and terminated by `Nil`, they form an *anonymous product type*, a record-shaped type whose width and contents a provider can walk without knowing the concrete struct it came from.
+A type-level list is a compile-time linked list, the analogue of a tuple that generic code can take apart one element at a time. `Cons<Head, Tail>` is a pair holding the first element and the rest of the list, and `Nil` is a unit struct marking the end. Chained to the right and terminated by `Nil`, they form an *anonymous product type*, a record-shaped type whose width and contents a provider can walk without knowing the concrete struct it came from.
 
 ```rust
 pub struct Cons<Head, Tail>(pub Head, pub Tail);
@@ -40,7 +40,7 @@ pub enum Either<Head, Tail> { Left(Head), Right(Tail) }
 pub enum Void {}
 ```
 
-`Either<Head, Tail>` is the sum cell. `Left(head)` selects this branch, and `Right(tail)` defers to the rest. `Void`, an empty enum with no values, closes the chain. The `Sum!` macro folds a list of types onto that list, and a value picks one branch by how deep it sits:
+`Either<Head, Tail>` is the sum cell. `Left(head)` selects this branch, and `Right(tail)` defers to the rest. `Void`, an empty enum that cannot be constructed, closes the chain. The `Sum!` macro folds a list of types onto that list, and a value picks one branch by how deep it sits:
 
 ```rust
 type Token = Sum![u32, String, bool];
@@ -49,7 +49,7 @@ type Token = Sum![u32, String, bool];
 let t: Token = Either::Right(Either::Left("hi".to_string())); // the String branch
 ```
 
-The terminator is the one real difference from the product list, and it matters. A product ends in the constructible `Nil` because an empty record is a valid value. A sum ends in the *uninhabited* `Void` because an empty choice has no value to pick. After an extractor has tried every variant and matched none, the leftover has type `Void`, a value that cannot exist, which the machinery discharges with an empty `match self {}`. That makes a fully handled variant match total at compile time with no unreachable runtime branch. An enum's variants are exposed as a `Sum!` of `Field` entries through `HasFields`, mirroring how a struct's fields are a `Product!`.
+The terminator is the one real difference from the product list, and it matters. A product ends in the constructible `Nil` because an empty record is a valid value. A sum ends in the *uninhabited* `Void` because an empty choice offers nothing to pick. After an extractor has tried every variant and matched none, the leftover has type `Void`, a value that cannot exist, which the machinery discharges with an empty `match self {}`. That makes a fully handled variant match total at compile time without an unreachable runtime branch. An enum's variants are exposed as a `Sum!` of `Field` entries through `HasFields`, mirroring how a struct's fields are a `Product!`.
 
 ## Type-level strings: `Symbol!`, `Symbol`, `Chars`
 
@@ -89,13 +89,13 @@ The same string can be recovered at runtime. See [`StaticFormat`](#staticformat-
 
 ## `Index<N>`: type-level numbers
 
-`Index<const I: usize>` is the numeric counterpart to `Symbol!`, a `usize` lifted into a type, used to tag a tuple-struct field that has a position but no name. Where a named field is keyed by `Symbol!("name")`, the field at position `N` is keyed by `Index<N>`. So `Index<0>`, `Index<1>`, and `Index<2>` are distinct tag types standing in for `.0`, `.1`, and `.2`.
+`Index<const I: usize>` is the numeric counterpart to `Symbol!`, a `usize` lifted into a type, used to tag a tuple-struct field that has a position but lacks a name. Where a named field is keyed by `Symbol!("name")`, the field at position `N` is keyed by `Index<N>`. So `Index<0>`, `Index<1>`, and `Index<2>` are distinct tag types standing in for `.0`, `.1`, and `.2`.
 
 ```rust
 pub struct Index<const I: usize>;
 ```
 
-It is a zero-sized marker. The number lives entirely in the type, so a tuple struct can carry a `HasField<Index<0>>` impl and a `HasField<Index<1>>` impl side by side, and the compiler selects the right one purely from the tag. Selecting a wrong position, such as `Index<5>` on a three-field struct, is a type error, not a runtime panic, because no matching impl exists. `Index` prints its number directly through `Display`, so `Index::<2>.to_string()` is `"2"` and the tag is legible in diagnostics.
+It is a zero-sized marker. The number lives entirely in the type, so a tuple struct can carry a `HasField<Index<0>>` impl and a `HasField<Index<1>>` impl side by side, and the compiler selects the right one purely from the tag. Selecting a wrong position, such as `Index<5>` on a three-field struct, is a type error, not a runtime panic, because a matching impl does not exist. `Index` prints its number directly through `Display`, so `Index::<2>.to_string()` is `"2"` and the tag is legible in diagnostics.
 
 ## `Field`: a named value
 
@@ -108,7 +108,7 @@ pub struct Field<Tag, Value> {
 }
 ```
 
-The tag is a phantom, needed only at compile time for resolution, so a `Field` is exactly as large as its `Value` and costs nothing at runtime. It is built from a value with no tag argument, since the tag is fixed by the target type: `let f: Field<Symbol!("name"), String> = "Alice".to_string().into();`. The same shape names a record field (tag from `Symbol!` or `Index`) and an enum variant (tag from `Symbol!`, value being the payload), which is why a derived `HasFields` is a `Product!` or `Sum!` of `Field` entries:
+The tag is a phantom, needed only at compile time for resolution, so a `Field` is exactly as large as its `Value` and costs nothing at runtime. It is built from a value without a tag argument, since the tag is fixed by the target type: `let f: Field<Symbol!("name"), String> = "Alice".to_string().into();`. The same shape names a record field (tag from `Symbol!` or `Index`) and an enum variant (tag from `Symbol!`, value being the payload), which is why a derived `HasFields` is a `Product!` or `Sum!` of `Field` entries:
 
 ```rust
 #[derive(HasFields)]
@@ -158,7 +158,7 @@ The `*mut &'a ()` phantom is deliberate. A raw pointer is *invariant* in its lif
 pub enum MRef<'a, T> { Ref(&'a T), Owned(T) }
 ```
 
-A getter declared to return `MRef<'a, T>` lets a context with the value in a field return `MRef::Ref` and lend it, while a context that computes the value returns `MRef::Owned` and gives it away, with no extra cost in the common stored-field case. The caller treats both uniformly because `MRef` derefs to `T`. It implements `Deref<Target = T>` and `AsRef<T>`, builds either variant through `From<T>` and `From<&'a T>`, and promotes a borrow to ownership with `get_or_clone` when `T: Clone`.
+A getter declared to return `MRef<'a, T>` lets a context with the value in a field return `MRef::Ref` and lend it, while a context that computes the value returns `MRef::Owned` and gives it away, without extra cost in the common stored-field case. The caller treats both uniformly because `MRef` derefs to `T`. It implements `Deref<Target = T>` and `AsRef<T>`, builds either variant through `From<T>` and `From<&'a T>`, and promotes a borrow to ownership with `get_or_clone` when `T: Clone`.
 
 ```rust
 let stored = String::from("hello");
@@ -179,7 +179,7 @@ let s = <Symbol!("hello")>::default();
 assert_eq!(s.to_string(), "hello");
 ```
 
-`StaticString` recovers it *eagerly*, as a compile-time `&'static str` constant. A blanket impl walks the `Chars` list and UTF-8-encodes it into a `[u8; LEN]` at const-evaluation time, which is the consumer that `Symbol`'s `LEN` byte length exists to size, then validates the bytes as a `&'static str`. Use `Display` when a runtime value will do, `StaticString::VALUE` when a `const` is needed or in a hot path, and a `StaticFormat` bound only where there is no value to format. Its method is an associated function, so it writes a type's characters without one. Both round-trip multi-byte Unicode faithfully:
+`StaticString` recovers it *eagerly*, as a compile-time `&'static str` constant. A blanket impl walks the `Chars` list and UTF-8-encodes it into a `[u8; LEN]` at const-evaluation time, which is the consumer that `Symbol`'s `LEN` byte length exists to size, then validates the bytes as a `&'static str`. Use `Display` when a runtime value will do, `StaticString::VALUE` when a `const` is needed or in a hot path, and a `StaticFormat` bound only where you lack a value to format, since its method is an associated function that writes a type's characters without one. Both round-trip multi-byte Unicode faithfully:
 
 ```rust
 use cgp::core::field::traits::StaticString;
