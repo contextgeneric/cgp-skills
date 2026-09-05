@@ -1,14 +1,13 @@
 # Sibling projects
 
 The Context-Generic Programming ecosystem is split across several repositories that are developed
-together, and this file records where each one lives and which revision of it to read. An agent
-working here routinely needs one of them — to verify a claim against another project's source, to
-revise a document a change here affects, or to keep a fixture and the prose that describes it in
-step — so treat this table as the authoritative list of what exists alongside this repository.
+together. This file records where each one lives and which revision of it to read. An agent working
+here often needs one of them, whether to verify a claim against another project's source, to revise
+a document that a change here affects, or to keep a fixture and the prose that describes it in step.
+Treat this table as the authoritative list of what exists alongside this repository.
 
-The skills here are built from the knowledge base, which is the source of truth they distill: a
-change to a CGP construct lands there first, and the matching sub-skill is revised in the same
-change.
+The skills here distill the knowledge base, which is their source of truth. A change to a CGP
+construct lands there first, and the matching sub-skill is revised in the same change.
 
 | Project | Repository | Branch/tag to read | What it is |
 |---|---|---|---|
@@ -19,25 +18,25 @@ change.
 ## Finding a sibling
 
 Look for a sibling in the parent directory first, at `../<project>`. Every project in this list,
-including this one, is expected to sit side by side under one parent directory in a local
-environment, so `../cgp` is the fastest and most current reference — it reflects uncommitted work
-that GitHub does not. When the checkout is absent, fetch the file you need from the repository above
-instead, at the revision the table records.
+including this one, should sit side by side under one parent directory in a local environment. So
+`../cgp` is the fastest and most current reference, because it reflects uncommitted work that GitHub
+does not. When the checkout is absent, fetch the file you need from the repository above instead, at
+the revision the table records.
 
 ## Reading a sibling versus linking to one
 
-Reading and linking follow different rules, and conflating them is the mistake to avoid. When you
-**read** a document or a source file from a sibling, use the branch or tag this table names, so every
-project sees the same revision of the others. When you **link** to one from a committed file here, always
-write a GitHub URL on the `main` branch (`https://github.com/contextgeneric/<project>/blob/main/<path>`)
-rather than a relative `../<project>/...` path, so the link resolves for a reader who has only this
-repository checked out. A bare mention of a checkout's location, like the path `../cgp`, is a
-filesystem reference rather than a link and stays relative.
+Reading and linking follow different rules. When you **read** a document or a source file from a
+sibling, use the branch or tag this table names, so every project sees the same revision of the
+others. When you **link** to one from a committed file here, always write a GitHub URL on the `main`
+branch (`https://github.com/contextgeneric/<project>/blob/main/<path>`), never a relative
+`../<project>/...` path. The URL resolves for a reader who has only this repository checked out. A
+bare mention of a checkout's location, like the path `../cgp`, is a filesystem reference rather than
+a link, so it stays relative.
 
 ## Updating a revision
 
-The branch or tag recorded above changes **only on explicit instruction**, such as when a project
-cuts an official release and the ecosystem should pin it. During ordinary development every entry
-stays `main`, and it deliberately does *not* track a feature branch in progress: work in flight is
-read from the local sibling checkout, not from a revision recorded here. The same rule governs the
-`main` in a cross-project link — update it only when told to, as part of a release.
+The branch or tag recorded above changes only on explicit instruction, such as when a project cuts
+an official release and the ecosystem should pin it. During ordinary development every entry stays
+`main`. It does not track a feature branch in progress, because work in flight is read from the
+local sibling checkout, not from a revision recorded here. The same rule governs the `main` in a
+cross-project link. Update it only when told to, as part of a release.

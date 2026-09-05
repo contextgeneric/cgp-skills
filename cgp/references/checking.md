@@ -4,9 +4,9 @@ How to verify at compile time that a context's [wiring](wiring.md) is complete, 
 
 ## Why wiring is lazy
 
-CGP wiring is lazy: recording that a context delegates a [component](components.md) to a provider does not verify that the provider can actually satisfy that component for that context. When you write a `DelegateComponent` entry mapping `GreeterComponent` to `GreetHello`, the type system stores "this key points to this provider" as an associated type and asks no further questions. Whether the provider's own `where` bounds — its impl-side dependencies — hold for this particular context is simply not checked at the point of delegation. The check is deferred until something downstream actually *uses* the component, which is the first moment the compiler is forced to evaluate the provider's bounds against the concrete context.
+CGP wiring is lazy. Recording that a context delegates a [component](components.md) to a provider does not verify that the provider can satisfy that component for that context. When you write a `DelegateComponent` entry mapping `GreeterComponent` to `GreetHello`, the type system stores "this key points to this provider" as an associated type and asks no further questions. Whether the provider's own `where` bounds, its impl-side dependencies, hold for this particular context is not checked at the point of delegation. The check is deferred until something downstream *uses* the component, which is the first moment the compiler must evaluate the provider's bounds against the concrete context.
 
-This laziness is what makes CGP composable, but it has a cost: a context can look fully wired and still be broken. Every entry compiles, the struct compiles, the whole module compiles — and then the first call to a consumer trait method fails, often far from the wiring that caused it. A missing field, a missing abstract type, an unsatisfied transitive bound three providers deep: none of these surface where the mistake was made.
+This laziness makes CGP composable, but it has a cost. A context can look fully wired and still be broken. Every entry compiles, the struct compiles, the whole module compiles, and then the first call to a consumer trait method fails, often far from the wiring that caused it. A missing field, a missing abstract type, or an unsatisfied transitive bound several providers deep does not surface where the mistake was made.
 
 Consider a greeter provider that depends on a `name` field, wired onto a context whose field is misnamed:
 
@@ -41,26 +41,26 @@ delegate_components! {
 }
 ```
 
-This whole block compiles. `GreetHello` needs `HasName`, `Person` has no `name` field, and nothing complains — until some distant `person.greet()` call fails to typecheck.
+This whole block compiles. `GreetHello` needs `HasName`, `Person` has no `name` field, and nothing complains until some distant `person.greet()` call fails to typecheck.
 
 ## Why the resulting errors are poor
 
-When a lazily-wired context is finally used and a dependency is missing, the compiler reports the outermost unmet conclusion and hides the reasoning behind it. Asking the plain question "does `Person` implement `CanGreet`?" makes Rust answer with the last link in the chain — typically that `GreetHello` does not implement the provider trait for `Person` — without explaining *why* the provider's bounds were not met. The provider blanket impl is a competing candidate that suppresses the detailed diagnostic. The root cause, a single missing `name` getter, is buried beneath a conclusion that points at the provider rather than at the gap, and the surface error spells field names in their verbose type-level form (`Symbol<…, Chars<…>>`), making even that hard to read.
+When a lazily wired context is finally used and a dependency is missing, the compiler reports the outermost unmet conclusion and hides the reasoning behind it. Asking the plain question "does `Person` implement `CanGreet`?" makes Rust answer with the last link in the chain, typically that `GreetHello` does not implement the provider trait for `Person`, without explaining *why* the provider's bounds were not met. The provider blanket impl is a competing candidate that suppresses the detailed diagnostic. The root cause, a single missing `name` getter, is buried beneath a conclusion that points at the provider rather than at the gap. The surface error also spells field names in their verbose type-level form (`Symbol<…, Chars<…>>`), making even that hard to read.
 
-The fix is to force the compiler to evaluate the provider's bounds *and report them in detail*, at a location you control — the wiring site — rather than wherever the component happens to be used first.
+The fix is to force the compiler to evaluate the provider's bounds *and report them in detail*, at a location you control. That location is the wiring site, rather than wherever the component happens to be used first.
 
 ## How check traits force readable errors
 
-A check trait is a dummy trait whose supertrait is the requirement being asserted; implementing it for a context with an empty body compiles only if that requirement holds. The hand-written form is plain Rust:
+A check trait is a dummy trait whose supertrait is the requirement being asserted. Implementing it for a context with an empty body compiles only if that requirement holds. The hand-written form is plain Rust:
 
 ```rust
 trait CanUsePerson: CanGreet {}
 impl CanUsePerson for Person {}
 ```
 
-The `impl` block has nothing to prove on its own, so it succeeds exactly when `Person: CanGreet` holds and fails otherwise. Placed next to the wiring, it converts a latent gap into an immediate compile error at a known line. But asserting the *consumer* trait directly is not enough: it reproduces the same vague error as before, naming the provider rather than the missing dependency. The remedy is to route the assertion through `CanUseComponent` instead.
+The `impl` block has nothing to prove on its own, so it succeeds exactly when `Person: CanGreet` holds and fails otherwise. Placed next to the wiring, it converts a latent gap into an immediate compile error at a known line. But asserting the *consumer* trait directly is not enough. It reproduces the same vague error as before, naming the provider rather than the missing dependency. The remedy is to route the assertion through `CanUseComponent` instead.
 
-`CanUseComponent<Component, Params>` is satisfied only when the context both delegates the component and the delegated provider satisfies `IsProviderFor` for that context. The crucial property is that `IsProviderFor` carries the provider's *real* `where` bounds — the same impl-side dependencies the provider needs to implement its provider trait. Routing a check through `CanUseComponent` therefore forces the compiler to evaluate those bounds and, because they are stated explicitly through the marker, to report the specific one that failed. A missing `name` field surfaces as an unsatisfied `HasName`/`HasField` bound pointing at the context, not as a bare "provider not implemented." The two bounds also distinguish the two ways wiring goes wrong: failing the `DelegateComponent` bound means the component was never wired (add the delegation), while failing the `IsProviderFor` bound means it was wired to a provider whose dependencies are unmet (supply the missing dependency). You rarely name `CanUseComponent` directly — its job is to be the bound the check macros emit.
+`CanUseComponent<Component, Params>` is satisfied only when the context delegates the component and the delegated provider satisfies `IsProviderFor` for that context. The crucial property is that `IsProviderFor` carries the provider's *real* `where` bounds, the same impl-side dependencies the provider needs to implement its provider trait. Routing a check through `CanUseComponent` therefore forces the compiler to evaluate those bounds and, because they are stated explicitly through the marker, to report the specific one that failed. A missing `name` field surfaces as an unsatisfied `HasName`/`HasField` bound pointing at the context, not as a bare "provider not implemented." The two bounds also distinguish the two ways wiring goes wrong. Failing the `DelegateComponent` bound means the component was never wired, so add the delegation. Failing the `IsProviderFor` bound means it was wired to a provider whose dependencies are unmet, so supply the missing dependency. You rarely name `CanUseComponent` directly. Its job is to be the bound the check macros emit.
 
 ## Generating checks with `check_components!`
 
@@ -74,9 +74,9 @@ check_components! {
 }
 ```
 
-The generated impl compiles only if `Person: CanUseComponent<GreeterComponent, ()>`, which drags in `GreetHello`'s `IsProviderFor` bounds and reports the first that fails — here, the missing `name` field, pinpointed at the wiring site instead of at a future `person.greet()`. A successful build *is* the passing assertion; these checks have no runtime existence.
+The generated impl compiles only if `Person: CanUseComponent<GreeterComponent, ()>`, which drags in `GreetHello`'s `IsProviderFor` bounds and reports the first that fails. Here that is the missing `name` field, pinpointed at the wiring site instead of at a future `person.greet()`. A successful build *is* the passing assertion. These checks have no runtime existence.
 
-The check trait is named `__Check{Context}` by default — `__CheckPerson` here. When two `check_components!` tables in the same module would collide on that name, override it with `#[check_trait(Name)]` on the table:
+The check trait is named `__Check{Context}` by default, so `__CheckPerson` here. When two `check_components!` tables in the same module would collide on that name, override it with `#[check_trait(Name)]` on the table:
 
 ```rust
 check_components! {
@@ -103,7 +103,7 @@ check_components! {
 }
 ```
 
-Array syntax on either side of the colon expands to the cartesian product, so a set of components can be checked against a set of parameters in one line. A bracketed value checks one component against several parameter sets; a bracketed key checks several components against one set; bracketing both checks every combination:
+Array syntax on either side of the colon expands to the cartesian product, so a set of components can be checked against a set of parameters in one line. A bracketed value checks one component against several parameter sets, a bracketed key checks several components against one set, and bracketing both checks every combination:
 
 ```rust
 check_components! {
@@ -117,7 +117,7 @@ This verifies `MyApp: CanCalculateAreaOfShape<Rectangle>` and `MyApp: CanCalcula
 
 ## Checking providers directly with `#[check_providers(...)]`
 
-For [higher-order providers](higher-order-providers.md), checking the context as a whole tells you a layer is broken but not which one. The `#[check_providers(...)]` attribute changes what is checked: instead of asserting `CanUseComponent` on the context, it asserts `IsProviderFor` directly on each named provider, so each layer is verified on its own impl:
+For [higher-order providers](higher-order-providers.md), checking the context as a whole tells you a layer is broken but not which one. The `#[check_providers(...)]` attribute changes what is checked. Instead of asserting `CanUseComponent` on the context, it asserts `IsProviderFor` directly on each named provider, so each layer is verified on its own impl:
 
 ```rust
 check_components! {
@@ -132,11 +132,11 @@ check_components! {
 }
 ```
 
-Because each provider is checked independently, a dependency missing only from the outer `ScaledAreaCalculator` wrapper errors on the wrapper's line alone, while one missing from the inner `RectangleAreaCalculator` errors on both lines — which narrows down where in a nested stack the gap lives.
+Because each provider is checked independently, a dependency missing only from the outer `ScaledAreaCalculator` wrapper errors on the wrapper's line alone, while one missing from the inner `RectangleAreaCalculator` errors on both lines. That narrows down where in a nested stack the gap lives.
 
 ## Wiring and checking together with `delegate_and_check_components!`
 
-For basic wiring, and especially while getting started with CGP, `delegate_and_check_components!` removes the bookkeeping of keeping a standalone `check_components!` block in sync with the delegations. It fuses the two — wiring each entry exactly as `delegate_components!` would and deriving a check for each delegated key — so a simple context is proven the moment it is written and a newcomer cannot forget the check. (Its reach stops at that basic form, which is why advanced codebases keep the two macros separate; see the recommendation at the end of this section.)
+For basic wiring, and especially while getting started with CGP, `delegate_and_check_components!` removes the bookkeeping of keeping a standalone `check_components!` block in sync with the delegations. It fuses the two, wiring each entry exactly as `delegate_components!` would and deriving a check for each delegated key, so a simple context is proven the moment it is written and a newcomer cannot forget the check. Its reach stops at that basic form, which is why advanced codebases keep the two macros separate. See the recommendation at the end of this section.
 
 ```rust
 #[derive(HasField)]
@@ -154,7 +154,7 @@ delegate_and_check_components! {
 
 If `MyContext` were missing the `name` field, the derived check on `NameGetterComponent` would fail to compile and report the missing bound, rather than letting the gap slip through to a later use.
 
-Its check trait is named `__CanUse{Context}` by default — deliberately distinct from `check_components!`'s `__Check{Context}` — so one of each macro can appear in the same module without a clash. As with `check_components!`, `#[check_trait(Name)]` overrides the derived name.
+Its check trait is named `__CanUse{Context}` by default, deliberately distinct from `check_components!`'s `__Check{Context}`, so one of each macro can appear in the same module without a clash. As with `check_components!`, `#[check_trait(Name)]` overrides the derived name.
 
 Because the delegation half is generic over a component's parameters but the check half needs concrete ones, an entry for a component with generic parameters *requires* a `#[check_params(...)]` attribute supplying them, using the same single-versus-tuple convention:
 
@@ -171,9 +171,9 @@ delegate_and_check_components! {
 }
 ```
 
-The nested `UseDelegate` table shown here is the legacy form of per-type dispatch; the modern equivalent opens the component with the `open` statement of `delegate_components!` (see [wiring](wiring.md)). The `#[check_params(...)]` requirement is the same either way — whichever wiring form supplies the dispatch entries, the check half still needs the concrete parameters spelled out.
+The nested `UseDelegate` table shown here is the legacy form of per-type dispatch. The modern equivalent opens the component with the `open` statement of `delegate_components!` (see [wiring](wiring.md)). The `#[check_params(...)]` requirement is the same either way. Whichever wiring form supplies the dispatch entries, the check half still needs the concrete parameters spelled out.
 
-To wire an entry without checking it — for instance a higher-order delegation you verify separately with a `#[check_providers(...)]` block — mark it `#[skip_check]`. The two attributes are mutually exclusive on a given entry:
+To wire an entry without checking it, for instance a higher-order delegation you verify separately with a `#[check_providers(...)]` block, mark it `#[skip_check]`. The two attributes are mutually exclusive on a given entry:
 
 ```rust
 delegate_and_check_components! {
@@ -188,17 +188,21 @@ delegate_and_check_components! {
 }
 ```
 
-Where `delegate_and_check_components!` fits is narrower than its convenience suggests: it is the beginner-friendly, basic-wiring form, not the default for advanced code. Its value is that a newcomer cannot forget to write a separate `check_components!` and then be tripped by the confusing lazy-wiring errors that follow; it derives a check for each entry keyed on a component *name* — the plain `Component: Provider` form and its `->` sibling — so getting-started code is checked by construction. But the derivation only understands a key that names a component. The advanced forms still *wire*, and are left **silently unchecked**: generic-parameter dispatch through the `open` statement and `@`-path keys, `=>` redirects, and namespace joins all produce delegation impls and no check entry, with nothing warning that a table is only partly verified. Per-layer higher-order checks are not expressible here at all. Each of these needs concrete parameters or providers the fused derivation cannot infer from a delegation alone. So in larger, more advanced codebases, keep `delegate_components!` and `check_components!` separate: the standalone `check_components!` block is where `#[check_providers(...)]`, concrete parameters for generic keys, and checks over opened or namespaced wiring all live. The rule that does not bend is that a context's wiring is checked *somehow*; `delegate_and_check_components!` is simply the training-wheels way to guarantee that for simple contexts, and the two separate macros are the way that scales.
+`delegate_and_check_components!` fits a narrower range than its convenience suggests. It is the beginner-friendly, basic-wiring form, not the default for advanced code. Its value is that a newcomer cannot forget to write a separate `check_components!` and then be tripped by the confusing lazy-wiring errors that follow. It derives a check for each entry keyed on a component *name*, the plain `Component: Provider` form and its `->` sibling, so getting-started code is checked by construction.
 
-There is also a case where `delegate_and_check_components!` is not merely unnecessary but outright *wrong*: an **aggregate provider**. A `delegate_components!` table need not describe a context at all — a `new SomeComponents { … }` table (see [wiring](wiring.md)) defines a zero-sized provider that dispatches each component to a sub-provider, which other contexts then delegate to as a reusable bundle. Such an aggregate provider is always wired with plain `delegate_components!`, never the checked variant, because the check asserts that the target can *use* each component as a context — `Target: CanUseComponent<Component, Params>` — which is a role the bundle never plays, so the answer is uninformative whichever way it goes. **Which way it goes depends on the bundled provider, and this is worth knowing, because one of the two failures is silent.** A leaf provider with no impl-side dependencies implements its provider trait for *every* context, the bundle included, so the assertion holds vacuously and the check passes while proving nothing about the bundle. A leaf provider that needs a field or an abstract type makes the assertion fail and blames the bundle: a bundled `RectangleArea` reading a `width` field reports that `GeometryComponents: CanUseComponent<AreaCalculatorComponent>` is unsatisfied because `GeometryComponents` does not implement `HasField<Symbol!("width")>`, which names neither the real mistake nor the real context. An aggregate provider is verified indirectly instead, when a real context that delegates to it is checked, or directly with a `#[check_providers(...)]` block that names the aggregate and asserts `IsProviderFor` on it for a real context — the provider-side check, not the context-side one.
+But the derivation only understands a key that names a component. The advanced forms still *wire*, and are left **silently unchecked**. Generic-parameter dispatch through the `open` statement and `@`-path keys, `=>` redirects, and namespace joins all produce delegation impls and no check entry, with nothing warning that a table is only partly verified. Per-layer higher-order checks cannot be expressed here at all. Each of these needs concrete parameters or providers the fused derivation cannot infer from a delegation alone.
+
+So in larger, more advanced codebases, keep `delegate_components!` and `check_components!` separate. The standalone `check_components!` block is where `#[check_providers(...)]`, concrete parameters for generic keys, and checks over opened or namespaced wiring all live. The rule that does not bend is that a context's wiring is checked *somehow*. `delegate_and_check_components!` is the training-wheels way to guarantee that for simple contexts, and the two separate macros are the way that scales.
+
+There is also a case where `delegate_and_check_components!` is not merely unnecessary but wrong: an **aggregate provider**. A `delegate_components!` table need not describe a context at all. A `new SomeComponents { … }` table (see [wiring](wiring.md)) defines a zero-sized provider that dispatches each component to a sub-provider, which other contexts then delegate to as a reusable bundle. Such an aggregate provider is always wired with plain `delegate_components!`, never the checked variant, because the check asserts that the target can *use* each component as a context (`Target: CanUseComponent<Component, Params>`). The bundle never plays that role, so the answer is uninformative whichever way it goes. **Which way it goes depends on the bundled provider, and one of the two failures is silent.** A leaf provider with no impl-side dependencies implements its provider trait for *every* context, the bundle included, so the assertion holds vacuously and the check passes while proving nothing about the bundle. A leaf provider that needs a field or an abstract type makes the assertion fail and blames the bundle. A bundled `RectangleArea` reading a `width` field reports that `GeometryComponents: CanUseComponent<AreaCalculatorComponent>` is unsatisfied because `GeometryComponents` does not implement `HasField<Symbol!("width")>`, which names neither the real mistake nor the real context. An aggregate provider is verified indirectly instead, when a real context that delegates to it is checked, or directly with a `#[check_providers(...)]` block that names the aggregate and asserts `IsProviderFor` on it for a real context. That is the provider-side check, not the context-side one.
 
 ## Debugging an unsatisfied check
 
-When a check fails, the error names the unmet bound — read it as a thread to pull rather than a final verdict. The reported bound is the first impl-side dependency the compiler could not satisfy; walk the transitive dependencies from there. If `GreetHello` requires `HasName`, the error names `HasName` on the context, and the fix is to supply that field or wire the getter component. A bound several providers deep names the innermost requirement, so trace from the failing component through each provider it delegates into.
+When a check fails, the error names the unmet bound. Read it as a thread to pull rather than a final verdict. The reported bound is the first impl-side dependency the compiler could not satisfy, so walk the transitive dependencies from there. If `GreetHello` requires `HasName`, the error names `HasName` on the context, and the fix is to supply that field or wire the getter component. A bound several providers deep names the innermost requirement, so trace from the failing component through each provider it delegates into.
 
 When a large `delegate_and_check_components!` table reports a tangle of errors, narrow it down by adding the suspect component to a separate `check_components!` block on its own. Checking one component in isolation, with its parameters spelled out, strips away the noise from the other entries and forces the compiler to report just that component's unmet dependency. For a higher-order stack, switch to `#[check_providers(...)]` to see which layer fails on its own line.
 
-Finally, remember that not every unsatisfied bound is a CGP component. A check trait only verifies wiring routed through `CanUseComponent` — it cannot prove a plain trait or a blanket-impl bound that a provider also depends on. If the error names a trait that has no `…Component` marker and no entry in any delegation table, no amount of checking will surface it through the wiring; that bound must be satisfied by ordinary Rust means (an `impl`, a derive, a `where` clause on the context), and the check will pass only once it is.
+Remember also that not every unsatisfied bound is a CGP component. A check trait only verifies wiring routed through `CanUseComponent`. It cannot prove a plain trait or a blanket-impl bound that a provider also depends on. If the error names a trait that has no `…Component` marker and no entry in any delegation table, no amount of checking will surface it through the wiring. That bound must be satisfied by ordinary Rust means (an `impl`, a derive, a `where` clause on the context), and the check will pass only once it is.
 
 ## Further reference
 

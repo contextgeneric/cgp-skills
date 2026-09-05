@@ -2,7 +2,7 @@
 
 How a context selects which provider implements each of its components, by recording a type-level table that maps every `…Component` marker key to a chosen provider.
 
-A CGP [component](components.md) splits the consumer trait callers use (`CanDoX`) from the provider trait implementers write (`SomethingDoer`), but that split leaves one question open: for a given context, *which* provider supplies the behavior? Wiring is the answer. It is the act of telling a context, component by component, which provider stands behind each consumer-trait call — and the mechanism is a small type-level lookup table carried on the context type. This file explains that table, the `delegate_components!` macro that populates it, and the `UseContext` provider that lets a provider trait route back through the context's own consumer-trait impl.
+A CGP [component](components.md) splits the consumer trait callers use (`CanDoX`) from the provider trait implementers write (`SomethingDoer`). That split leaves one question open: for a given context, *which* provider supplies the behavior? Wiring is the answer. It tells a context, component by component, which provider stands behind each consumer-trait call, and the mechanism is a small type-level lookup table carried on the context type. This file explains that table, the `delegate_components!` macro that populates it, and the `UseContext` provider that lets a provider trait route back through the context's own consumer-trait impl.
 
 ## The table: `DelegateComponent`
 
@@ -14,13 +14,13 @@ pub trait DelegateComponent<Key: ?Sized> {
 }
 ```
 
-There is no method and no data — the trait exists purely to associate a value type (`Delegate`) with a key type (`Key`) on a carrier type (`Self`). The mental model is a type-level key-value map living on the `Self` type, analogous to an object's method table (vtable) in object-oriented languages: where a vtable maps method names to function pointers resolved at runtime, this table maps `…Component` marker types to provider types resolved entirely at compile time. Implementing `DelegateComponent<Key>` is "setting" the entry at `Key`; naming `Self: DelegateComponent<Key>` in a bound and reading `Self::Delegate` is "getting" the value back out. Because Rust forbids two impls of the same trait for the same `Self` and `Key`, each key maps to exactly one value, which is what makes the structure a genuine map.
+The trait has no method and no data. It exists purely to associate a value type (`Delegate`) with a key type (`Key`) on a carrier type (`Self`). The mental model is a type-level key-value map living on the `Self` type, analogous to an object's method table (vtable) in object-oriented languages. Where a vtable maps method names to function pointers resolved at runtime, this table maps `…Component` marker types to provider types resolved entirely at compile time. Implementing `DelegateComponent<Key>` is "setting" the entry at `Key`. Naming `Self: DelegateComponent<Key>` in a bound and reading `Self::Delegate` is "getting" the value back out. Because Rust forbids two impls of the same trait for the same `Self` and `Key`, each key maps to exactly one value, which is what makes the structure a genuine map.
 
-When the key is a component marker such as `GreeterComponent`, a populated entry causes the context to inherit the matching provider trait through the blanket impl, and from there the consumer trait — so `app.greet()` type-checks. The blanket impl's body is itself a `DelegateComponent` lookup: it reads the entry, finds the provider, and forwards the call to it. The lookup *is* the whole routing mechanism. (When the key is some arbitrary type instead of a component marker — a shape, a tag — the same trait serves as a plain dispatch table walked by a higher-order provider, with no provider trait attached; see [higher-order providers](higher-order-providers.md).)
+When the key is a component marker such as `GreeterComponent`, a populated entry causes the context to inherit the matching provider trait through the blanket impl, and from there the consumer trait, so `app.greet()` type-checks. The blanket impl's body is itself a `DelegateComponent` lookup. It reads the entry, finds the provider, and forwards the call to it. The lookup *is* the whole routing mechanism. When the key is some arbitrary type instead of a component marker, such as a shape or a tag, the same trait serves as a plain dispatch table walked by a higher-order provider, with no provider trait attached. See [higher-order providers](higher-order-providers.md).
 
 ## `delegate_components!`: populating the table
 
-You almost never write `DelegateComponent` impls by hand. The `delegate_components!` macro populates the table from a compact `Key: Value` syntax, one entry per component, the marker as the key and the chosen provider as the value:
+You almost never write `DelegateComponent` impls by hand. The `delegate_components!` macro populates the table from a compact `Key: Value` syntax, one entry per component, with the marker as the key and the chosen provider as the value:
 
 ```rust
 #[derive(HasField)]
@@ -36,9 +36,9 @@ delegate_components! {
 }
 ```
 
-This wires `Rectangle` to use the `RectangleArea` provider for its `AreaCalculatorComponent`. After this, calling `rect.area()` resolves through `Rectangle`'s table to `RectangleArea`. The target before the brace is the [context](checking.md) (or an intermediary provider table) whose table is being defined; each key is a `…Component` marker type and each value is the provider type to delegate it to.
+This wires `Rectangle` to use the `RectangleArea` provider for its `AreaCalculatorComponent`. After this, calling `rect.area()` resolves through `Rectangle`'s table to `RectangleArea`. The target before the brace is the [context](components.md) (or an intermediary provider table) whose table is being defined. Each key is a `…Component` marker type, and each value is the provider type to delegate it to.
 
-When several components share one provider, the array form on the key side lets a bracketed list of markers expand to one entry each, all pointing at the same value:
+When several components share one provider, the array form on the key side expands a bracketed list of markers to one entry each, all pointing at the same value:
 
 ```rust
 delegate_components! {
@@ -52,9 +52,9 @@ delegate_components! {
 }
 ```
 
-This is exactly equivalent to writing `AreaCalculatorComponent: RectangleGeometry` and `PerimeterCalculatorComponent: RectangleGeometry` on separate lines, plus the `GreeterComponent` entry — three entries in all.
+This is exactly equivalent to writing `AreaCalculatorComponent: RectangleGeometry` and `PerimeterCalculatorComponent: RectangleGeometry` on separate lines, plus the `GreeterComponent` entry.
 
-A `new` keyword in front of the target makes the macro define the target struct as well, saving a separate declaration. `new GeometryComponents { … }` emits `struct GeometryComponents;` alongside the table impls. This is the idiomatic way to declare an **aggregate provider** — a zero-sized provider whose only purpose is to hold a table that dispatches each component to a sub-provider, so that other contexts can delegate a whole group of components to it as a single unit:
+A `new` keyword in front of the target makes the macro define the target struct as well, saving a separate declaration. `new GeometryComponents { … }` emits `struct GeometryComponents;` alongside the table impls. This is the idiomatic way to declare an **aggregate provider**, a zero-sized provider whose only purpose is to hold a table that dispatches each component to a sub-provider, so that other contexts can delegate a whole group of components to it as a single unit:
 
 ```rust
 delegate_components! {
@@ -65,13 +65,13 @@ delegate_components! {
 }
 ```
 
-An aggregate provider is a *provider*, not a context. `GeometryComponents` implements each component's provider trait by forwarding through its `DelegateComponent` table, and another context then delegates to it — `delegate_components! { App { [AreaCalculatorComponent, PerimeterCalculatorComponent]: GeometryComponents } }` — reusing the whole bundle in one line. Because it is never its own context, an aggregate provider is always wired with plain `delegate_components!`, never `delegate_and_check_components!`: the checked macro would assert that the aggregate can *use* each component as a context, which the bundle was never meant to answer, so the result is uninformative whichever way it goes — it passes vacuously when the bundled providers need nothing from their context, and fails blaming the bundle when any of them needs a field or a type the real context would have supplied. An aggregate provider is verified instead when a real context that delegates to it is checked; see [checking](checking.md).
+An aggregate provider is a *provider*, not a context. `GeometryComponents` implements each component's provider trait by forwarding through its `DelegateComponent` table, and another context then delegates to it with `delegate_components! { App { [AreaCalculatorComponent, PerimeterCalculatorComponent]: GeometryComponents } }`, reusing the whole bundle in one line. Because it is never its own context, an aggregate provider is always wired with plain `delegate_components!`, never `delegate_and_check_components!`. The checked macro would assert that the aggregate can *use* each component as a context, which the bundle was never meant to answer, so the result is uninformative whichever way it goes. It passes vacuously when the bundled providers need nothing from their context, and it fails blaming the bundle when any of them needs a field or a type the real context would have supplied. An aggregate provider is verified instead when a real context that delegates to it is checked. See [checking](checking.md).
 
-A leading generic list on the target makes the whole table generic, so one wiring applies across a family of contexts: `delegate_components! { <T> MyContext<T> { … } }` wires every `MyContext<T>` at once.
+A leading generic list on the target makes the whole table generic, so one wiring applies across a family of contexts. `delegate_components! { <T> MyContext<T> { … } }` wires every `MyContext<T>` at once.
 
 ### What the macro generates
 
-Each entry expands to a pair of impls. The first is the `DelegateComponent` impl that stores the entry — for the `Rectangle` example above, the macro emits:
+Each entry expands to a pair of impls. One is the `DelegateComponent` impl that stores the entry. For the `Rectangle` example above, the macro emits:
 
 ```rust
 impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
@@ -79,11 +79,11 @@ impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
 }
 ```
 
-This impl alone is what the provider blanket impl reads when it looks the component up. The second impl is an `IsProviderFor` impl that forwards the chosen provider's requirements back through the table, so a missing transitive [impl-side dependency](components.md) still surfaces as a usable compiler error rather than a dead end. The details of that propagation belong to [components](components.md) and [checking](checking.md) — here it is enough to know that wiring an entry makes it both *resolvable* (the `DelegateComponent` half) and *checkable* (the `IsProviderFor` half).
+The provider blanket impl reads this impl alone when it looks the component up. The other is an `IsProviderFor` impl that forwards the chosen provider's requirements back through the table, so a missing transitive [impl-side dependency](components.md) still surfaces as a usable compiler error rather than a dead end. The details of that propagation belong to [components](components.md) and [checking](checking.md). Here it is enough to know that wiring an entry makes it both *resolvable* (the `DelegateComponent` half) and *checkable* (the `IsProviderFor` half).
 
 ## Explicit delegation: what wiring effectively does
 
-To see what `delegate_components!` buys you, it helps to write the routing out by hand. Without any table, a context can implement a consumer trait directly by calling a provider's provider-trait method itself. Given the `AreaCalculator` provider trait (whose method takes the context as an explicit `Context` parameter rather than `&self`), a context can hand-route its `CanCalculateArea` consumer impl through the `RectangleArea` provider:
+To see what `delegate_components!` buys you, write the routing out by hand. Without any table, a context can implement a consumer trait directly by calling a provider's provider-trait method itself. Given the `AreaCalculator` provider trait, whose method takes the context as an explicit `Context` parameter rather than `&self`, a context can hand-route its `CanCalculateArea` consumer impl through the `RectangleArea` provider:
 
 ```rust
 impl CanCalculateArea for Rectangle {
@@ -93,11 +93,11 @@ impl CanCalculateArea for Rectangle {
 }
 ```
 
-This is the manual equivalent of one `delegate_components!` entry: it names the provider explicitly, invokes its provider-trait method, and passes `self` as the context. The single line `AreaCalculatorComponent: RectangleArea` in the table achieves the same routing generically, through the generated `DelegateComponent` impl and the blanket impl that reads it — for every method on the trait, without you writing out each call. Use this explicit form only as a teaching device or in the rare case where you want a context to bypass the table for one trait; the table form is the idiom.
+This is the manual equivalent of one `delegate_components!` entry. It names the provider explicitly, invokes its provider-trait method, and passes `self` as the context. The single line `AreaCalculatorComponent: RectangleArea` in the table achieves the same routing generically, through the generated `DelegateComponent` impl and the blanket impl that reads it, for every method on the trait and without you writing out each call. Use this explicit form only as a teaching device, or in the rare case where you want a context to bypass the table for one trait. The table form is the idiom.
 
 ## Direct implementation of a consumer trait
 
-A context need not delegate at all. When the behavior is specific to one context and there is no provider worth naming, you can implement the consumer trait directly — plain vanilla Rust, no table involved:
+A context need not delegate at all. When the behavior is specific to one context and a named provider would add nothing, you can implement the consumer trait directly, as plain Rust with no table involved:
 
 ```rust
 impl CanGreet for Person {
@@ -107,17 +107,17 @@ impl CanGreet for Person {
 }
 ```
 
-This bypasses the provider-trait machinery entirely: `person.greet()` calls this impl directly. Direct implementation and table-driven wiring are mutually exclusive for a given component on a given context — the table's blanket impl already supplies the consumer trait, so a hand-written consumer impl would collide with it. Reach for direct implementation when a component has exactly one context-specific behavior and the indirection of a separate provider adds nothing.
+This bypasses the provider-trait machinery entirely. `person.greet()` calls this impl directly. Direct implementation and table-driven wiring are mutually exclusive for a given component on a given context, because the table's blanket impl already supplies the consumer trait, so a hand-written consumer impl would collide with it. Reach for direct implementation when a component has exactly one context-specific behavior and the indirection of a separate provider adds nothing.
 
 ## `UseContext`: routing a provider trait back to the consumer trait
 
-`UseContext` is a [provider](components.md) — a zero-sized marker struct with no runtime value — that implements *any* provider trait by forwarding its methods back to the context's own consumer-trait implementation:
+`UseContext` is a [provider](components.md), a zero-sized marker struct with no runtime value, that implements *any* provider trait by forwarding its methods back to the context's own consumer-trait implementation:
 
 ```rust
 pub struct UseContext;
 ```
 
-It is the exact dual of the consumer-trait blanket impl. That blanket impl runs consumer-to-provider — a context implements `CanGreet` by delegating to whichever provider implements `Greeter` for it. `UseContext` runs the opposite direction: it implements the provider trait `Greeter` by calling whatever `CanGreet` implementation the context already has. `#[cgp_component]` generates a `UseContext` impl of the provider trait for every component, of roughly the shape:
+It is the exact dual of the consumer-trait blanket impl. That blanket impl runs consumer-to-provider: a context implements `CanGreet` by delegating to whichever provider implements `Greeter` for it. `UseContext` runs the opposite direction. It implements the provider trait `Greeter` by calling whatever `CanGreet` implementation the context already has. `#[cgp_component]` generates a `UseContext` impl of the provider trait for every component, of roughly this shape:
 
 ```rust
 impl<Context> Greeter<Context> for UseContext
@@ -132,19 +132,19 @@ where
 
 So wiring a component to `UseContext` means "use whatever this context already does for this trait." Its purpose is to turn a context's existing consumer-trait impl into a provider that *another* provider can call. The pattern matters most for [higher-order providers](higher-order-providers.md), which take an inner provider as a type parameter and often default it to `UseContext`, so the inner step falls back to the context's own wiring unless an explicit provider is named.
 
-The one rule to respect is the circular-dependency caveat: never delegate a component to `UseContext` when the context's only impl of that component *is* the delegation itself. Doing so asks the context to implement the consumer trait by delegating to a provider (`UseContext`) that in turn implements the provider trait by calling the consumer trait — a cycle the trait solver cannot resolve, surfacing as an overflow or unsatisfied-bound compile error. `UseContext` is meant to be supplied to another provider as its inner provider, not wired as a context's own delegate for the same component.
+The one rule to respect is the circular-dependency caveat. Never delegate a component to `UseContext` when the context's only impl of that component *is* the delegation itself. Doing so asks the context to implement the consumer trait by delegating to a provider (`UseContext`) that in turn implements the provider trait by calling the consumer trait. The trait solver cannot resolve that cycle, and it surfaces as an overflow or unsatisfied-bound compile error. `UseContext` is meant to be supplied to another provider as its inner provider, not wired as a context's own delegate for the same component.
 
 ## Other providers you will see in tables: `WithProvider` and `UseDefault`
 
-Two more provider markers appear in real wiring often enough to recognize on sight. Both are ordinary zero-sized providers wired like any other, but neither carries behavior of its own — one adapts a lower-level provider into a component, and the other selects a component's own default method bodies.
+Two more provider markers appear in real wiring often enough to recognize on sight. Both are ordinary zero-sized providers wired like any other, but neither carries behavior of its own. One adapts a lower-level provider into a component, and the other selects a component's own default method bodies.
 
-`WithProvider<Provider>` adapts a *foundational* provider into the provider a named component expects. CGP has two layers of provider: the component-specific provider traits a context wires (`NameGetter`, `NameTypeProvider`), and a handful of generic, component-agnostic mechanisms beneath them — [`FieldGetter`](functions-and-getters.md) reads *some* field for *some* tag, and [`TypeProvider`](abstract-types.md) supplies *some* abstract type — that do not know which component they serve. `WithProvider<Inner>` is the adapter that lets one of those foundational providers stand in for a named component by forwarding the component's method to it. You rarely write `WithProvider<…>` in full, because its common cases ship as aliases you *will* see wired: `WithField` and `WithFieldRef` (a `FieldGetter` as a getter component), `WithType` and `WithDelegatedType` (a `TypeProvider` as an abstract-type component), and `WithContext` (the context's own capability). Reading `NameGetterComponent: WithField<…>`, treat it as "this getter is served by the foundational field-getter named inside."
+`WithProvider<Provider>` adapts a *foundational* provider into the provider a named component expects. CGP has two layers of provider. The component-specific provider traits a context wires (`NameGetter`, `NameTypeProvider`) sit on top. Beneath them are a handful of generic, component-agnostic mechanisms that do not know which component they serve: [`FieldGetter`](functions-and-getters.md) reads *some* field for *some* tag, and [`TypeProvider`](abstract-types.md) supplies *some* abstract type. `WithProvider<Inner>` is the adapter that lets one of those foundational providers stand in for a named component by forwarding the component's method to it. You rarely write `WithProvider<…>` in full, because its common cases ship as aliases you *will* see wired: `WithField` and `WithFieldRef` (a `FieldGetter` as a getter component), `WithType` and `WithDelegatedType` (a `TypeProvider` as an abstract-type component), and `WithContext` (the context's own capability). When you read `NameGetterComponent: WithField<…>`, treat it as "this getter is served by the foundational field-getter named inside."
 
-`UseDefault` is the empty provider that selects a component's *own* default method bodies. A consumer trait may give its methods default bodies exactly as any Rust trait can; when every method is defaulted there is no behavior left for a provider to supply, yet the component still needs *some* provider in the table to be wired. `UseDefault` is the conventional name for that role — but unlike `UseContext` or `UseField`, no macro generates its impl, so the author writes an empty `#[cgp_impl(UseDefault)]` (or an empty impl on the concrete context) whose body falls through to the trait defaults. Wiring a component to `UseDefault` therefore reads as "use the trait's own defaults for this component."
+`UseDefault` is the empty provider that selects a component's *own* default method bodies. A consumer trait may give its methods default bodies exactly as any Rust trait can. When every method is defaulted there is no behavior left for a provider to supply, yet the component still needs *some* provider in the table to be wired. `UseDefault` is the conventional name for that role. Unlike `UseContext` or `UseField`, no macro generates its impl, so the author writes an empty `#[cgp_impl(UseDefault)]` (or an empty impl on the concrete context) whose body falls through to the trait defaults. Wiring a component to `UseDefault` therefore reads as "use the trait's own defaults for this component."
 
 ## Dispatching a component per type with `open`
 
-When a provider trait carries an extra generic parameter and the right provider depends on which concrete type that parameter is, the choice is made by a second lookup keyed on that parameter rather than on the component marker. The `open` statement inside `delegate_components!` is the way to write that per-value wiring: it folds the per-type entries directly into the context's own table, one provider per concrete value of the dispatch parameter. Given a `CanCalculateArea<Shape>` consumer trait whose `Shape` parameter selects the area formula, a context wires each shape to its own provider like this:
+When a provider trait carries an extra generic parameter and the right provider depends on which concrete type that parameter is, the choice is made by a lookup keyed on that parameter rather than on the component marker. The `open` statement inside `delegate_components!` writes that per-value wiring. It folds the per-type entries directly into the context's own table, one provider per concrete value of the dispatch parameter. Given a `CanCalculateArea<Shape>` consumer trait whose `Shape` parameter selects the area formula, a context wires each shape to its own provider like this:
 
 ```rust
 delegate_components! {
@@ -157,11 +157,11 @@ delegate_components! {
 }
 ```
 
-The leading `open AreaCalculatorComponent;` header opens one or more components for per-value wiring. The braces are optional when opening a single component, so `open AreaCalculatorComponent;` and `open { AreaCalculatorComponent };` are equivalent; to open several components together, list them inside the braces (`open { A, B };`). The header is a *leading* statement: when a single block mixes plain `Component: Provider` mappings with an `open` block, the `open` header must come first, before any plain mappings, or the macro fails to parse. Each subsequent `@Component.Key: Provider` entry then assigns a provider for one value of that component's dispatch parameter: `@AreaCalculatorComponent.Rectangle: RectangleArea` says that when `Shape` is `Rectangle`, `MyApp` calculates area through `RectangleArea`, and the `Circle` line does the same for `Circle`. After this wiring, `MyApp` implements `CanCalculateArea<Rectangle>` via `RectangleArea` and `CanCalculateArea<Circle>` via `CircleArea`.
+The leading `open AreaCalculatorComponent;` header opens one or more components for per-value wiring. The braces are optional when opening a single component, so `open AreaCalculatorComponent;` and `open { AreaCalculatorComponent };` are equivalent. To open several components together, list them inside the braces (`open { A, B };`). The header is a *leading* statement. When a single block mixes plain `Component: Provider` mappings with an `open` block, the `open` header must come before any plain mappings, or the macro fails to parse. Each subsequent `@Component.Key: Provider` entry then assigns a provider for one value of that component's dispatch parameter. `@AreaCalculatorComponent.Rectangle: RectangleArea` says that when `Shape` is `Rectangle`, `MyApp` calculates area through `RectangleArea`, and the `Circle` line does the same for `Circle`. After this wiring, `MyApp` implements `CanCalculateArea<Rectangle>` via `RectangleArea` and `CanCalculateArea<Circle>` via `CircleArea`.
 
-Three shorthands keep the entries compact. When several values of the dispatch parameter share one provider, a **bracketed group** on a path segment expands to one entry each — `@AreaCalculatorComponent.[Rectangle, Circle]: SomeProvider` wires both shapes to `SomeProvider`. A bracketed group is not restricted to the last segment and may be followed by more path, so `@app.[FooComponent, BarComponent].[u64, String]: P` writes all four combinations in one entry. A **braced group** looks similar and behaves differently: its elements are whole *tails* rather than single segments, so they may differ in length and may nest, but nothing may follow the closing brace — `@app.{ErrorRaiserComponent.{&'static str, String}, ErrorWrapperComponent}: RaiseFrom` is one entry covering three routes, while writing `.bool` after such a group is a parse error reported only as `expected ':'`. And when a dispatch value needs generic parameters of its own, they precede the value: `@SomeComponent.<'a, T> &'a T: SomeProvider` dispatches on the type `&'a T` for all `'a` and `T`.
+A few shorthands keep the entries compact. When several values of the dispatch parameter share one provider, a **bracketed group** on a path segment expands to one entry each. `@AreaCalculatorComponent.[Rectangle, Circle]: SomeProvider` wires both shapes to `SomeProvider`. A bracketed group is not restricted to the last segment and may be followed by more path, so `@app.[FooComponent, BarComponent].[u64, String]: P` writes all four combinations in one entry. A **braced group** looks similar and behaves differently. Its elements are whole *tails* rather than single segments, so they may differ in length and may nest, but nothing may follow the closing brace. `@app.{ErrorRaiserComponent.{&'static str, String}, ErrorWrapperComponent}: RaiseFrom` is one entry covering three routes, while writing `.bool` after such a group is a parse error reported only as `expected ':'`. When a dispatch value needs generic parameters of its own, they precede the value. `@SomeComponent.<'a, T> &'a T: SomeProvider` dispatches on the type `&'a T` for all `'a` and `T`.
 
-The `open` form needs no extra macro on the component. It works through the `RedirectLookup` impl that every `#[cgp_component]` already generates, so dispatching a component per type requires no `#[derive_delegate]` on the trait — the same component you wire by marker is the one you open by value. `open` is a lightweight form of the full namespace feature, suited to a context wiring its own components directly; it does not combine with a joined namespace where the component carries `#[prefix(...)]`. The full namespace machinery, including `@`-path keys and the `namespace` statement, is described in [namespaces](namespaces.md).
+The `open` form needs no extra macro on the component. It works through the `RedirectLookup` impl that every `#[cgp_component]` already generates, so dispatching a component per type requires no `#[derive_delegate]` on the trait. The same component you wire by marker is the one you open by value. `open` is a lightweight form of the full namespace feature, suited to a context wiring its own components directly. It does not combine with a joined namespace where the component carries `#[prefix(...)]`. The full namespace machinery, including `@`-path keys and the `namespace` statement, is described in [namespaces](namespaces.md).
 
 ### Legacy: `UseDelegate` nested tables
 
@@ -178,13 +178,13 @@ delegate_components! {
 }
 ```
 
-This desugars `UseDelegate<new AreaCalculatorComponents { … }>` into a standalone `delegate_components! { new AreaCalculatorComponents { … } }` plus an outer entry `AreaCalculatorComponent: UseDelegate<AreaCalculatorComponents>` pointing the component at that inner table. The end effect matches the `open` example above — `MyApp` dispatches `Rectangle` to `RectangleArea` and `Circle` to `CircleArea` — but the dispatch values live in a named side table reached through `UseDelegate` instead of in `MyApp`'s table directly.
+This desugars `UseDelegate<new AreaCalculatorComponents { … }>` into a standalone `delegate_components! { new AreaCalculatorComponents { … } }` plus an outer entry `AreaCalculatorComponent: UseDelegate<AreaCalculatorComponents>` pointing the component at that inner table. The end effect matches the `open` example above. `MyApp` dispatches `Rectangle` to `RectangleArea` and `Circle` to `CircleArea`, but the dispatch values live in a named side table reached through `UseDelegate` instead of in `MyApp`'s table directly.
 
-This is a legacy dispatch mechanism, retained for compatibility and expected to be deprecated and removed. It is documented here so that the nested-table form can be *read* where it still appears in existing code; for *writing* new wiring, prefer `open`, which dispatches the same component without the extra `UseDelegate` indirection or the separate inner table. The detailed mechanics of the `UseDelegate` provider — how it reads its inner table at the provider level — belong to [higher-order providers](higher-order-providers.md).
+This is a legacy dispatch mechanism, retained for compatibility and expected to be deprecated and removed. It is documented here so that the nested-table form can be *read* where it still appears in existing code. For *writing* new wiring, prefer `open`, which dispatches the same component without the extra `UseDelegate` indirection or the separate inner table. The detailed mechanics of the `UseDelegate` provider, and how it reads its inner table at the provider level, belong to [higher-order providers](higher-order-providers.md).
 
 ## Related constructs
 
-Wiring is the step that connects [components](components.md) — the consumer/provider trait pairs and `…Component` markers — to the providers that implement them, and the `IsProviderFor` impls it generates feed the completeness guarantees described in [checking](checking.md). The `open` statement shown above dispatches a generic-parameter component per value through the `RedirectLookup` impl every component generates; the full namespace feature it derives from, including `@`-path keys and the `namespace` statement, is described in [namespaces](namespaces.md). `UseContext` and the legacy `UseDelegate` provider — including how it reads an inner dispatch table — are covered in [higher-order providers](higher-order-providers.md).
+Wiring connects [components](components.md), the consumer/provider trait pairs and `…Component` markers, to the providers that implement them. The `IsProviderFor` impls it generates feed the completeness guarantees described in [checking](checking.md). The `open` statement shown above dispatches a generic-parameter component per value through the `RedirectLookup` impl every component generates. The full namespace feature it derives from, including `@`-path keys and the `namespace` statement, is described in [namespaces](namespaces.md). `UseContext` and the legacy `UseDelegate` provider, including how it reads an inner dispatch table, are covered in [higher-order providers](higher-order-providers.md).
 
 ## Further reference
 
