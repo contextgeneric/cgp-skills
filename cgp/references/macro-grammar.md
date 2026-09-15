@@ -245,10 +245,10 @@ A `CheckEntry`'s value is omitted for a parameterless component and required oth
 
 ### `cgp_namespace!`
 
-The body is an optional generic list and `new`, a namespace name, an optional parent, and a table:
+The body is an optional generic list and `new`, a namespace name, an optional parent, and an optional table:
 
 ```ebnf
-CgpNamespace    -> Generics? `new`? NamespaceName ( `:` ParentNamespace )? `{` NamespaceBody `}`
+CgpNamespace    -> Generics? `new`? NamespaceName ( `:` ParentNamespace )? ( `{` NamespaceBody `}` )?
 
 NamespaceName   -> IDENTIFIER GenericArgs?
 ParentNamespace -> TypePath GenericArgs?
@@ -256,7 +256,7 @@ ParentNamespace -> TypePath GenericArgs?
 NamespaceBody   -> Statement* ( Mapping ( `,` Mapping )* `,`? )?
 ```
 
-The mappings are `delegate_components!`'s `Mapping`, most often a `` `=>` `` redirect to an `@`-path or a `` `:` `` direct provider. The colon between `NamespaceName` and `ParentNamespace` is the *inheritance* colon, distinct from a mapping's `:`. Naming a parent makes the namespace resolve everything the parent does plus its own entries. This macro also owns the statement forms a context's `delegate_components!` table uses to consume a namespace:
+The mappings are `delegate_components!`'s `Mapping`, most often a `` `=>` `` redirect to an `@`-path or a `` `:` `` direct provider. The colon between `NamespaceName` and `ParentNamespace` is the *inheritance* colon, distinct from a mapping's `:`. Naming a parent makes the namespace resolve everything the parent does plus its own entries. The table may be omitted when the namespace has no entries of its own, so `new Child: Parent` alone emits the struct, the trait, and the inheritance impl; nothing but a `{` or the end of the input may follow the header, and `delegate_components!` always keeps its braces. This macro also owns the statement forms a context's `delegate_components!` table uses to consume a namespace:
 
 ```ebnf
 Statement     -> NamespaceStmt | ForStmt

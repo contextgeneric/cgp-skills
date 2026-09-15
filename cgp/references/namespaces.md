@@ -37,7 +37,7 @@ cgp_namespace! {
 }
 ```
 
-`ExtendedNamespace` inherits every entry `DefaultNamespace` resolves and additionally reroutes the entire `@cgp.core.error` subtree to `@app`. A single path-rewriting entry redirects a whole prefix of the parent namespace at once, not just one component.
+`ExtendedNamespace` inherits every entry `DefaultNamespace` resolves and additionally reroutes the entire `@cgp.core.error` subtree to `@app`. A single path-rewriting entry redirects a whole prefix of the parent namespace at once, not just one component. When a child adds nothing of its own, the braces may be omitted: `cgp_namespace! { new AppNamespace: DefaultNamespace }` emits the same struct, trait, and inheritance impl as the braced empty body. Only `cgp_namespace!` accepts a header with no table; `delegate_components!` always needs its braces.
 
 ### What the macro generates
 
