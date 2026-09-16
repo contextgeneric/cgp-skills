@@ -1,14 +1,31 @@
 # Extensible data
 
-Extensible data treats a struct as a product of named fields and an enum as a sum of named variants, so that generic code can read, build, deconstruct, and convert any data type by its type-level field and variant names rather than by naming the concrete type.
+Extensible data lets generic code read, build, deconstruct, and convert structs and enums through
+named fields and variants. It represents a struct as a product of fields and an enum as a sum of
+variants, with each name encoded at the type level.
 
-A plain Rust `struct` or `enum` is opaque to generic code. Nothing about "the `first_name` field" or "the `Circle` variant" can be named through a type parameter, so a struct literal must list every field at one site and a `match` must spell out every variant. Extensible data breaks that by deriving a type-level description of a type's shape, its fields or variants each tagged by name, and the machinery to build, take apart, and convert values through that description. This brings row polymorphism and structural sum types to Rust, resolved entirely at compile time. So independent components can each contribute one field or handle one variant without knowing the whole type. The result feeds directly into CGP wiring. Builders, variant dispatchers, and structural casts all consume the field-level machinery these derives generate, and a context is just such a data type when it flows through providers this way.
+Extensible-data derives expose a type’s structure to generic code. Ordinary struct literals and enum
+matches name every field or variant directly. The derives instead generate a type-level description
+and operations that construct, extract, and convert values through it.
 
-The whole family is dual. A record is a product (every field present at once), and an enum is a sum (exactly one variant present). Both halves share their presence markers, their casting traits, and their dispatch machinery, so reading one half tells you the shape of the other.
+Independent providers can then contribute fields or handle variants without knowing the complete
+type. This supports row polymorphism and structural sum types: generic operations depend on named
+parts of a type’s structure. Resolution happens at compile time. Builders, variant dispatchers, and
+structural casts use the generated operations to assemble and process contexts.
+
+Records and variants use related representations. A record contains every field at once, while an
+enum contains one variant at a time. Their operations share marker, casting, and dispatch
+mechanisms, with different rules for representing absent fields and excluded variants.
 
 ## The umbrella derive and its shape-specific faces
 
-`#[derive(CgpData)]` is the high-level entry point. Applied to a struct it emits the full record machinery, and applied to an enum the full variant machinery, dispatching on the item kind. `#[derive(CgpRecord)]` and `#[derive(CgpVariant)]` are the same code paths restricted to one shape. Use them when the type is always a struct or always an enum and you want the name to say so. Applying the wrong one is a type error. The narrower building-block derives (`HasFields`, `HasField`, `BuildField`, `ExtractField`, `FromVariant`) each emit one slice of that output when you want only part of it.
+Use `#[derive(CgpData)]` to generate the full extensible-data support for a struct or enum.
+`CgpRecord` and `CgpVariant` generate the same support but accept only structs and enums
+respectively. Applying either to the wrong item kind is an error.
+
+Choose a narrower derive when only part of the support is needed. `HasFields`, `HasField`,
+`BuildField`, `ExtractField`, and `FromVariant` each generate a subset. The umbrella derive covers
+both shapes:
 
 ```rust
 #[derive(CgpData)]
@@ -18,15 +35,43 @@ pub struct Person { pub first_name: String, pub last_name: String }
 pub enum Shape { Circle(Circle), Rectangle(Rectangle) }
 ```
 
-Field tags drive everything generated. A named struct field or an enum variant is keyed by the type-level string `Symbol!("name")`, and an unnamed field of a tuple struct by its positional `Index<N>`. That tag addresses the field across every generated impl. One restriction shapes the variant side. A derivable enum must follow the sum-of-products form, where each variant holds exactly one unnamed payload, so wrap a richer payload in a dedicated struct to keep the variant's value a single nameable type. A fieldless, multi-field, or struct-style variant is a compile error, and a variant cannot opt out, so an enum mixing shapes cannot take these derives at all.
+Generated operations identify fields and variants by type-level tags. Named fields and variants use
+`Symbol!("name")`, while tuple-struct fields use positional tags such as `Index<0>`. The same tag
+identifies an entry across its generated impls.
 
-**`#[derive(HasFields)]` is the exception and accepts every variant shape**, because it only *describes* a variant rather than deconstructing it. It nests that variant's own fields as a product inside its `Field` entry, so a unit variant becomes `Nil`, a newtype variant passes its payload through, a multi-field tuple variant becomes an `Index<N>`-keyed product, and a named-field variant a `Symbol!`-keyed one. The consequence to remember when choosing a derive: an enum with mixed variant shapes can have a structural representation but neither a generic constructor nor an extractor.
+Variant construction and extraction require exactly one unnamed payload per variant. Wrap multiple
+values in a dedicated struct to give the variant one payload type. Unit, multi-field tuple, and
+struct-style variants are rejected, and individual variants cannot opt out of the derive.
 
-**Some variant names are reserved on an enum, and using one fails to compile.** The generated impls name their own associated types through `Self::…`, so a variant called `Fields` or `FieldsRef` breaks `#[derive(HasFields)]`, `Value` breaks `#[derive(FromVariant)]`, and `Value`, `Remainder`, `Extractor`, `ExtractorRef`, or `ExtractorMut` breaks `#[derive(ExtractField)]`. So `#[derive(CgpVariant)]` and `#[derive(CgpData)]` break on any of those names. The compiler reports `ambiguous associated item` headlined at the derive attribute. For `HasFields` and `FromVariant` a note points at the offending variant, so following it tells you what to rename. For `ExtractField` both notes land on the derive instead, because its impls target the generated companion enums, whose variant identifiers carry the derive's span. Nothing in that output names the variant, so you have to check the `ExtractField` names yourself. Either way the fix is to rename the variant. Struct *field* names are unaffected, since a field is not in the same namespace as an associated type.
+`#[derive(HasFields)]` accepts all variant shapes because it describes their structure without
+generating variant construction or extraction. A unit variant contributes `Nil`, a newtype variant
+contributes its payload, a multi-field tuple variant contributes an `Index<N>`-keyed product, and a
+named-field variant contributes a `Symbol!`-keyed product inside its `Field` entry. An enum with
+mixed shapes can therefore have a structural description even though the constructor and extractor
+derives reject it.
+
+Avoid enum variant names that conflict with associated types in generated impls. The restrictions
+for each derive are:
+
+| Derive | Reserved variant names |
+| --- | --- |
+| `HasFields` | `Fields`, `FieldsRef` |
+| `FromVariant` | `Value` |
+| `ExtractField` | `Value`, `Remainder`, `Extractor`, `ExtractorRef`, `ExtractorMut` |
+| `CgpVariant`, `CgpData` | All names listed above |
+
+Struct field names are unaffected because they occupy a different namespace.
+
+Rename the conflicting variant when the compiler reports `ambiguous associated item` at a derive.
+Notes for `HasFields` and `FromVariant` identify the variant. Notes for `ExtractField` point only to
+the derive because its generated companion variants carry that source location, so check the
+reserved names manually.
 
 ## Records: the whole-struct field view
 
-`#[derive(HasFields)]` gives a type its whole-shape view, the foundation everything else builds on. For a struct it implements `HasFields` with a `Fields` associated type that is a [`Product!`](type-level-primitives.md) of `Field<Symbol!("name"), Type>` entries. That is the type-level spelling of the struct's layout, one entry per field tagged by name:
+`#[derive(HasFields)]` describes a struct through its `Fields` associated type. The type is a
+[`Product!`](type-level-primitives.md) containing a `Field<Symbol!("name"), Type>` entry for each
+field:
 
 ```rust
 impl HasFields for Person {
@@ -37,11 +82,21 @@ impl HasFields for Person {
 }
 ```
 
-The derive also emits the conversions that move values in and out of that representation. `ToFields` turns an owned value into its `Fields` product, `FromFields` rebuilds the value from one, and `ToFieldsRef` borrows it as a product of references. Generic algorithms bound `Context: HasFields` (or `ToFields`/`FromFields`) and fold over `Context::Fields` structurally, never naming the concrete struct. This whole-shape view is distinct from per-field indexed access. Reading a single field by name is `HasField<Tag>`, the dependency-injection capability that getter traits resolve against (see [functions and getters](functions-and-getters.md)). A struct that wants both derives both.
+The derive generates conversions between the struct and its field representation. `ToFields`
+consumes a value to produce its field product, `FromFields` rebuilds the value, and `ToFieldsRef`
+returns a product of references. Generic algorithms can use `HasFields`, `ToFields`, or `FromFields`
+to process this structure without naming the concrete struct.
+
+Derive `HasField` as well when code needs access to individual fields by tag. `HasField<Tag>`
+supplies the per-field capability used by getters, while `HasFields` describes the complete
+structure. See [functions and getters](functions-and-getters.md).
 
 ## Records: building a struct field by field
 
-The capability `#[derive(CgpRecord)]` and `#[derive(BuildField)]` add on top of reading is incremental, type-checked construction, exposed through the builder trait family. Construction runs through a *partial record*, a generated companion struct `__Partial{Name}` carrying one `MapType` marker per field that records whether that field is present yet. The marker `IsPresent` stores the field's real value, and `IsNothing` stores `()`. So a partial record with every marker `IsNothing` is an empty builder, and one with every marker `IsPresent` is a fully populated value. The family walks between these states.
+`#[derive(CgpRecord)]` and `#[derive(BuildField)]` support incremental construction checked at
+compile time. They generate a partial-record struct named `__Partial{Name}` with a `MapType` marker
+for each field. `IsPresent` stores a field’s value, while `IsNothing` stores `()`. The builder
+starts with every field absent and can be finalized once every field is present:
 
 ```rust
 let employee: Employee = Employee::builder()                    // every field IsNothing
@@ -50,15 +105,40 @@ let employee: Employee = Employee::builder()                    // every field I
     .finalize_build();                                          // exists only at the all-present configuration
 ```
 
-`HasBuilder::builder()` produces the empty partial record, `BuildField::build_field` flips one marker from `IsNothing` to `IsPresent`, and `FinalizeBuild::finalize_build` turns the partial record back into the concrete struct. Underneath, both `BuildField` and its reverse `TakeField` (the `IsPresent → IsNothing` direction) are blanket impls over a single per-field primitive `UpdateField<Tag, M>`, which changes one field's marker and returns the old value alongside the rebuilt partial. The tracking makes the pattern safe. `finalize_build` is implemented *only* for the all-`IsPresent` configuration, so finalizing with any field still absent is a compile error rather than a runtime panic, and the order in which fields are built does not matter. The reverse direction is equally useful. `IntoBuilder` turns a complete struct into an all-present partial, and `TakeField` removes fields one at a time. `TakeField` is the one trait in the family that is **not in the prelude**. Import it from `cgp::core::field::traits` to call `take_field` directly.
+`HasBuilder::builder()` creates an empty partial record, and `BuildField::build_field` changes one
+field from `IsNothing` to `IsPresent`. `FinalizeBuild::finalize_build` exists only when every field
+is present, so incomplete construction fails at compile time. Fields can be supplied in any order.
 
-**A `__Partial…` companion carries none of the original type's attributes**, on the record and the variant side alike, because the codegen clears them. So a `#[derive(Debug, Clone)]` on your struct or enum does not reach the companion, and a partially built record or an extraction remainder can be neither printed nor cloned. This bites most often in a test. `assert_eq!` over an `extract_field` result does not compile, so reach for `.ok()`, `.is_ok()`, or a `match` instead. Read a set field back through the companion's own per-field `HasField` impl, which is in scope once that field is present.
+`IntoBuilder` converts a complete struct to an all-present partial record, and `TakeField` removes
+fields individually. Both `BuildField` and `TakeField` use `UpdateField<Tag, M>`, which changes one
+marker and returns the old value with the rebuilt partial record. Import `TakeField` from
+`cgp::core::field::traits` to call `take_field`; it is not in the prelude.
 
-That all-present strictness is sometimes too rigid. A record may have fields with sensible defaults or ones allowed to be absent. The `cgp-field-extra` **optional-field** extension relaxes it in controlled ways while reusing the same `UpdateField` machinery. It can fill an unset field with `Default::default()` at finalize time, and it can track a field as an `Option` (the `IsOptional` marker) so absence becomes a runtime value rather than a compile error. Reach for it when a struct has optional or defaulted fields. The strict all-present builder above remains the default.
+Generated `__Partial…` companions do not inherit the original struct or enum’s attributes. A
+`#[derive(Debug, Clone)]` therefore does not make a partial record or extraction remainder printable
+or cloneable. Tests using `assert_eq!` on an `extract_field` result can fail for this reason. Use
+`.ok()`, `.is_ok()`, or a `match` as appropriate, and read present fields through the companion’s
+per-field `HasField` impls.
+
+Use the `cgp-field-extra` optional-field extension when fields may be absent or have defaults. It
+reuses `UpdateField` to fill unset fields with `Default::default()` during finalization or represent
+them as `Option` through `IsOptional`. Absence can then be a runtime value. The strict builder that
+requires every field remains the default.
 
 ## Records: the extensible builder pattern
 
-`CanBuildFrom` (one of the structural casts below) lets a builder absorb the shared fields of an entire source struct in one `build_from` step. It recurses over the source's field product, using `TakeField` to pull each field out and `BuildField` to write it into the target builder. So a small struct like a database client can be merged into a larger application struct without either type naming the other. They share only field names, matched at the type level. **Because that recursion walks the source's `HasFields::Fields`, the source of a `build_from` must derive `HasFields` as well as the builder.** Deriving only `BuildField` on both structs looks symmetric and does not compile, reporting an unsatisfied `HasFields` bound on the source. The target needs only `BuildField`. This is the basis of the *extensible builder pattern*, where the construction of one context is split across several independent providers, one per subsystem, none of which knows the final type or each other. Each provider builds a small output struct, and a dispatcher merges every output into the target's builder before finalizing.
+`CanBuildFrom` merges a source struct’s fields into a target builder with one `build_from` call. It
+walks the source’s field product, taking each field with `TakeField` and inserting it with
+`BuildField`. Source and target share field names without needing to name each other.
+
+The source must derive `HasFields` as well as `BuildField`. The recursion reads `HasFields::Fields`,
+so deriving only `BuildField` produces a missing `HasFields` bound. The target needs only
+`BuildField`.
+
+The extensible builder pattern uses these operations to assemble a context from independent
+providers. Each subsystem produces a small output struct, and a dispatcher merges those outputs into
+the target builder before finalization. The providers need not know the final context type or one
+another:
 
 ```rust
 delegate_components! {
@@ -73,11 +153,15 @@ delegate_components! {
 }
 ```
 
-Because the dispatcher is generic over the target struct and the provider list, swapping a subsystem means changing one entry, and selecting among several target structs is a matter of code-based dispatch. The `BuildAndMergeOutputs` combinator and the rest of this routing live in [handlers](handlers.md).
+The dispatcher is generic over the target struct and provider list. Change one provider entry to
+replace a subsystem, or use code-based dispatch to select among target structs. See
+[handlers](handlers.md) for `BuildAndMergeOutputs` and related routing.
 
 ## Variants: constructing and deconstructing an enum
 
-For an enum, `#[derive(HasFields)]` produces a `Fields` that is a [`Sum!`](type-level-primitives.md) of `Field<Symbol!("Variant"), Type>` entries built on the `Either`/`Void` list, mirroring the product side. Construction is `FromVariant`, generated per variant by `#[derive(FromVariant)]`. It builds the enum from one variant chosen by a type-level tag, so generic code parameterized over a `Tag` can construct whichever variant it was asked for.
+`#[derive(HasFields)]` represents an enum’s variants as a [`Sum!`](type-level-primitives.md) of
+`Field<Symbol!("Variant"), Type>` entries using `Either` and `Void`. `#[derive(FromVariant)]`
+supplies a constructor for each variant, selected by its type-level tag:
 
 ```rust
 fn wrap_circle(circle: Circle) -> Shape {
@@ -85,7 +169,14 @@ fn wrap_circle(circle: Circle) -> Shape {
 }
 ```
 
-Deconstruction is the dual of the builder and runs through a *partial variant*, the companion enum `__Partial{Name}` generated by `#[derive(ExtractField)]`, carrying one `MapType` marker per variant just as a partial record carries one per field. The crucial difference is the absence marker. A record uses `IsNothing` (storing `()`), while a variant uses `IsVoid`, mapping a ruled-out variant to the uninhabited `Void` type. `HasExtractor::to_extractor` converts the enum into a partial variant with every variant still `IsPresent`. `ExtractField::extract_field` tries to pull out one variant, returning `Ok(value)` if the value is that variant, or otherwise `Err(remainder)`, the partial variant with that variant flipped to `IsVoid`.
+`#[derive(ExtractField)]` generates a partial-variant companion enum named `__Partial{Name}`. Each
+variant carries a `MapType` marker. A present variant uses `IsPresent`; an excluded variant uses
+`IsVoid`, which maps its payload to the uninhabited `Void` type.
+
+`HasExtractor::to_extractor` starts with all variants marked `IsPresent`.
+`ExtractField::extract_field` returns `Ok(value)` when the requested variant matches. Otherwise, it
+returns `Err(remainder)` with that variant marked `IsVoid`, so later operations know it has been
+ruled out:
 
 ```rust
 fn area(shape: Shape) -> f64 {
@@ -102,11 +193,26 @@ fn area(shape: Shape) -> f64 {
 }
 ```
 
-Marking extracted variants as `IsVoid` gives compile-time exhaustiveness without a wildcard arm. Each failed `extract_field` rules out one more variant in the type, so after every variant has been tried the remainder has every marker `IsVoid` and is therefore uninhabited. `FinalizeExtract::finalize_extract` discharges such a remainder with an empty `match`, sound precisely because a value cannot reach it, and `FinalizeExtractResult::finalize_extract_result` is the convenience wrapper that collapses the final `Result` into its `Ok` value. Add a variant to the enum without handling it and the final remainder becomes inhabited again, so the code fails to compile until the new variant is covered. That recovers the guarantee a concrete `match` gives. `HasExtractorRef` and `HasExtractorMut` provide the same machinery over borrows.
+Variant extraction checks exhaustiveness at compile time. Each failed extraction rules out a
+variant, and a remainder with every marker set to `IsVoid` cannot contain a value.
+`FinalizeExtract::finalize_extract` handles that uninhabited remainder with an empty `match`.
+`FinalizeExtractResult::finalize_extract_result` uses this guarantee to return the final `Ok` value
+directly.
+
+Adding an unhandled variant makes the final remainder inhabited and prevents compilation until the
+new case is covered. This preserves the exhaustiveness guarantee of a concrete `match` without a
+wildcard arm. `HasExtractorRef` and `HasExtractorMut` provide equivalent operations on borrowed
+values.
 
 ## Variants: the extensible visitor pattern
 
-Routing a value to the handler for its current variant is the *extensible visitor pattern*, which solves the expression problem. New variants can be added without touching the handlers for the others, and the same handler set can serve several enums that share variants. The logic for each variant lives in its own provider, and a dispatcher derives one extract-and-handle step per variant from the enum's `Fields`, running them as a pipeline that short-circuits on the first matching variant and threads the remainder forward otherwise.
+The extensible visitor pattern routes each enum value to a provider for its current variant. New
+variants can be added without changing existing handlers, and handlers can serve several enums that
+share variants. This addresses the expression problem by separating data variants from the
+operations on them.
+
+A dispatcher derives extraction and handling steps from the enum’s `Fields`. The pipeline stops at
+the matching variant and otherwise passes the remainder to the next step:
 
 ```rust
 delegate_components! {
@@ -122,17 +228,44 @@ delegate_components! {
 }
 ```
 
-The `MathExpr` entry routes the whole enum through a thin context-specific provider that defers to the matcher combinator. That wrapper exists to break the trait-resolution cycle between the matcher and the per-variant providers it dispatches to. The matcher combinators (`MatchWithValueHandlers` and its by-reference form) and the per-variant handler families live in [handlers](handlers.md).
+`MathExpr` selects a context-specific provider that calls the matcher combinator. This wrapper
+breaks the trait-resolution cycle between the matcher and the variant providers it calls. See
+[handlers](handlers.md) for `MatchWithValueHandlers`, its borrowed form, and the handler families.
 
 ## The type-level lists underneath
 
-Both halves rest on the same right-nested type-level lists, kept brief here and covered fully in [type-level primitives](type-level-primitives.md). A struct's `Fields` is a `Product![A, B, C]`, which desugars to `Cons<A, Cons<B, Cons<C, Nil>>>` over the `Cons`/`Nil` record list. That list is terminated by the constructible empty `Nil`, because an empty record is a valid value. An enum's `Fields` is a `Sum![A, B]`, which desugars to `Either<A, Either<B, Void>>` over the `Either`/`Void` variant list. That chain branches at each step and terminates in the uninhabited `Void`, because an empty choice offers nothing to pick. The lowercase `product![..]` builds a value of the matching `Product!` type. Generic providers walk these lists one element at a time, something a plain tuple or enum does not permit in generic code.
+Records and variants use nested type-level lists that generic providers can process one entry at a
+time. A record’s `Product![A, B, C]` expands to `Cons<A, Cons<B, Cons<C, Nil>>>`. The final `Nil` is
+constructible because an empty record is a valid value. Lowercase `product![..]` constructs a value
+of that product type.
 
-The machinery above computes new lists from old ones through a small type-level list algebra you will meet in the traits it expands to. `AppendProduct` adds one field to the end of a product, `ConcatProduct` splices two products together, and `MapFields` rewrites every entry uniformly (the operation behind producing a partial record from a full one). **None of them is in the prelude. Import them from `cgp::core::field::traits`.** `MapFields` is the only one defined over *both* lists, walking `Either`/`Void` for a sum as readily as `Cons`/`Nil` for a product, so one operation produces both a partial record and a partial enum. Other asymmetries catch people. `AppendProduct` and `ConcatProduct` expose their result as `Output` while `MapFields` exposes `Mapped`, and `AppendSum` does not exist. All of them are pure functions from type lists to type lists, evaluated by the compiler during type checking without runtime cost. Building a record appends, merging records concatenates, and forming a partial record maps a marker over every field.
+An enum’s `Sum![A, B]` expands to `Either<A, Either<B, Void>>`. Each step offers a choice, and the
+final `Void` is uninhabited because an empty enum cannot contain a value. See [type-level
+primitives](type-level-primitives.md) for both representations.
+
+Import list operations from `cgp::core::field::traits`; they are not in the prelude. `AppendProduct`
+adds a field to the end of a product, `ConcatProduct` joins products, and `MapFields` transforms
+each entry. Building appends, merging concatenates, and creating a partial record maps a marker over
+its fields. These type transformations are evaluated during type checking without runtime cost.
+
+`MapFields` supports both products and sums, allowing it to generate partial records and partial
+enums. Its result is named `Mapped`, while `AppendProduct` and `ConcatProduct` expose `Output`. The
+library does not provide `AppendSum`.
 
 ## Structural casts between records and variants
 
-Two types that share a subset of named fields or variants convert into one another generically, without a hand-written `From`/`TryFrom`, through the casting traits. Every conversion is just routing each named entry to the matching slot in the target. **None of the casts is in the prelude. Import `CanUpcast`, `CanDowncast`, `CanDowncastFields`, and `CanBuildFrom` from `cgp::core::field::impls`.** That missing import is the single likeliest thing to make otherwise-correct code fail to compile. `CanUpcast` lifts a value of a narrow enum into a wider one whose variants are a superset. It always succeeds, since every source variant has a home in the target, and it walks the source's variants, extracting each and reconstructing it via `FromVariant`. `CanDowncast` goes the other way, narrowing a wide enum into a smaller one. It succeeds only if the value's current variant exists in the target, and otherwise hands back a remainder. `CanDowncastFields` is the same operation on a remainder, so downcasting against several candidates chains a `downcast` followed by `downcast_fields`. `CanBuildFrom` is the record counterpart already met above, assembling a target builder out of the fields of one or more sources.
+Structural casts convert between types with compatible named fields or variants. They match entries
+by name without a handwritten `From` or `TryFrom` impl. Import `CanUpcast`, `CanDowncast`,
+`CanDowncastFields`, and `CanBuildFrom` from `cgp::core::field::impls`; these traits are not in the
+prelude.
+
+`CanUpcast` converts a smaller enum into one containing all its variants. It always succeeds by
+extracting the source variant and rebuilding it through `FromVariant`. `CanDowncast` narrows an enum
+when its current variant exists in the target, returning a remainder otherwise. Use
+`CanDowncastFields` on that remainder to try another target.
+
+`CanBuildFrom` performs the corresponding record operation by inserting source fields into a target
+builder. The enum casts behave as follows:
 
 ```rust
 use cgp::core::field::impls::{CanDowncast, CanUpcast};               // not in the prelude
@@ -144,28 +277,42 @@ FooBarBaz::Bar("hi".into()).downcast(PhantomData::<FooBar>).ok();    // Some(Foo
 FooBarBaz::Baz(true).downcast(PhantomData::<FooBar>).ok();           // None: FooBar lacks a Baz variant
 ```
 
-Upcasting is also how a provider constructs a value using only the subset of variants it cares about. It builds a small local enum and upcasts it into the full type, the variant-side analog of reading a field through a getter.
+A provider can construct a small local enum and upcast it into a larger type. This lets it work with
+only the variants it needs, much as a getter accesses one field without depending on the complete
+record.
 
 ## Dispatching over extensible data
 
-The payoff of exposing data shape at the type level is that *dispatch* becomes generic. A record builder routes each field to the provider that produces it, and a variant visitor routes each value to the provider for its current variant. Both are realized with the dispatch combinators, `BuildAndMergeOutputs` on the record side and `MatchWithValueHandlers` on the variant side, which derive one per-field or per-variant step from the type's `Fields` and sequence them. Those combinators and the handler families they build on are documented in [handlers](handlers.md). The wiring tables that name a provider per [component](components.md) are the ordinary `delegate_components!` entries shown above.
+Dispatch combinators use the exposed data structure to select providers generically.
+`BuildAndMergeOutputs` assembles record fields from provider outputs, while `MatchWithValueHandlers`
+selects the handler for a value’s variant. These combinators derive and sequence operations from the
+type’s `Fields`.
+
+See [handlers](handlers.md) for the combinators and their handler families. The examples above
+select providers through ordinary `delegate_components!` entries for each
+[component](components.md).
 
 ## Further reference
 
-Online docs (current as of CGP v0.8.0):
-[concepts/extensible-records.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/extensible-records.md),
-[concepts/extensible-variants.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/extensible-variants.md),
-the derive references under
-[reference/derives/](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/reference/derives)
-(`derive_cgp_data.md`, `derive_cgp_record.md`, `derive_cgp_variant.md`, `derive_has_fields.md`,
-`derive_build_field.md`, `derive_extract_field.md`, `derive_from_variant.md`), the trait references
-[traits/has_builder.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/has_builder.md),
-[traits/extract_field.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/extract_field.md),
-[traits/from_variant.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/from_variant.md),
-[traits/has_fields.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/has_fields.md),
-and
-[traits/cast.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/cast.md),
-and the type macros
-[macros/product.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/product.md)
-and
-[macros/sum.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/sum.md).
+These online references describe extensible data as of CGP v0.8.0:
+
+- [Extensible records](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/extensible-records.md):
+  Generic record construction and access.
+- [Extensible variants](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/extensible-variants.md):
+  Generic enum construction and extraction.
+- [Derive references](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/reference/derives):
+  `derive_cgp_data.md`, `derive_cgp_record.md`, `derive_cgp_variant.md`, `derive_has_fields.md`,
+  `derive_build_field.md`, `derive_extract_field.md`, and `derive_from_variant.md`.
+
+Consult the trait references for the operations generated by those derives:
+
+- [`HasBuilder`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/has_builder.md)
+- [`ExtractField`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/extract_field.md)
+- [`FromVariant`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/from_variant.md)
+- [`HasFields`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/has_fields.md)
+- [Structural casts](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/cast.md)
+
+The type-macro references explain the underlying list representations:
+
+- [`Product!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/product.md)
+- [`Sum!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/sum.md)

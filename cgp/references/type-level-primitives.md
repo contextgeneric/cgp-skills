@@ -1,25 +1,36 @@
 # Type-level primitives
 
-This file covers the zero-sized types and type macros with which CGP folds strings, numbers, lists, choices, and routes into the type system, so the compiler can match a field name or a wiring route through trait resolution alone.
+CGP encodes field names, positions, lists, and wiring paths as types so the compiler can resolve
+them through traits. Use the macros when writing these types, and recognize their expanded forms
+when reading diagnostics. This reference describes CGP v0.8.0.
 
 ## The idea
 
-CGP keys nearly everything by *type*, not by value. A getter looks up a field by a tag type. A [wiring](wiring.md) table selects a [provider](components.md) by a [component](components.md) key type. A [namespace](namespaces.md) re-routes a lookup along a path type. For that to work, things that are normally values (a field name string, a tuple position, a list of fields, a lifetime) have to be encoded as types the compiler can compare and dispatch on. The primitives in this reference are those encodings. Each is a familiar value-level idea lifted into a type. A string becomes a type-level character list, a number becomes a const-generic marker, a list becomes a recursive cons cell, and a sum becomes a recursive branch.
+Type-level encodings let trait resolution distinguish keys that would otherwise be values. A getter
+uses a field tag, a [wiring](wiring.md) table uses a [component](components.md) marker, and a
+[namespace](namespaces.md) uses a path. Strings become character-list types, positions become
+const-generic markers, and lists become recursive types.
 
-These types are almost never written by hand. They are produced by macros (`Symbol!`, `Product!`, `Sum!`, `Path!`) or emitted by derives, and a reader mostly meets them when *decoding a type the compiler prints*, in an error message, a macro-expansion dump, or a hover. `cargo cgp expand` resugars them back to `Symbol!`/`Product!`/`Path!`, so a raw list there means the resugaring declined. An error message or a plain `cargo expand` shows them as they are. This reference is a decoder ring. Skim it to read off what a long nested type means. The prose below always uses the readable `Cons`/`Nil`/`Symbol!` forms, which are exactly what the compiler prints, and never replaces them with abbreviations or aliases.
+Prefer `Symbol!`, `Product!`, `Sum!`, and `Path!` to their nested expansions. Derives also generate
+these encodings. Compiler errors and plain `cargo expand` can expose the full types;
+`cargo cgp expand` restores recognized encodings to macro notation. The definitions below explain
+the nested forms that remain visible.
 
 Assume `use cgp::prelude::*;` throughout.
 
 ## Type-level lists: `Product!`, `Cons`, `Nil`
 
-A type-level list is a compile-time linked list, the analogue of a tuple that generic code can take apart one element at a time. `Cons<Head, Tail>` is a pair holding the first element and the rest of the list, and `Nil` is a unit struct marking the end. Chained to the right and terminated by `Nil`, they form an *anonymous product type*, a record-shaped type whose width and contents a provider can walk without knowing the concrete struct it came from.
+`Product!` represents a list as nested pairs ending in `Nil`. Each `Cons<Head, Tail>` holds an
+element and the rest of the list, allowing generic code to process an anonymous product type one
+element at a time:
 
 ```rust
 pub struct Cons<Head, Tail>(pub Head, pub Tail);
 pub struct Nil;
 ```
 
-The `Product!` macro is the sugar a programmer writes instead of nesting `Cons` by hand, and the lowercase `product!` builds a matching value with the tuple-struct constructor:
+Use `Product!` to construct the type and lowercase `product!` to construct a value. Both expand to
+the same nested `Cons` structure:
 
 ```rust
 type Row = Product![u32, String, bool];
@@ -29,18 +40,24 @@ let row: Row = product![1, "hi".to_string(), true];
 // row == Cons(1, Cons("hi".to_string(), Cons(true, Nil)))
 ```
 
-The list makes structural, field-by-field code possible. A struct's fields are exposed as one `Product!` type through `HasFields`. So a provider written once to recurse over `Cons`/`Nil`, with a `Nil` impl for the base case and a `Cons<Head, Tail>` impl for the step, iterates, reads, or rebuilds *any* struct's fields. The elements are usually [`Field`](#field-a-named-value) entries pairing a name with a value, so a derived struct's layout reads as a `Product!` of `Field` cells. See [extensible data](extensible-data.md) for how that machinery is used.
+Product lists let generic providers process struct fields without naming the concrete struct.
+`HasFields` exposes a struct's fields as a product, usually containing
+[`Field`](#field-a-named-value) entries that pair names with values. A recursive provider handles
+`Nil` as its base case and `Cons<Head, Tail>` as its step. See [extensible data](extensible-data.md)
+for reading and rebuilding records this way.
 
 ## Type-level sums: `Sum!`, `Either`, `Void`
 
-A type-level sum is the dual of the list. Where a `Product!` holds a value for *every* element at once, a `Sum!` holds a value for exactly *one* branch, a tagged union the compiler can walk variant by variant. It shares the same right-nested shape but branches at each step instead of pairing, and it terminates in an uninhabited marker instead of a constructible one.
+`Sum!` holds a value from one branch, while `Product!` holds a value for every element. It nests
+`Either<Head, Tail>` enums and terminates in the uninhabited `Void` type:
 
 ```rust
 pub enum Either<Head, Tail> { Left(Head), Right(Tail) }
 pub enum Void {}
 ```
 
-`Either<Head, Tail>` is the sum cell. `Left(head)` selects this branch, and `Right(tail)` defers to the rest. `Void`, an empty enum that cannot be constructed, closes the chain. The `Sum!` macro folds a list of types onto that list, and a value picks one branch by how deep it sits:
+`Left(head)` selects the current branch, and `Right(tail)` continues into the remaining branches.
+`Sum!` constructs this nested type, so the number of `Right` wrappers identifies a value's branch:
 
 ```rust
 type Token = Sum![u32, String, bool];
@@ -49,20 +66,32 @@ type Token = Sum![u32, String, bool];
 let t: Token = Either::Right(Either::Left("hi".to_string())); // the String branch
 ```
 
-The terminator is the one real difference from the product list, and it matters. A product ends in the constructible `Nil` because an empty record is a valid value. A sum ends in the *uninhabited* `Void` because an empty choice offers nothing to pick. After an extractor has tried every variant and matched none, the leftover has type `Void`, a value that cannot exist, which the machinery discharges with an empty `match self {}`. That makes a fully handled variant match total at compile time without an unreachable runtime branch. An enum's variants are exposed as a `Sum!` of `Field` entries through `HasFields`, mirroring how a struct's fields are a `Product!`.
+`Void` makes exhausted variant handling statically complete. Once an extractor has handled every
+branch, the remaining type is an empty enum, which can be eliminated with `match self {}`. A product
+instead ends in constructible `Nil` because an empty record is a valid value.
+
+`HasFields` exposes an enum's variants as a `Sum!` of `Field` entries. This parallels a struct's
+`Product!` representation while retaining the distinction between choosing one variant and holding
+all fields.
 
 ## Type-level strings: `Symbol!`, `Symbol`, `Chars`
 
-A type-level string is a field name encoded as a type, so the name can drive trait resolution. CGP's getter, `HasField<Tag>`, keys each field by a `Tag` type. To read a field called `name`, the string `"name"` must become a unique type, so that two symbols from the same string are the *same* type and two from different strings are *different* types. `Symbol!("name")` produces exactly that.
+`Symbol!("name")` turns a field name into a type suitable for a `HasField<Tag>` key. Equal string
+literals produce the same type, and different strings produce different types, so trait resolution
+can distinguish field names.
 
-The reason it is a *list of characters* rather than one const value is a stable-Rust limitation. A `&str` cannot be a const-generic parameter, but a single `char` can. So `Chars<const CHAR: char, Tail>` spells the string out one character at a time, the specialized analogue of `Cons` where the head is a `const char`, and `Symbol<const LEN: usize, Chars>` wraps that list together with the byte length:
+CGP stores symbols as character lists because stable Rust cannot use `&str` as a const-generic
+parameter. Individual `char` parameters are supported, so `Chars` stores each character and `Symbol`
+wraps the list with its UTF-8 byte length:
 
 ```rust
 pub struct Chars<const CHAR: char, Tail>(pub PhantomData<Tail>);
 pub struct Symbol<const LEN: usize, Chars>(pub PhantomData<Chars>);
 ```
 
-The `Symbol!` macro hides all of this. The leading `LEN` const is the part most likely to puzzle a reader. Stable Rust cannot compute a `Chars` chain's length inside a const-generic context, so the macro precomputes `str::len()`, the *byte* length, and bakes it into the type:
+`Symbol!` computes the byte length and generates the nested character list. The explicit length lets
+the runtime string-recovery machinery size its byte array without computing that size from the list
+in a const-generic expression:
 
 ```rust
 // before
@@ -71,7 +100,12 @@ Symbol!("abc")
 Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>
 ```
 
-Because `LEN` is the byte length, a multi-byte string records its UTF-8 width. `Symbol!("世界你好")` records `12`, while its character list still has one `Chars` node per scalar. The empty string is `Symbol<0, Nil>`. A type-level string is most often seen as the tag in a getter bound, where it names the field a provider reads without that context naming the provider:
+The length counts UTF-8 bytes, while the list has one node per Unicode scalar value.
+`Symbol!("世界你好")` therefore has length `12` and four character nodes. The empty string is
+`Symbol<0, Nil>`.
+
+A `HasField` bound uses the symbol to identify the field a provider needs. This explicit form shows
+the tag lookup that an implicit field argument normally hides:
 
 ```rust
 #[cgp_impl(new GreetHello)]
@@ -85,21 +119,29 @@ where
 }
 ```
 
-The same string can be recovered at runtime. See [`StaticFormat`](#staticformat-recovering-strings-and-paths) below.
+Formatting and recovery traits turn the symbol back into runtime text. See
+[`StaticFormat`](#staticformat-recovering-strings-and-paths) below.
 
 ## `Index<N>`: type-level numbers
 
-`Index<const I: usize>` is the numeric counterpart to `Symbol!`, a `usize` lifted into a type, used to tag a tuple-struct field that has a position but lacks a name. Where a named field is keyed by `Symbol!("name")`, the field at position `N` is keyed by `Index<N>`. So `Index<0>`, `Index<1>`, and `Index<2>` are distinct tag types standing in for `.0`, `.1`, and `.2`.
+`Index<N>` identifies a tuple field by position. It serves the same role as `Symbol!("name")` for
+named fields: `Index<0>`, `Index<1>`, and `Index<2>` are distinct tag types corresponding to `.0`,
+`.1`, and `.2`.
 
 ```rust
 pub struct Index<const I: usize>;
 ```
 
-It is a zero-sized marker. The number lives entirely in the type, so a tuple struct can carry a `HasField<Index<0>>` impl and a `HasField<Index<1>>` impl side by side, and the compiler selects the right one purely from the tag. Selecting a wrong position, such as `Index<5>` on a three-field struct, is a type error, not a runtime panic, because a matching impl does not exist. `Index` prints its number directly through `Display`, so `Index::<2>.to_string()` is `"2"` and the tag is legible in diagnostics.
+`Index` stores its number only in the type and occupies zero bytes. A tuple struct can implement
+`HasField<Index<0>>` and `HasField<Index<1>>` separately. A lookup without a matching impl fails at
+compile time, such as `Index<5>` on a derived three-field struct. Its `Display` impl prints the
+number, so `Index::<2>.to_string()` returns `"2"`.
 
 ## `Field`: a named value
 
-`Field<Tag, Value>` is the element type that fills both lists, a value paired with the type-level tag naming it. A bare `Product![String, u8]` records only types and order. Wrapping each element as `Field<Symbol!("name"), String>` attaches the name as a phantom type, making the structural representation self-describing, so a provider can match on the tag to find the field it wants.
+`Field<Tag, Value>` pairs a value with its type-level name. A bare `Product![String, u8]` records
+types and order; `Field<Symbol!("name"), String>` also identifies the string as the `name` field.
+Providers can use that tag to select fields:
 
 ```rust
 pub struct Field<Tag, Value> {
@@ -108,7 +150,13 @@ pub struct Field<Tag, Value> {
 }
 ```
 
-The tag is a phantom, needed only at compile time for resolution, so a `Field` is exactly as large as its `Value` and costs nothing at runtime. It is built from a value without a tag argument, since the tag is fixed by the target type: `let f: Field<Symbol!("name"), String> = "Alice".to_string().into();`. The same shape names a record field (tag from `Symbol!` or `Index`) and an enum variant (tag from `Symbol!`, value being the payload), which is why a derived `HasFields` is a `Product!` or `Sum!` of `Field` entries:
+The phantom tag adds neither stored data nor size to `Field`. Its size equals that of `Value`, and
+its target type determines the tag when constructing it:
+`let f: Field<Symbol!("name"), String> = "Alice".to_string().into();`.
+
+`Field` represents both record fields and enum payloads. Record tags use `Symbol!` or `Index`, and
+variant tags use `Symbol!`. For this struct, `HasFields` generates a product containing the named
+fields:
 
 ```rust
 #[derive(HasFields)]
@@ -123,13 +171,18 @@ pub struct Person { pub name: String, pub age: u8 }
 
 ## `Path!` and `PathCons`: type-level routes
 
-A type-level path is a route through nested [wiring](wiring.md) tables, expressed as a single type. Where a bare component key picks one entry out of a context's table, a path points at an entry behind one or more layers of indirection, inside a [namespace](namespaces.md) or under a prefix, by listing the segments to walk left to right. `PathCons<Head, Tail>` is the cons cell of that route, terminated by `Nil`. It differs from the `Cons` product list in one way: both `Head` and `Tail` are `?Sized`, because a path segment is a pure type-level marker that never needs a known size.
+`Path!` identifies a lookup destination through a sequence of type-level segments.
+[Namespaces](namespaces.md) and redirected [wiring](wiring.md) use these paths to address providers
+under prefixes. Each `PathCons<Head, Tail>` stores phantom markers for a segment and the remaining
+path, ending in `Nil`. Its parameters accept `?Sized` types because the path does not store their
+values:
 
 ```rust
 pub struct PathCons<Head: ?Sized, Tail: ?Sized>(pub PhantomData<Head>, pub PhantomData<Tail>);
 ```
 
-The `Path!` macro builds the route from a dotted, `@`-prefixed name, encoding each segment by case. A lowercase, non-primitive identifier becomes a `Symbol!` type-level string, and a capitalized name stays the named type it spells (typically a component key or namespace marker):
+`Path!` builds a path from dotted segments following `@`. A single lowercase identifier becomes a
+`Symbol!` unless it names a primitive type; a capitalized name remains the type it names:
 
 ```rust
 type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
@@ -138,55 +191,87 @@ type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
 //         PathCons<ErrorRaiserComponent, Nil>>>
 ```
 
-A path names only *where to look*, never a provider directly, so the same path resolves to different providers depending on the table it is walked against. That is the job of the `RedirectLookup` provider that consumes it. This same `@`-path syntax appears verbatim inside namespace entries, which is where paths are most often written rather than through the bare macro. See [namespaces](namespaces.md) for the redirected-lookup mechanism.
+The consulting table determines which provider a path resolves to. `RedirectLookup` takes both the
+table and path, so the same address can resolve differently in different contexts. Namespace entries
+accept the same `@` syntax without an explicit `Path!` call. See [namespaces](namespaces.md) for the
+lookup mechanism.
 
 ## `Life<'a>`: a lifetime as a type
 
-`Life<'a>` lifts a lifetime into a type, so a CGP trait that borrows can still ride through wiring machinery that only accepts types. CGP's dependency marker, `IsProviderFor`, takes a tuple of a component's generic parameters as one type argument, and a tuple member must be a type, never a bare lifetime. A consumer trait declaring `fn get_reference(&self) -> &'a T` therefore cannot record its `'a` directly. `Life<'a>` is the conversion that packages the lifetime as a type, so it can sit in the tuple as `(Life<'a>, T)`.
+`Life<'a>` represents a lifetime where CGP's wiring machinery requires a type. `IsProviderFor`
+records a component's generic parameters in a type argument, which cannot contain a bare lifetime.
+The macros encode a lifetime parameter as `Life<'a>`, producing a parameter tuple such as
+`(Life<'a>, T)`:
 
 ```rust
 pub struct Life<'a>(pub PhantomData<*mut &'a ()>);
 ```
 
-The `*mut &'a ()` phantom is deliberate. A raw pointer is *invariant* in its lifetime, so `Life<'a>` is invariant in `'a`. That is correct here, because the lifetime is an exact identity in the dependency marker, and a variant `Life` would let the compiler silently coerce one instantiation into another and pick the wrong provider. The macros insert `Life` automatically when a component carries a lifetime. A reader meets it in the generated provider trait, where `IsProviderFor<…, (Life<'a>, T)>` names the lifetime as a type rather than a bare `'a`. Conceptually it joins `Index` (which lifts a `usize`) and `Symbol` (which lifts a string) as another marker making a non-type thing addressable in trait resolution.
+The `*mut` phantom makes `Life<'a>` invariant in `'a`: a mutable raw pointer is invariant in its
+pointee type, which contains the lifetime. This preserves the lifetime as an exact parameter of the
+dependency marker. The macros insert `Life` automatically, so it usually appears only in generated
+`IsProviderFor` bounds.
 
 ## `MRef<'a, T>`: owned-or-borrowed
 
-`MRef<'a, T>` is a "maybe-reference", an enum holding either a borrow of a `T` or an owned `T`, so a single getter signature serves both the context that already stores a value and the one that must produce it. Unlike the rest of this reference, there is nothing type-level about it. It is an ordinary runtime value, the payload a getter hands back.
+`MRef<'a, T>` lets a getter return either a borrowed or owned value. It is an ordinary runtime enum,
+included here because field-access macros recognize it as a return mode:
 
 ```rust
 pub enum MRef<'a, T> { Ref(&'a T), Owned(T) }
 ```
 
-A getter declared to return `MRef<'a, T>` lets a context with the value in a field return `MRef::Ref` and lend it, while a context that computes the value returns `MRef::Owned` and gives it away, without extra cost in the common stored-field case. The caller treats both uniformly because `MRef` derefs to `T`. It implements `Deref<Target = T>` and `AsRef<T>`, builds either variant through `From<T>` and `From<&'a T>`, and promotes a borrow to ownership with `get_or_clone` when `T: Clone`.
+A getter can return `MRef::Ref` for a stored value or `MRef::Owned` for a computed one. Callers
+access either through `Deref<Target = T>` or `AsRef<T>`. The `From<&'a T>` and `From<T>` impls
+construct the variants; `get_or_clone` returns an owned value, cloning only the borrowed variant
+when `T: Clone`:
 
 ```rust
 let stored = String::from("hello");
-let borrowed: MRef<'_, String> = MRef::from(&stored);     // lends a stored value
-let made: MRef<'_, String>     = MRef::from(String::from("world")); // hands over a built one
+let borrowed: MRef<'_, String> = MRef::from(&stored);
+let made: MRef<'_, String>     = MRef::from(String::from("world"));
 assert_eq!(&*borrowed, "hello");
 let owned: String = borrowed.get_or_clone();              // clones the borrowed case
 ```
 
-It is one of the getter return modes recognized by the field macros, parallel to `&T`, `Option<&T>`, or `&str`. See [functions and getters](functions-and-getters.md). Its lifetime is an ordinary borrow and is unrelated to the `Life<'a>` lift above.
+Field macros recognize `MRef` alongside return modes such as `&T`, `Option<&T>`, and `&str`. See
+[functions and getters](functions-and-getters.md). Its lifetime constrains an ordinary borrow and
+does not use the `Life<'a>` encoding.
 
 ## `StaticFormat`: recovering strings and paths
 
-The type-level encodings need a way back to runtime data, and the traits below provide it. **Each is imported from a different place. `ConcatPath` is in the prelude, `StaticString` comes from `cgp::core::field::traits`, and `StaticFormat` from `cgp::core::base::traits`.** That last module is the one through which `cgp-core` re-exports `cgp-base`, and it also reaches `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol`. `StaticFormat` recovers a type-level string *lazily* by writing into a formatter. It backs the `Display` impls on `Symbol` and `Chars`, recursing down the `Chars` list to emit each character, so any symbol prints with `to_string()` or `{}`:
+Use `Display` to format a symbol value, `StaticString::VALUE` to recover a constant string, and
+`StaticFormat` to format a type without a value. These traits and the path utility use different
+imports:
+
+| Name | Import |
+| --- | --- |
+| `StaticFormat` | `cgp::core::base::traits` |
+| `StaticString` | `cgp::core::field::traits` |
+| `ConcatPath` | `cgp::prelude::*` |
+
+The underlying `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol` types are also available through
+`cgp::core::base::types`.
+
+`StaticFormat` writes characters into a formatter and supports the `Display` impls on `Symbol` and
+`Chars`. A symbol value can therefore use ordinary string formatting:
 
 ```rust
 let s = <Symbol!("hello")>::default();
 assert_eq!(s.to_string(), "hello");
 ```
 
-`StaticString` recovers it *eagerly*, as a compile-time `&'static str` constant. A blanket impl walks the `Chars` list and UTF-8-encodes it into a `[u8; LEN]` at const-evaluation time, which is the consumer that `Symbol`'s `LEN` byte length exists to size, then validates the bytes as a `&'static str`. Use `Display` when a runtime value will do, `StaticString::VALUE` when a `const` is needed or in a hot path, and a `StaticFormat` bound only where you lack a value to format, since its method is an associated function that writes a type's characters without one. Both round-trip multi-byte Unicode faithfully:
+`StaticString::VALUE` recovers a symbol as a compile-time `&'static str`. Its implementation
+UTF-8-encodes the character list into a `[u8; LEN]`, then validates the bytes as a string. This is
+why `Symbol` records its byte length. Both recovery forms preserve multibyte Unicode:
 
 ```rust
 use cgp::core::field::traits::StaticString;
 assert_eq!(<Symbol!("世界你好") as StaticString>::VALUE, "世界你好");
 ```
 
-`ConcatPath` works one level up, joining two `PathCons` paths into one as a pure type-level computation. It keeps each `Head` and splices the second path on where the first reaches `Nil`, the operation behind composing nested accessors:
+`ConcatPath` joins two type-level paths. It retains the first path's segments and replaces its
+terminating `Nil` with the second path:
 
 ```rust
 type Joined = <Path!(@a.b) as ConcatPath<Path!(@c.d)>>::Output; // the path @a.b.c.d
@@ -194,13 +279,10 @@ type Joined = <Path!(@a.b) as ConcatPath<Path!(@c.d)>>::Output; // the path @a.b
 
 ## Further reference
 
-Online source-of-truth documents: the
-[types directory](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/reference/types)
-(`cons.md`, `either.md`, `chars.md`, `index.md`, `field.md`, `life.md`, `mref.md`, `path_cons.md`),
-the construction macros
-[`macros/symbol.md`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/symbol.md),
-[`macros/product.md`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/product.md),
-[`macros/sum.md`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/sum.md),
-[`macros/path.md`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/path.md),
-and the recovery traits
-[`traits/static_format.md`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/static_format.md).
+Consult these knowledge-base references for the complete definitions:
+
+- [Types](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/reference/types): `Cons`, `Either`, `Chars`, `Index`, `Field`, `Life`, `MRef`, and `PathCons`.
+- [`Symbol!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/symbol.md): String encoding.
+- [`Product!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/product.md) and [`Sum!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/sum.md): Product and sum construction.
+- [`Path!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/path.md): Path construction.
+- [`StaticFormat`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/static_format.md): Formatting type-level strings.

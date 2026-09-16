@@ -1,18 +1,29 @@
 # Namespaces
 
-A namespace is a reusable, named lookup table of component wirings that a context inherits wholesale and then selectively overrides. It is CGP's preset mechanism, expressed entirely at the type level without runtime cost.
+A namespace shares component wiring across contexts through a named lookup trait. It can bind common
+providers and redirect other lookups to paths that each context supplies. This gives CGP reusable
+presets resolved entirely at compile time.
 
-As the component count of an application grows, the [wiring](wiring.md) on each context grows with it. Every context spells out its own `delegate_components!` table entry by entry, and two contexts that should share the same set of providers must repeat the whole block. A namespace lifts that block out of any single context, gives it a name, and lets other contexts say "use everything in this namespace" to pull in the entire group at once. This is exactly the preset pattern, a curated bundle of defaults you adopt and then customize, and CGP does not need a separate `cgp_preset!` construct because a preset *is* a namespace. This file covers `cgp_namespace!` (defining and inheriting a namespace), the `RedirectLookup` provider that makes the indirection work, the `Path!` macro that addresses entries, and the `DefaultNamespace` family of default-resolution traits.
+Use a namespace when contexts would otherwise repeat the same wiring. A context joins the shared
+table, then supplies entries at paths left unbound by that namespace. A namespace does not support
+arbitrary overrides: directly binding a key it already resolves creates overlapping impls. The
+examples describe CGP v0.8.0 and assume `use cgp::prelude::*;`.
 
 ## What a namespace is
 
-A namespace is not a context. It is a trait, named after the namespace, that carries a single `Delegate` associated type and is implemented once per key. A context that joins a namespace forwards its lookups through that trait, so the namespace supplies defaults without ever being instantiated or holding any wiring at the context level. The defining behavior is inheritance with override. A context inherits the namespace's entries as defaults, and any entry it wires directly on itself wins, because a context's own [`DelegateComponent`](wiring.md) entry resolves before the namespace fallback is consulted.
+A namespace is a trait with a `Delegate` associated type, implemented for each key it resolves.
+Joining it generates forwarding impls on the context; the namespace itself is never instantiated. A
+binding supplied by the namespace applies to every joining context.
 
-The forwarding is keyed by a *path* rather than a bare component name, and that makes inheritance and selective override possible. A path is a type-level list of symbols and component names. Keying on it lets one namespace inherit from another, lets a parent's whole subtree be rerouted at once, and lets a child context shadow a single inherited entry without disturbing the rest.
+Path-based redirects let contexts customize shared wiring without redefining existing bindings. A
+path is a type-level list of symbols and types. The namespace can route a component marker to a path
+while leaving the provider at that path for the context to choose.
 
 ## Defining a namespace with `cgp_namespace!`
 
-`cgp_namespace!` defines a namespace from a body that resembles a `delegate_components!` table. The `new` keyword tells the macro to emit the namespace's marker struct and its lookup trait. The entries inside map keys to redirect paths or to providers:
+Define a namespace with `cgp_namespace!` and use `new` to generate its lookup trait and backing
+marker struct. The body resembles a `delegate_components!` table. This namespace maps both `String`
+and `u64` to `ShowWithDisplay`:
 
 ```rust
 cgp_namespace! {
@@ -22,11 +33,20 @@ cgp_namespace! {
 }
 ```
 
-The body accepts entry forms that generate different table contents. A `:` entry maps a key straight to a provider, exactly as in `delegate_components!`. The `[String, u64]: ShowWithDisplay` line above resolves both keys to the `ShowWithDisplay` provider. A `=>` entry instead redirects a key along a path. `FooProviderComponent => @MyFooComponent` says "when this namespace is asked for `FooProviderComponent`, look up the path `@MyFooComponent` instead of naming a provider outright," leaving the actual provider to be decided wherever the path lands.
+Use `:` to bind a provider and `=>` to redirect a lookup. The example binds `ShowWithDisplay`
+directly. An entry such as `FooProviderComponent => @MyFooComponent` instead looks up
+`@MyFooComponent` in the consulting table, where another entry supplies the provider.
 
-Those are the forms worth writing, but they are not the whole grammar. A namespace body is parsed by the same code as a `delegate_components!` table, so every operator, key form, statement, and value form that macro accepts parses here too, each lowering to an `impl Namespace<__Table__> for Key` rather than a `DelegateComponent` impl. Some consequences are worth holding. `open C;` in a namespace body is another spelling of `C => @C,`, while inheritance is written with the `: ParentNamespace` header rather than with a `namespace` statement. And the legacy nested-table value works, with the inner table lifted out into its own struct and impls just as in a delegation table. That is the one reason to write that form in a namespace rather than on a context, since every joining context then inherits the dispatch table.
+Namespace bodies share the [wiring grammar](macro-grammar.md) of `delegate_components!`. The entries
+generate `impl Namespace<__Table__> for Key` rather than `DelegateComponent` impls. An `open C;`
+statement is equivalent to `C => @C,`. Use the `: ParentNamespace` header for inheritance.
 
-A namespace inherits from a parent by naming it after a colon in the header. The child then resolves everything the parent does, plus its own entries:
+Legacy nested-table values also parse in a namespace body. The macro emits their inner tables as
+separate structs and impls, so joining contexts share the nested dispatch table. Retain this form
+when reading existing `UseDelegate` wiring; use modern path-based dispatch for new code.
+
+Name a parent after the namespace header's colon to inherit its entries. The child may add routes at
+keys the parent leaves unbound:
 
 ```rust
 cgp_namespace! {
@@ -37,11 +57,18 @@ cgp_namespace! {
 }
 ```
 
-`ExtendedNamespace` inherits every entry `DefaultNamespace` resolves and additionally reroutes the entire `@cgp.core.error` subtree to `@app`. A single path-rewriting entry redirects a whole prefix of the parent namespace at once, not just one component. When a child adds nothing of its own, the braces may be omitted: `cgp_namespace! { new AppNamespace: DefaultNamespace }` emits the same struct, trait, and inheritance impl as the braced empty body. Only `cgp_namespace!` accepts a header with no table; `delegate_components!` always needs its braces.
+`ExtendedNamespace` inherits `DefaultNamespace` and redirects the `@cgp.core.error` prefix to
+`@app`. The redirect applies to the subtree under that prefix, allowing the context to place its
+error providers under `@app`.
+
+Omit the braces when the namespace does not add entries:
+`cgp_namespace! { new AppNamespace: DefaultNamespace }` has the same expansion as an empty braced
+body. `delegate_components!` always requires its braces.
 
 ### What the macro generates
 
-With `new` present, the macro emits a backing struct (named with an `__…Components` wrapper) and the lookup trait carrying the table's `__Table__` generic parameter and a `Delegate` associated type:
+With `new`, the macro generates a backing struct and a lookup trait parameterized by the consulting
+table:
 
 ```rust
 pub struct __MyNamespaceComponents;
@@ -51,7 +78,9 @@ pub trait MyNamespace<__Table__> {
 }
 ```
 
-Each `=>` entry becomes an `impl` of that trait for the entry's key, whose `Delegate` is a `RedirectLookup` pointing the table at the entry's path. Each `:` entry becomes an `impl` whose `Delegate` is the named provider directly. For `FooProviderComponent => @MyFooComponent` the macro emits:
+Each entry implements the namespace trait for its key. A `:` entry sets `Delegate` to the provider;
+a `=>` entry sets it to `RedirectLookup` with the destination path. For
+`FooProviderComponent => @MyFooComponent`, the generated impl is:
 
 ```rust
 impl<__Table__> MyNamespace<__Table__> for FooProviderComponent {
@@ -59,11 +88,20 @@ impl<__Table__> MyNamespace<__Table__> for FooProviderComponent {
 }
 ```
 
-When a parent is named, the macro prepends a blanket impl that forwards every key the parent resolves down to the child, so the child inherits the parent's full table. The child's own entries are emitted after it and take precedence where their keys are more specific.
+Inheritance adds a blanket impl forwarding keys resolved by the parent. Child entries must not
+overlap that impl. Their position in the macro body does not give them precedence over a parent
+binding.
 
 ## Attaching components and joining namespaces
 
-Components register into a namespace, and contexts join it. A [component](components.md) attaches to a namespace through the `#[prefix(@path in Namespace)]` attribute on its [`#[cgp_component]`](components.md) trait, which emits one extra impl registering the component into the named namespace under a path prefix. CGP's own [`HasErrorType`](error-handling.md), for example, carries `#[prefix(@cgp.core.error in DefaultNamespace)]`, placing the standard error wiring into the built-in `DefaultNamespace` so any context joining that namespace inherits it. The generated impl routes the component's lookup under the prefix path:
+Register a component's route with `#[prefix(@path in Namespace)]` on its
+[`#[cgp_component]`](components.md) trait. For example, [`HasErrorType`](error-handling.md) uses
+`#[prefix(@cgp.core.error in DefaultNamespace)]`, so joining contexts inherit the route for the
+error-type component. Registration supplies a redirect; a provider must still be bound at its
+destination.
+
+The generated impl appends the component marker to the prefix. For a `BarProviderComponent`
+registered under `@MyBarComponent` in `MyNamespace`, the route is:
 
 ```rust
 impl<__Components__> MyNamespace<__Components__> for BarProviderComponent {
@@ -74,7 +112,10 @@ impl<__Components__> MyNamespace<__Components__> for BarProviderComponent {
 }
 ```
 
-A context joins a namespace inside `delegate_components!` with a `namespace` header line. After that, every lookup it cannot resolve directly forwards through the namespace. A direct entry on the same context shadows just that key, leaving the rest of the inherited wiring intact:
+Join a namespace with `namespace MyNamespace;` inside `delegate_components!`. The context then
+resolves the namespace's registered keys through its lookup trait. Assuming `ShowImplComponent` is
+registered under `@test` and the namespace leaves the destination unbound, this context selects the
+provider for `u64`:
 
 ```rust
 delegate_components! {
@@ -82,18 +123,29 @@ delegate_components! {
         namespace DefaultNamespace;
 
         @test.ShowImplComponent.u64:
-            ShowWithDisplay,   // overrides only the u64 entry
+            ShowWithDisplay,   // supplies the provider for u64
     }
 }
 ```
 
-The `namespace DefaultNamespace;` line emits a blanket `DelegateComponent` impl on `AppA` that forwards every key through `DefaultNamespace<AppA>`, paired with the matching `IsProviderFor` forwarding so dependency errors stay diagnosable through [checking](checking.md). The direct `@test.ShowImplComponent.u64` line resolves first, so it wins for `u64` only. That is the inherit-and-override pattern in action.
+The namespace header generates a blanket `DelegateComponent` impl forwarding keys through
+`DefaultNamespace<AppA>`. It also generates `IsProviderFor` forwarding so [checks](checking.md) can
+report provider dependencies. The direct path entry supplies the provider reached by the component's
+redirect.
 
-The override works because `DefaultNamespace` only routes the *marker* `ShowImplComponent` to a path that the context itself fills. A context cannot instead override a path the joined namespace *itself* registers (through a `:` body entry or a `#[default_impl]`), because the direct entry and the namespace's blanket `DelegateComponent` impl would both cover that path and conflict (`E0119`). To leave a path overridable, route the marker through the namespace but terminate the redirect on the context. Joining through `delegate_and_check_components!` does the same and additionally checks the entries the block writes directly, but its derivation does not cover the components the namespace itself brings in. So verifying the full inherited wiring is a job for a standalone `check_components!` (see [checking](checking.md)).
+Direct entries must not overlap bindings supplied by the namespace. If the namespace already binds
+the destination path through a `:` entry or `#[default_impl]`, a direct context entry for that path
+conflicts with the forwarding impl and Rust reports `E0119`. Keep configurable destinations unbound
+in the namespace; the same restriction applies to a child namespace redefining a parent's key.
+
+Check inherited components with a standalone `check_components!`. Joining through
+`delegate_and_check_components!` also checks supported direct entries, but it does not derive checks
+for all components supplied by the namespace. See [checking](checking.md).
 
 ## Paths with `Path!`
 
-A path is the type-level address that namespace entries redirect along, and `Path!` is the macro that builds one from a readable dotted, `@`-prefixed form. Each segment narrows the lookup one step, through a namespace, through a prefix, down to a component key. The leading `@` is the sigil marking the body as a path rather than a plain type:
+Use `Path!` to turn a dotted, `@`-prefixed address into a type-level path. Namespace entries use the
+same syntax to identify lookup destinations:
 
 ```rust
 type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
@@ -102,13 +154,21 @@ type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
 //         PathCons<ErrorRaiserComponent, Nil>>>
 ```
 
-The encoding of each segment is decided by its first character. A single lowercase identifier that is not a primitive type name (like `app` or `error`) becomes a [`Symbol`](type-level-primitives.md) type-level string, while every capitalized segment (like `ErrorRaiserComponent`) is kept as the named type, typically a component key or namespace marker. The macro folds the segments right to left onto `Nil`, wrapping each in a `PathCons`. You rarely call `Path!` directly. The same `@`-path syntax is embedded inside `cgp_namespace!` entries and `#[prefix(...)]` attributes, which is where paths are most often written.
+A single lowercase identifier becomes a `Symbol!` string unless it names a primitive type.
+Capitalized names such as `ErrorRaiserComponent` remain types. The macro nests these segments in
+`PathCons` cells ending in `Nil`. Paths are usually written directly in namespace entries or
+`#[prefix]` attributes, which perform this conversion without an explicit `Path!` call.
 
 ## The `RedirectLookup` provider
 
-`RedirectLookup<Components, Path>` is the zero-sized [provider](components.md) that turns a path-addressed entry back into a concrete provider. It is the mechanism every namespace runs on under the hood. The ordinary provider blanket impl looks a component up in the context's own table keyed by the component-name marker. `RedirectLookup` instead consults a table keyed by an arbitrary type-level path, then delegates to whatever provider that entry holds. This decouples *which key* a component is looked up under from *which table* answers it, which is the basis for organizing wiring into namespaces.
+`RedirectLookup<Components, Path>` resolves a provider from a table using a path key. Ordinary
+component delegation looks up the component marker; this [provider](components.md) looks up `Path`
+in `Components` and forwards to the resulting delegate. The table and lookup key can therefore vary
+independently.
 
-`RedirectLookup` is never written by hand. The macros emit it. Every `#[cgp_component]` generates a `RedirectLookup` impl of its provider trait, and the namespace `=>` entries and `#[prefix]` attributes generate entries whose `Delegate` is a `RedirectLookup`. The generated impl performs one `DelegateComponent` lookup keyed on the path rather than on the component name:
+The macros normally generate `RedirectLookup` for you. Every `#[cgp_component]` supplies an impl of
+its provider trait for it, and `=>` entries and `#[prefix]` attributes use it as their delegate. For
+a component without type parameters, the generated forwarding has this shape:
 
 ```rust
 impl<__Context__, __Components__, __Path__> Greeter<__Context__>
@@ -123,11 +183,17 @@ where
 }
 ```
 
-So `RedirectLookup` implements the provider trait whenever the table maps the path to a delegate that itself implements that trait, and forwards the call to it. When the provider trait carries a generic type parameter, the impl additionally appends that parameter onto the path before the lookup, so the redirected key can encode the generic argument. This is how per-type dispatch through a namespace works.
+The redirected delegate must implement the requested provider trait for the context. Components with
+type parameters append those parameters to the path before looking it up, which makes the
+destination depend on the generic arguments and enables per-type dispatch.
 
 ## Default resolution: the `DefaultNamespace` family
 
-The traits that back namespaces come in several arities, differing only in how many type parameters take part in the key. `DefaultNamespace<Components>` keys a default purely on the component name. `DefaultImpls1<T, Components>` keys it on the component name *and* one further type, the shape for a per-type default where the same component resolves differently for `String` than for `u64`. `DefaultImpls2` does the same for a pair. Each carries a single `Delegate` associated type and nothing else. Resolution is the projection of `Delegate` from the matching impl:
+The default-resolution traits select a `Delegate` from a key and a consulting table.
+`DefaultNamespace<Components>` uses the implementing type as its key. `DefaultImpls1<T, Components>`
+and `DefaultImpls2<T1, T2, Components>` add key parameters. A common use implements
+`DefaultImpls1<Component, Components>` for a value type to register that component's per-type
+default:
 
 ```rust
 pub trait DefaultNamespace<Components> {
@@ -139,9 +205,28 @@ pub trait DefaultImpls1<T, Components> {
 }
 ```
 
-`DefaultNamespace` is the built-in namespace that `#[prefix(... in DefaultNamespace)]` registers components into and that a context joins with `namespace DefaultNamespace;`. A per-type default is registered with the `#[default_impl(T in DefaultImpls1<Component>)]` attribute on a provider impl, which emits `impl<Components> DefaultImpls1<Component, Components> for T { type Delegate = Provider; }`. The registration impl drops the provider's own impl-side `where` clause (its `#[use_type]`/`#[uses]` bounds), so a provider that depends on abstract types registers cleanly. The key may also be a `@`-path: `#[default_impl(@app.GreeterComponent in AppNamespace)]` binds a prefixed component's own path, so a context that joins the namespace resolves it with no `for` loop. The attribute repeats, one table per attribute.
+`DefaultNamespace` is the built-in namespace used by component prefixes and
+`namespace DefaultNamespace;`. Register a per-type provider with
+`#[default_impl(T in DefaultImpls1<Component>)]` on its impl. This emits
+`impl<Components> DefaultImpls1<Component, Components> for T { type Delegate = Provider; }`. Import
+`DefaultImpls1` and `DefaultImpls2` from `cgp::core::component`; they are outside the prelude.
 
-The orphan rule decides where the attribute may be *written*. The crate must own the namespace trait or the key, so an unprefixed component's marker key can be registered into a foreign namespace downstream, but a `#[prefix]`-ed component's key is a foreign `PathCons` path, confining its default to the namespace's own crate. A context then pulls those defaults in with a `for … in` loop that projects the `Delegate` for each type:
+Registration omits the provider's impl-side bounds. Requirements introduced by `#[uses]` or
+`#[use_type]` are checked when the provider is used, so abstract-type dependencies do not prevent
+registration.
+
+A `#[default_impl]` key may also be a path. For example,
+`#[default_impl(@app.GreeterComponent in AppNamespace)]` binds that destination directly in
+`AppNamespace`, allowing a joining context to resolve it without a `for` loop. Use a separate
+attribute for each registration.
+
+The registering crate must own the namespace trait or satisfy Rust's ownership rules for the key. An
+owned component marker can be registered into a foreign namespace, but a prefixed `PathCons` key is
+foreign, so its registration belongs in the namespace's crate.
+
+Use a `for` loop to import per-type defaults into the context's path table. In this example, assume
+the registry supplies defaults for other types but leaves `u64` unregistered; the direct entry
+supplies that type's provider:
 
 ```rust
 delegate_components! {
@@ -153,25 +238,45 @@ delegate_components! {
         }
 
         @test.ShowImplComponent.u64:
-            ShowWithDisplay, // overrides the inherited default for u64
+            ShowWithDisplay, // supplies u64, which the registry leaves unregistered
     }
 }
 ```
 
-The `for <T, Provider> in DefaultImpls1<ShowImplComponent>` loop wires each type `T` by reading `T: DefaultImpls1<ShowImplComponent, App, Delegate = Provider>`, and the direct `u64` line shadows whatever the namespace would otherwise supply for that type. The loop target can equally be a whole namespace defined with `cgp_namespace!`, such as the `DefaultShowComponents` namespace shown earlier. `for <T, Provider> in DefaultShowComponents { … }` wires its listed types through the same projection. An optional `where` clause after the loop target (`for <T, Provider> in Table where T: Clone { … }`) adds its bounds to every impl the loop emits, narrowing which types it wires.
+The loop generates wiring bounded by
+`T: DefaultImpls1<ShowImplComponent, App, Delegate = Provider>`. The direct `u64` entry is valid
+only if it does not overlap that bound. It does not override a matching registry impl.
+
+A loop can also import a namespace table. For example,
+`for <T, Provider> in DefaultShowComponents { … }` reads the entries defined earlier for `String`
+and `u64`. An optional `where` clause, as in `for <T, Provider> in Table where T: Clone { … }`, adds
+bounds to every generated impl and narrows which types the loop wires.
 
 ## Defining a preset once, reusing it across contexts
 
-The payoff is that a bundle of wiring is defined once and reused everywhere. A library publishes a namespace of sensible defaults, possibly extended from a base namespace as `ExtendedNamespace: DefaultNamespace` does, and any number of applications join it, inherit the whole bundle, and override only the entries specific to their needs. Each context's table shrinks to a `namespace` header plus a short list of overrides, no matter how many components the namespace bundles. Because the inheritance, the overrides, and the redirections are all resolved through trait projection and type-level paths, the entire arrangement is resolved at compile time without runtime cost. A preset is one more namespace in the chain.
+Design a preset by binding shared choices and leaving configurable destinations unbound. A library
+can publish that namespace, and applications can join it or inherit from it while supplying the
+remaining providers. This keeps common wiring in one place and application choices on each context.
+
+A preset uses the namespace machinery directly; CGP does not require a separate `cgp_preset!`
+construct. Trait resolution handles inheritance and redirection at compile time, without a runtime
+lookup table.
 
 ## Related constructs
 
-Namespaces build directly on [wiring](wiring.md). A namespace is a `DelegateComponent` table addressed by paths, and a context joins one inside `delegate_components!`. The keys a namespace maps are the `…Component` markers of [components](components.md), attached via the `#[prefix(...)]` attribute on a `#[cgp_component]` trait, and the `IsProviderFor` forwarding a `namespace` header emits feeds the completeness guarantees in [checking](checking.md). The `@`-paths and `Symbol` segments are [type-level primitives](type-level-primitives.md). The per-type dispatch `RedirectLookup` enables, by appending a generic parameter onto the lookup path, is the same mechanism the type-parameter dispatch forms in [higher-order providers](higher-order-providers.md) use.
+Read these references for the constructs used by namespaces:
+
+- [Wiring](wiring.md): `DelegateComponent` tables and context delegation.
+- [Components](components.md): Component markers and generated traits.
+- [Checking](checking.md): Verifying inherited providers and dependencies.
+- [Type-level primitives](type-level-primitives.md): `Path!`, `PathCons`, and symbol segments.
+- [Higher-order providers](higher-order-providers.md): Per-type dispatch and provider composition.
 
 ## Further reference
 
-Online docs:
-[concepts/namespaces.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/namespaces.md),
-[reference/macros/cgp_namespace.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/cgp_namespace.md),
-[reference/providers/redirect_lookup.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/providers/redirect_lookup.md),
-[reference/macros/path.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/path.md).
+Consult the online knowledge base for complete syntax and expansions:
+
+- [Namespaces](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/namespaces.md).
+- [`cgp_namespace!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/cgp_namespace.md).
+- [`RedirectLookup`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/providers/redirect_lookup.md).
+- [`Path!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/path.md).

@@ -1,14 +1,26 @@
 # Modern idioms: reading and modernizing CGP
 
-This file maps each older, explicit CGP form to the modern idiom you should prefer, so you can recognize legacy syntax in existing code, understand what it desugars to, and rewrite it in the vanilla-looking form.
+Prefer modern CGP syntax in new code, and keep explicit forms for cases the shorthand cannot
+express. This reference pairs older forms with their modern equivalents so you can read generated
+code and revise existing implementations. The examples assume `use cgp::prelude::*;` and describe
+CGP v0.8.0.
 
-CGP's explicit forms came first, and they are still exactly what the macros desugar to. So you will keep meeting them in generated code, in reference Expansion sections, and in any codebase written before the newer idioms landed. The modern idioms exist to lower the barrier to entry. They let a provider look like an ordinary trait `impl`, a dependency look like a `use` import, and an abstract type look like a plain generic. **Prefer the modern idiom in all new code, and reach for an explicit form only when a construct cannot express the case.** The closing section lists those exceptions. This file is the bidirectional reference. Read it forward to write modern CGP, and backward to decode legacy CGP you are asked to read or update. Assume `use cgp::prelude::*;`. The CGP version is v0.8.0.
+Modern syntax makes providers resemble ordinary trait impls and expresses dependencies through
+attributes. The macros still expand to explicit traits, bounds, and provider calls, so those forms
+remain useful when reading expansions.
+[The exceptions below](#when-the-explicit-forms-are-still-right) identify cases that need explicit
+syntax.
 
-Each shift below shows the legacy form, the modern equivalent, and the mechanical rule that connects them. All of them desugar to the same generated code, so a rewrite is a readability change, never a behavioral one.
+Each comparison explains the rule connecting the forms. Preserve the original bounds and behavior
+when applying it; field access and dispatch rewrites also require checking the context's fields and
+wiring.
 
 ## Provider shape: `#[cgp_impl]` over the raw provider forms
 
-Write a provider with [`#[cgp_impl]`](components.md), which keeps `self`, `Self`, and the consumer method signatures, rather than the lower-level [`#[cgp_provider]`/`#[cgp_new_provider]`](components.md). The lower forms require the inside-out provider-trait shape, with the context moved to a leading type parameter and the receiver written as `context: &Context`. The legacy form:
+Write providers with [`#[cgp_impl]`](components.md) to use `self`, `Self`, and consumer-style method
+signatures. The lower-level `#[cgp_provider]` and `#[cgp_new_provider]` forms take an explicit
+context parameter and a receiver such as `context: &Context`. This older implementation reads the
+rectangle's fields through `HasField`:
 
 ```rust
 #[cgp_new_provider]
@@ -24,7 +36,8 @@ where
 }
 ```
 
-becomes, with `#[cgp_impl]` and [`#[implicit]`](functions-and-getters.md) arguments:
+The modern form uses `#[cgp_impl]` and [`#[implicit]`](functions-and-getters.md) arguments to read
+the same fields:
 
 ```rust
 #[cgp_impl(new RectangleArea)]
@@ -35,11 +48,15 @@ impl AreaCalculator {
 }
 ```
 
-`#[cgp_impl]` desugars back to `#[cgp_provider]`/`#[cgp_new_provider]`, so the raw forms remain what you read in expansions. Write the raw form yourself only when you need the inside-out shape directly, for instance a provider whose `Self` is a concrete context, or a bound the sugar cannot spell.
+`#[cgp_impl]` expands through the lower-level provider macros, so their explicit form still appears
+in generated code. Write that form directly only when you need a provider-trait impl or bounds the
+shorthand cannot express.
 
 ## Context parameter: omit `for Context`
 
-Inside a `#[cgp_impl]` block, prefer the unqualified `impl AreaCalculator` and let the macro insert the reserved context parameter, rather than naming it as `impl<Context> AreaCalculator for Context`. Omitting `for Context` makes the provider read like an ordinary trait `impl`. Name the context explicitly only when you must bound it with a lifetime or higher-ranked bound the sugar cannot carry, or refer to it by a readable name. So the legacy
+Omit `for Context` from a `#[cgp_impl]` header unless the context needs an explicit name or bound.
+The macro supplies its reserved context parameter. For example, this implementation names the
+context only to require `HasDimensions`:
 
 ```rust
 #[cgp_impl(new RectangleArea)]
@@ -51,7 +68,7 @@ where
 }
 ```
 
-shortens to the bare header, with the bound moved to `#[uses]`:
+The bare header and `#[uses]` express the same requirement without naming the context:
 
 ```rust
 #[cgp_impl(new RectangleArea)]
@@ -63,7 +80,11 @@ impl AreaCalculator {
 
 ## Dependencies: `#[uses]` and `#[use_provider]` over hand-written `where`
 
-State a provider's [impl-side dependencies](components.md) with [`#[uses(...)]`](functions-and-getters.md) and [`#[use_provider(...)]`](higher-order-providers.md) rather than hand-written `where` clauses, so a dependency reads like a `use` import. `#[uses(CanCalculateArea)]` adds `Self: CanCalculateArea`. `#[use_provider(Inner: AreaCalculator)]` adds `Inner: AreaCalculator<Self>`, filling in the `<Self>` context argument a provider-trait bound needs. The legacy `where` forms:
+Declare context capabilities with [`#[uses(...)]`](functions-and-getters.md) and inner-provider
+requirements with [`#[use_provider(...)]`](higher-order-providers.md). These attributes generate
+[impl-side dependencies](components.md): `#[uses(CanCalculateArea)]` adds `Self: CanCalculateArea`,
+and `#[use_provider(Inner: AreaCalculator)]` adds `Inner: AreaCalculator<Self>`. The explicit form
+names those bounds in a `where` clause:
 
 ```rust
 #[cgp_impl(new ScaledArea<InnerCalculator>)]
@@ -76,7 +97,8 @@ where
 }
 ```
 
-become the attribute forms plus an implicit argument:
+The modern form moves the inner-provider bound to an attribute and the field requirement to an
+implicit argument:
 
 ```rust
 #[cgp_impl(new ScaledArea<InnerCalculator>)]
@@ -86,11 +108,23 @@ impl<InnerCalculator> AreaCalculator {
 }
 ```
 
-`#[uses]` accepts any bound a `where` clause allows, though the simple `Trait<Params>` form is idiomatic. Where a bound pins an **abstract type**, as in `Self: HasErrorType<Error = AppError>`, express it with the [`#[use_type]` equality form](#abstract-types-use_type-over-supertrait--selftype) below instead. Only equality on a trait you would never import from with `#[use_type]` (`Iterator<Item = u8>`) stays an explicit `where` clause. When a provider imports several capabilities, combine them into one `#[uses]` attribute separated by commas, as in `#[uses(CanQueryUserBalance, CanRaiseHttpError<ErrNotFound, String>)]`, since one attribute reads as a single dependency list. **`#[use_provider]` is the exception.** A comma-separated list of provider-and-trait pairs does not parse, so several inner providers take one stacked attribute each, and `+` joins several trait bounds on a single provider.
+Use one comma-separated `#[uses]` attribute for several capabilities, as in
+`#[uses(CanQueryUserBalance, CanRaiseHttpError<ErrNotFound, String>)]`. It accepts `where`-clause
+bounds, though the simple `Trait<Params>` form is preferred. For an abstract-type equality such as
+`Self: HasErrorType<Error = AppError>`, prefer the
+[`#[use_type]` equality form](#abstract-types-use_type-over-supertrait--selftype). Keep explicit
+bounds for traits whose associated types you would not import, such as `Iterator<Item = u8>`.
+
+Give each inner provider its own `#[use_provider]` attribute. A comma-separated list of
+provider-and-trait pairs does not parse. To require several traits on one provider, join its bounds
+with `+`.
 
 ## Field reads: `#[implicit]` over a getter trait
 
-Read a value from a context field with an [`#[implicit]`](functions-and-getters.md) argument, in a `#[cgp_impl]` method exactly as in `#[cgp_fn]`, rather than declaring a getter trait and importing it. This is the default for *any* field a provider reads from its own context, since an implicit argument reads from `self` and takes a plain `&T` by reference without cloning. Even a field several providers each read is written as the same implicit argument in each, not promoted to a getter. An implicit argument names both a local and the field it comes from, keeping the `HasField` machinery out of sight. The getter-trait version:
+Prefer [`#[implicit]`](functions-and-getters.md) arguments for fields on the provider's own context.
+Each argument names the field and the local value, and a plain `&T` borrows without cloning. This
+also applies when several providers read the same field. The following getter-based implementation
+can use implicit arguments instead:
 
 ```rust
 #[cgp_auto_getter]
@@ -106,7 +140,7 @@ impl AreaCalculator {
 }
 ```
 
-collapses to reading the fields directly:
+Implicit arguments read `width` and `height` directly from the context:
 
 ```rust
 #[cgp_impl(new RectangleArea)]
@@ -117,11 +151,22 @@ impl AreaCalculator {
 }
 ```
 
-Use `#[cgp_auto_getter]` sparingly, only where an implicit argument cannot reach: the field lives on a type *other* than the provider's own context (so the getter is a `where` bound on that type, such as `Request: HasBasicAuthHeader<Self>`), the accessor must be a *named* capability other code depends on, or the getter carries an *associated type inferred from the field*. Everywhere else, including a same-context field read shared by several providers, prefer the implicit argument. Avoid `#[cgp_getter]` in ordinary code, since its full wireable component is for the advanced case of choosing the source field per context at wiring time.
+Use `#[cgp_auto_getter]` when the access needs a trait of its own:
+
+- **Another type's field:** Require a getter on that type, such as `Request: HasBasicAuthHeader<Self>`.
+- **Named capability:** Expose an accessor that other code requires through a trait bound.
+- **Abstract field type:** Infer a getter's associated return type from the field.
+
+Reserve `#[cgp_getter]` for choosing the getter's source field per context through wiring. Ordinary
+reads from the provider's own context should use implicit arguments.
 
 ## Abstract types: `#[use_type]` over supertrait + `Self::Type`
 
-Bring an abstract type into a definition with [`#[use_type]`](abstract-types.md) and write it as a bare alias, rather than declaring the owning trait as a supertrait and qualifying every use as `Self::Type`. The attribute does both jobs. It adds the supertrait (on `#[cgp_component]`) or `where` bound (on `#[cgp_impl]`/`#[cgp_fn]`) *and* rewrites each bare `Error`/`Scalar` to its fully qualified path. This is preferred even for the built-in error type. The legacy
+Import abstract types with [`#[use_type]`](abstract-types.md) and use their bare aliases. The
+attribute adds the owning trait as a supertrait on `#[cgp_component]` or as an impl-side bound on
+`#[cgp_impl]` and `#[cgp_fn]`. It also rewrites each alias to its fully qualified associated-type
+path. This applies to built-in types such as `Error`, which the explicit form qualifies as
+`Self::Error`:
 
 ```rust
 #[cgp_component(Loader)]
@@ -130,7 +175,7 @@ pub trait CanLoad: HasErrorType {
 }
 ```
 
-becomes
+The attribute supplies the supertrait and qualifies `Error` for you:
 
 ```rust
 #[cgp_component(Loader)]
@@ -140,11 +185,18 @@ pub trait CanLoad {
 }
 ```
 
-One rule bounds the rewrite. It fires only on the bare identifier of an *imported* type. A construct's own **local associated type stays qualified as `Self::Assoc`**. A handler that declares `type Output` writes `Self::Output`, never a bare `Output`. So a mixed signature like `Result<Self::Output, Error>` is exactly right: the local `Self::Output` stays qualified, and the imported `Error` is bare.
+Keep a definition's own associated types qualified as `Self::Assoc`. The rewrite applies only to
+imported bare identifiers. A handler declaring `type Output` therefore writes
+`Result<Self::Output, Error>` when `Error` is imported.
 
-When a definition imports types from several traits, combine them into one `#[use_type]` attribute with the trait paths comma-separated, as in `#[use_type(HasUserIdType.UserId, HasCurrencyType.Currency, HasErrorType.Error)]`, rather than stacking one attribute per trait. The combined form reads as a single import list. Several types from one trait use the braced list (`#[use_type(HasFooType.{Foo, Bar})]`). Stacking repeated `#[use_type]` attributes behaves identically, but reach for it only when a real reason calls for it.
+Combine type imports in one comma-separated attribute, as in
+`#[use_type(HasUserIdType.UserId, HasCurrencyType.Currency, HasErrorType.Error)]`. Use braces for
+several types from one trait: `#[use_type(HasFooType.{Foo, Bar})]`. Repeated attributes behave
+identically, but the combined form keeps the imports together.
 
-Prefer `#[use_type]` even when the type lives on a **foreign** type rather than `Self`, a type named by a generic parameter, using the trailing `in Context` clause. It rewrites the bare alias to `<Context as Trait>::Assoc` *and* supplies `Context: Trait`, so the hand-written
+Use the trailing `in Context` clause to import an associated type from another type. For example,
+`#[use_type(HasUserIdType.UserId in App)]` adds `App: HasUserIdType` and rewrites `UserId` to
+`<App as HasUserIdType>::UserId`. It replaces the explicit bound and qualified type in this getter:
 
 ```rust
 #[cgp_auto_getter]
@@ -156,7 +208,7 @@ where
 }
 ```
 
-becomes
+The imported alias makes the getter's return type shorter:
 
 ```rust
 #[cgp_auto_getter]
@@ -166,28 +218,33 @@ pub trait HasLoggedInUser<App> {
 }
 ```
 
-with `App: HasUserIdType` supplied for you, so the plain `<App>` parameter and the bare `UserId` are enough.
+The attribute supplies `App: HasUserIdType`, so the generic parameter needs only the name `App`.
 
-Import a type with `#[use_type]` even when it *already* arrives transitively, as the supertrait of a trait pulled in by `#[uses]`. When `CanCreateFoo` has `HasFooType` as a supertrait, prefer re-importing over leaning on the transitive `Self::Foo`:
+Import abstract types explicitly even when a capability's supertrait already supplies the bound. If
+`CanCreateFoo` extends `HasFooType`, use `#[uses]` for the capability and `#[use_type]` for its
+type:
 
 ```rust
 #[cgp_fn]
 #[uses(CanCreateFoo)]
-#[use_type(HasFooType.Foo)]        // re-import: bare `Foo`, explicit `HasFooType` dep
+#[use_type(HasFooType.Foo)]
 fn bar(&self) -> Foo { self.create_foo(42) }
 ```
 
-instead of
+The older form relies on the transitive supertrait to resolve `Self::Foo`:
 
 ```rust
 #[cgp_fn]
 #[uses(CanCreateFoo)]
-fn bar(&self) -> Self::Foo { self.create_foo(42) }   // relies on the reachable supertrait
+fn bar(&self) -> Self::Foo { self.create_foo(42) }
 ```
 
-The re-import re-adds a harmless (already implied) `Self: HasFooType` and rewrites the bare `Foo`. So `#[uses]` states the *capability* dependency and `#[use_type]` states the *type* dependency, both visible rather than one riding in silently.
+The explicit import makes the type dependency visible. It adds an already implied `Self: HasFooType`
+bound and rewrites the bare `Foo`.
 
-`#[use_type]` also *pins* an abstract type with the equality form `{Assoc = Type}`, which is the modern replacement for a hand-written `where Self: HasXType<Assoc = Concrete>` clause. Reach for it whenever a provider constrains an abstract type to a concrete one, rather than leaving the equality as an explicit `where`. On a `#[cgp_impl]`, the legacy
+Use the equality form `#[use_type(Trait.{Assoc = Type})]` to constrain an abstract type to a
+concrete one. It replaces an explicit bound such as `Self: HasErrorType<Error = AppError>` in this
+provider:
 
 ```rust
 #[cgp_impl(new DisplayHttpError)]
@@ -201,7 +258,7 @@ where
 }
 ```
 
-becomes, with the equality moved into the attribute:
+The equality moves into the attribute while the other generic bounds stay in the `where` clause:
 
 ```rust
 #[cgp_impl(new DisplayHttpError)]
@@ -215,13 +272,24 @@ where
 }
 ```
 
-The attribute emits the same `Self: HasErrorType<Error = AppError>` bound, and it would rewrite any bare `Error`, though here the body names the concrete `AppError` directly. The right-hand side is substituted too, so an imported alias is grounded wherever it appears in it. Naming *another* alias outright unifies two abstract types: `#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]` emits `Self: HasHashedPasswordType<HashedPassword = <Self as HasPasswordType>::Password>`. An alias *nested inside* the type is grounded in place: `#[use_type(HasDbType.Db, HasTransactionType.{Transaction = Tx<Db>})]` emits `Self: HasTransactionType<Transaction = Tx<<Self as HasDbType>::Db>>`, which is how a pin says "a transaction of *this* database" without naming a concrete engine.
+The attribute emits `Self: HasErrorType<Error = AppError>` and rewrites any bare `Error`. This
+example continues to name the concrete `AppError` directly.
 
-Because the equality form produces an impl-side bound, it belongs on `#[cgp_impl]` and `#[cgp_fn]` only. It is rejected on `#[cgp_component]`.
+The equality's right-hand side can also refer to imported aliases. For example,
+`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]` equates
+`HashedPassword` with `<Self as HasPasswordType>::Password`. Nested aliases work too:
+`#[use_type(HasDbType.Db, HasTransactionType.{Transaction = Tx<Db>})]` produces
+`Self: HasTransactionType<Transaction = Tx<<Self as HasDbType>::Db>>`.
+
+The equality form is supported on `#[cgp_impl]` and `#[cgp_fn]`, where it produces an impl-side
+bound. `#[cgp_component]` rejects it.
 
 ## Supertraits: `#[extend]` over native `:` syntax
 
-Add a non-type capability supertrait to a `#[cgp_component]` trait with [`#[extend(...)]`](functions-and-getters.md) rather than native `pub trait CanDoX: Supertrait` syntax. Both produce the same trait, but `#[extend]` reads as importing a capability the trait re-exports, and a CGP supertrait is exactly that: a declared dependency, not a base class. It pairs symmetrically with `#[uses]`. `#[uses]` imports a capability for private use, and `#[extend]` re-exports one as part of the trait's contract. The native
+Add capability supertraits with [`#[extend(...)]`](functions-and-getters.md). It generates the same
+bound as native `pub trait CanDoX: Supertrait` syntax, while distinguishing a public dependency from
+the impl-side dependencies declared with `#[uses]`. The explicit form places `HasName` after the
+trait name:
 
 ```rust
 #[cgp_component(Greeter)]
@@ -230,7 +298,7 @@ pub trait CanGreet: HasName {
 }
 ```
 
-becomes
+The attribute form declares the same `HasName` supertrait:
 
 ```rust
 #[cgp_component(Greeter)]
@@ -240,11 +308,15 @@ pub trait CanGreet {
 }
 ```
 
-Use `#[extend]` for a supertrait that contributes only a *capability* (like `HasName`, read through the getter). Use `#[use_type]` instead when the supertrait is an abstract-type component whose associated type the signature names, since `#[use_type]` also rewrites the type. In `#[cgp_fn]`, whose `where` clauses are impl-side dependencies, `#[extend]` is the only way to declare a supertrait at all.
+Use `#[extend]` for capabilities and `#[use_type]` for abstract types named in the signature. The
+latter also rewrites the type aliases. In `#[cgp_fn]`, ordinary `where` clauses describe impl-side
+dependencies, so use `#[extend]` to add a supertrait.
 
 ## Per-type dispatch: `open` and namespaces over `UseDelegate`
 
-Route a generic-parameter component to a different provider per type with the [`open` statement](wiring.md) or a [namespace](namespaces.md), rather than the legacy [`UseDelegate`](higher-order-providers.md) nested-table pattern. Both ride the `RedirectLookup` impl every `#[cgp_component]` already generates, so they store the per-type entries directly on the context without a wrapper type. The legacy nested table:
+Use [`open`](wiring.md) or a [namespace](namespaces.md) to choose a provider per generic argument.
+Both use the `RedirectLookup` impl generated by `#[cgp_component]`. The older
+[`UseDelegate`](higher-order-providers.md) pattern stores its per-type entries in a separate table:
 
 ```rust
 delegate_components! {
@@ -258,7 +330,7 @@ delegate_components! {
 }
 ```
 
-becomes the inline `open` form:
+The `open` form stores the same provider choices directly on the context:
 
 ```rust
 delegate_components! {
@@ -271,24 +343,43 @@ delegate_components! {
 }
 ```
 
-Because `open` and namespaces ride `RedirectLookup`, a **new** component you dispatch this way does not need a [`#[derive_delegate(UseDelegate<Param>)]`](macro-grammar.md) attribute. That attribute exists only to generate the `UseDelegate` provider the nested-table form relies on. You will still see `#[derive_delegate]` on some CGP-shipped components (the error and handler families) so their existing `UseDelegate` wiring keeps working, but code dispatching only through `open` or a namespace can omit it. Prefer `open` for a context wiring its own components, and a namespace when a reusable, inheritable dispatch table is worth sharing.
+Components dispatched through `open` or namespaces do not need
+`#[derive_delegate(UseDelegate<Param>)]`. That attribute generates the provider support for legacy
+`UseDelegate` tables. Some CGP error and handler components retain it for compatibility.
+
+Choose `open` for a context's own per-type wiring. Use a namespace when several contexts should
+share a reusable table or inherit common routes.
 
 ## When the explicit forms are still right
 
-A handful of cases need an explicit form, and choosing one there is not a regression:
+Keep explicit syntax where it expresses a requirement the preferred shorthand does not cover:
 
-- Keep an explicit `where` clause for an associated-type-equality bound on a trait you would never `#[use_type]` from, such as `Iterator<Item = u8>` or `From<X>`. An equality bound on an **abstract-type** trait (`Self: HasErrorType<Error = AppError>`) is *not* one of these, because the [`#[use_type]` equality form](#abstract-types-use_type-over-supertrait--selftype) expresses it and is preferred.
-- Name the context explicitly, `impl<Context> Trait for Context`, to attach a lifetime or higher-ranked bound the sugar cannot carry, or when `Self` must be a concrete context (the `#[cgp_impl(Self)]` passthrough is the direct-impl case).
-- Reach for `#[cgp_getter]` when you specifically want to choose which field a getter reads per context at wiring time.
-- Write a raw provider-trait `impl` when you need the inside-out shape directly.
-- Keep a local associated type qualified as `Self::Output` always. It is never a `#[use_type]` import.
+- **Other trait bounds:** Keep explicit bounds such as `Iterator<Item = u8>` or `From<X>` when they are not abstract-type imports. Use `#[use_type]` for abstract-type equalities.
+- **Named context:** Write `impl<Context> Trait for Context` when a lifetime or higher-ranked bound requires the name. Use `#[cgp_impl(Self)]` with an explicit concrete context for a direct consumer impl.
+- **Configurable getter:** Use `#[cgp_getter]` when wiring must choose the source field per context.
+- **Explicit provider impl:** Write the raw provider-trait form when the shorthand cannot express the implementation.
+- **Local associated type:** Keep `Self::Output` qualified when the definition declares `Output` itself.
 
-Outside these cases, the modern idiom is the right choice.
+For routine providers, dependencies, and field reads, use the modern forms above.
 
 ## Reading pre-0.7 code: renamed and removed names
 
-Very old code and pre-0.7 write-ups can use names that no longer exist, as opposed to the still-valid legacy *forms* above. These do not compile against current CGP, so treat them as signals to translate, not to copy. The attribute `#[cgp_context]` was removed (a context is now assembled with `delegate_components!` and the derive/getter machinery rather than a dedicated context macro), and the abstract-type provider trait once called `ProvideType` is now `TypeProvider`. When you meet a name the current prelude does not export, assume it was renamed or removed rather than that you are misremembering. Fetch the online knowledge base's changelog and reference to find its modern spelling, and do not reintroduce a removed name into new code.
+Pre-0.7 code may use names that current CGP has removed or renamed. Replace `#[cgp_context]` with
+`delegate_components!` and the relevant derive or getter machinery. The abstract-type provider trait
+formerly named `ProvideType` is now `TypeProvider`.
+
+Check an unfamiliar name against the current exports and the online knowledge base's changelog or
+reference before copying it. A missing prelude export may require an explicit import; it does not by
+itself prove that the name was removed.
 
 ## Related sub-skills
 
-Every shift here is a shortcut over a construct documented in full elsewhere: provider forms in [components](components.md), field injection and `#[uses]`/`#[extend]` in [functions-and-getters](functions-and-getters.md), abstract types and `#[use_type]` in [abstract-types](abstract-types.md), the inner-provider pattern in [higher-order-providers](higher-order-providers.md), per-type dispatch in [wiring](wiring.md) and [namespaces](namespaces.md), and the grammar and expansion of every form in [macro-grammar](macro-grammar.md). For how much CGP a problem needs in the first place, see [modularity-hierarchy](modularity-hierarchy.md).
+Consult the owning reference for full syntax and expansion details:
+
+- [Components](components.md): Provider forms and generated traits.
+- [Functions and getters](functions-and-getters.md): Implicit fields, `#[uses]`, and `#[extend]`.
+- [Abstract types](abstract-types.md): Type imports and equality bounds.
+- [Higher-order providers](higher-order-providers.md): Inner-provider dependencies.
+- [Wiring](wiring.md) and [namespaces](namespaces.md): Per-type dispatch.
+- [Macro grammar](macro-grammar.md): Accepted forms and expansion rules.
+- [Modularity hierarchy](modularity-hierarchy.md): Choosing how much CGP a problem needs.

@@ -1,30 +1,60 @@
 # Modularity hierarchy
 
-This file lays out a hierarchy of how decoupled an implementation can be from the type it serves, from plain generic functions up to per-provider wiring, so you can pick how much CGP machinery a problem needs.
+Choose the least complex form that gives callers the implementation choices they need. CGP supports
+a progression from plain generic functions to wiring choices inside individual providers. This
+reference compares those forms using serialization as a running example.
 
-CGP is not all-or-nothing. The same capability, here serializing a value with Serde, can be expressed at several tiers of modularity. Each tier is more decoupled than the last and carries more machinery in exchange. This page walks the hierarchy on one running example, so a reader can stop at the first tier that solves the problem rather than reaching for the heaviest tool by reflex. Assume `use cgp::prelude::*;` throughout. The CGP version is v0.8.0.
+Each tier separates the implementation from the type it serves more fully, at the cost of additional
+declarations or wiring. Stop at the tier that solves the problem. The examples assume
+`use cgp::prelude::*;` and describe CGP v0.8.0.
 
 ## The questions that decide the tier
 
-Before the tiers, consider what varies, because the tier numbers name consequences while these questions name causes.
+Identify the context and the operation's target before choosing a tier. These roles determine where
+provider choices belong and whether different applications can make independent choices.
 
-**What is the `Self` type?** It is either a **value context**, the data the capability operates on, like the `Vec<u8>` being serialized, or an **environmental context**, a type that exists to supply choices and capabilities rather than to be operated on, like an application. Both are contexts. Both sit in `Self` and both carry a wiring table. An environmental context often lacks fields entirely, since its whole job is to be a name the table hangs off.
+The context occupies the `Self` position. A **value context** is the data being operated on, such as
+the `Vec<u8>` being serialized. An **environmental context** supplies an application's choices and
+capabilities. Both can carry wiring, but an environmental context may be fieldless because it exists
+only to select providers.
 
-**What does the capability target?** It targets either `Self` (**self-targeted**: `CanGreet`, `HasErrorType`, every getter) or a type parameter that `Self` only decides for (**parameter-targeted**: `CanSerializeValue<Value>`, `CanCalculateArea<Shape>`). A parameter alone does not settle this. In `CanCompute<Code, Input>` the target is `Input`, while `Code` is a selector the wiring dispatches on.
+The target is either `Self` or a type parameter. Self-targeted components include `CanGreet` and
+`HasErrorType`; parameter-targeted components include `CanSerializeValue<Value>` and
+`CanCalculateArea<Shape>`. Not every parameter is a target: in `CanCompute<Code, Input>`, `Input` is
+the target and `Code` selects the wiring.
 
-The combinations that occur are a **value context** targeting `Self` (tier 3's retrofit case), an **environmental context** targeting `Self` (also tier 3, and where most CGP code lives), and an **environmental context** targeting a parameter (tiers 4 and 5).
+Tier 3 covers both value contexts targeting themselves and environmental contexts supplying their
+own capabilities. Tiers 4 and 5 use environmental contexts to choose behavior for a separate target
+type.
 
-**The escape from coherence happens when `Self` becomes a type you own, not when a parameter appears.** This is the part most easily misread. Wired on a foreign value type, a self-targeted component still gets one provider program-wide. Wired on an environmental context, the constraint "one wiring per type" stops binding, because you can define a second context. `App` and `TestApp` each choose their own `CanSendEmail` provider without a parameter anywhere. Tier 4's parameter adds the ability to make that choice about types you do *not* own.
+Owning the context permits independent wiring choices even without a target parameter. A foreign
+value type has one wiring program-wide, but a crate can define `App` and `TestApp` and choose a
+different `CanSendEmail` provider for each. Tier 4 adds the ability to make those per-context
+choices about separate types, including types the crate does not own.
 
-Vanilla Rust idiomatically supports only the value-context arrangement, as in `impl Display for String`, so a Rust programmer arrives without vocabulary for the others. The other arrangements are legal but unrewarding. An environmental context works until you factor two implementations into blanket impls and they overlap, and a parameter-targeted trait on an application type compiles fine but needs a hand-written body for every context-and-type pair. CGP's contribution is making the implementations reusable, and that turns each arrangement into a technique.
+Ordinary Rust supports these arrangements, but reusable implementations can encounter coherence
+restrictions. Environmental contexts with overlapping blanket impls still conflict, and a
+parameter-targeted trait may require manual forwarding for each context-and-type pair. CGP separates
+reusable providers from the contexts that select them.
 
 ## The coherence problem the hierarchy escapes
 
-This hierarchy exists because of Rust's coherence rules, which guarantee that every trait lookup resolves to one globally unique implementation. Rust enforces that uniqueness with the overlap rule and the orphan rule. The **overlap rule** forbids two implementations that could both apply to the same type. You cannot blanket-implement `Serialize` for every `T: Display` *and* for every `T: AsRef<[u8]>`, because a `String` satisfies both and the compiler cannot choose in a principled way. The **orphan rule** forbids implementing a trait for a type unless your crate owns either the trait or the type. You cannot implement someone else's `Serialize` for someone else's `Vec<u8>`. Each tier below loosens one more of these constraints. CGP's escape route is to move the type that coherence ranges over, the `Self` of the implementation, into a position the implementing crate always owns, then restore a single unambiguous answer locally, one [context](components.md) at a time, through [wiring](wiring.md). See [coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md) for the full framing.
+Rust's coherence rules require trait implementations to be unambiguous. The overlap rule rejects
+impls that could apply to the same type. For example, blanket impls for every `T: Display` and every
+`T: AsRef<[u8]>` conflict because `String` satisfies both. The orphan rule also restricts impls
+involving foreign traits and types; a crate cannot implement someone else's `Serialize` for someone
+else's `Vec<u8>`.
+
+CGP gives each implementation an owned provider type and lets a [context](components.md) select it
+through [wiring](wiring.md). Coherence still applies, but implementations can coexist because they
+belong to different providers. Each context then supplies an unambiguous choice. See
+[coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md)
+for the full rules.
 
 ## Tier 1: one implementation per interface
 
-The least machinery is a generic function or a blanket trait impl, which both define exactly one implementation behind an interface. A generic function captures the logic and its bounds in one place:
+Use a generic function or blanket trait impl when one shared implementation is enough. A generic
+function keeps its logic and requirements together:
 
 ```rust
 pub fn serialize_bytes<Value: AsRef<[u8]>, S: Serializer>(
@@ -33,7 +63,8 @@ pub fn serialize_bytes<Value: AsRef<[u8]>, S: Serializer>(
 ) -> Result<S::Ok, S::Error> { ... }
 ```
 
-A blanket trait carries the same one-implementation limitation but reads more ergonomically at the call site, since the bound hides behind the trait impl and the caller writes a method:
+A blanket trait exposes the shared implementation as a method and keeps its dependencies on the
+impl. Callers can require the trait instead of repeating those dependencies:
 
 ```rust
 pub trait CanSerializeBytes {
@@ -45,11 +76,13 @@ impl<Value: AsRef<[u8]>> CanSerializeBytes for Value {
 }
 ```
 
-The gain is reuse with zero ceremony. The limitation is absolute. There can be exactly one blanket impl, so you cannot offer two ways to serialize bytes and let a caller pick between them.
+This form reuses the implementation without wiring. It does not let a context choose another
+implementation for types already covered by the blanket impl.
 
 ## Tier 2: one unique implementation per type per interface
 
-A vanilla Rust trait lifts the one-implementation limit slightly. Many types may share the interface, but coherence still permits at most one implementation per type. Each type that wants the behavior writes its own impl:
+Use ordinary per-type trait impls when types need different behavior but each type needs only one
+implementation. Coherence permits one impl per type for this interface:
 
 ```rust
 pub trait Serialize {
@@ -69,11 +102,17 @@ impl<'a> Serialize for &'a [u8] {
 }
 ```
 
-The gain is that different types can be serialized differently. The cost is duplication. `Vec<u8>` and `&[u8]` each need an explicit impl even though the logic is identical. The body can still call out to a tier-1 building block such as `CanSerializeBytes` to share the actual work, so the duplication is confined to the boilerplate of forwarding. The remaining limitation is the one-impl-per-type ceiling. `Vec<u8>` still cannot have two serialization strategies to choose between.
+Per-type impls let types serialize differently, but each type must supply an impl. `Vec<u8>` and
+`&[u8]` can share the work through the tier-1 `CanSerializeBytes` trait, as above, while repeating
+the forwarding method. A single type still cannot choose between two implementations of the same
+trait.
 
 ## Tier 3: multiple implementations per type, globally unique wiring
 
-Applying basic CGP to a vanilla trait removes the duplication of tier 2 by turning the shared logic into a reusable [provider](components.md) and letting each type [wire](wiring.md) to it. The trait keeps its original shape, which makes the component **self-targeted** and each wired type a **value context**. `#[cgp_component]` generates the [consumer trait](components.md) and [provider trait](components.md) pair, `#[cgp_impl(new ...)]` defines a named provider once, and `delegate_components!` points each type at it. Note that tier 4 below defines a *different* component, `CanSerializeValue<Value>`, rather than revising this one:
+Use providers to share implementations while preserving an existing trait's interface. In this
+example, `Serialize` remains self-targeted and each wired value type is its context.
+`#[cgp_component]` generates the consumer/provider trait pair, `#[cgp_impl]` defines the reusable
+provider, and `delegate_components!` selects it for each type:
 
 ```rust
 #[cgp_component(SelfSerializer)]
@@ -100,20 +139,36 @@ delegate_components! {
 }
 ```
 
-The gain is real reuse without modifying the interface. `Serialize` is unchanged, so a type can still implement it directly without opting into CGP at all, and existing users of the trait are unaffected. The `SelfSerializer` provider trait removes the need for ad-hoc interfaces like `CanSerializeBytes`, and `delegate_components!` removes the manual forwarding of tier 2. The limitation is that coherence still binds the wiring itself. Each type carries one global wiring, so a `Vec<u8>` entry conflicts with any overlapping `Vec<T>` entry, the choice cannot be overridden per context, and the orphan rule still means you can only wire `Vec<u8>` from a crate that owns either `Serialize` or `Vec`.
+Providers remove the manual forwarding while preserving the consumer interface. Existing callers
+still use `Serialize`, and types can still implement that trait directly. The `SelfSerializer`
+provider trait supplies the reusable interface that the separate `CanSerializeBytes` trait supplied
+in tier 2.
 
-**That limitation only bites because the wired type is a value context you do not own, and this tier holds another case where it does not bite at all.** Wire a self-targeted component on an *environmental* context and the same tier gives per-application choice, because you control how many contexts exist:
+Wiring on a value type remains globally unique. A `Vec<u8>` entry conflicts with an overlapping
+`Vec<T>` entry, and another application cannot override it for the same value type. Wiring a foreign
+value type also requires ownership of the relevant component key, supplied by the crate defining the
+component.
+
+An owned environmental context allows per-application choices at this same tier. Define separate
+context types and wire the self-targeted component independently on each:
 
 ```rust
 delegate_components! { App     { EmailSenderComponent: SendViaSmtp } }
 delegate_components! { TestApp { EmailSenderComponent: RecordEmails } }
 ```
 
-This involves neither a parameter nor a workaround. That is where most CGP code lives, a capability about the application itself, wired per application. So reading tier 3 as only the retrofit case undersells it, and reading tier 4 as the first tier with per-context choice is wrong.
+`App` sends email through SMTP, while `TestApp` records it. This common CGP arrangement does not
+need a target parameter: each context chooses a capability about itself. Tier 4 extends that choice
+to a separate target type.
 
 ## Tier 4: unique wiring per type, per context
 
-Making the component **parameter-targeted** fully decouples the implementation from the type, so each context wires its own choices and the orphan rule lifts entirely. The trait changes shape. The original `Self` becomes an explicit `Value` parameter and `Self` is now always an **environmental context**, so the component dispatches on which concrete value type it serializes. The addition over tier 3's environmental case is narrow. Tier 3 already lets each context you define make its own choice, so tier 4 buys only the ability to make that choice about types you do *not* own. Each context then folds its per-type choices straight into its own table with the `open` statement of `delegate_components!`:
+Use a parameter-targeted component when each context must choose behavior for a separate value type.
+The serialized value moves from `Self` to a `Value` parameter, and `Self` becomes the environmental
+context. This defines a different component, `CanSerializeValue<Value>`, from tier 3's `Serialize`.
+
+Each context uses `open` to select a provider per value type. Here, the applications agree on
+`Vec<u64>` but choose different representations for `Vec<u8>`:
 
 ```rust
 #[cgp_component(ValueSerializer)]
@@ -142,13 +197,24 @@ delegate_components! {
 }
 ```
 
-The `open ValueSerializerComponent;` header opens the component for per-value wiring, and each `@ValueSerializerComponent.Value: Provider` entry assigns a provider for one concrete value type. The gain is that `MyAppA` and `MyAppB` resolve `Vec<u8>` to different providers, bytes versus hex, without conflict, because each choice is coherent only within its own context. The orphan rule no longer applies. A context can wire `Vec<u8>` even when its crate owns neither `CanSerializeValue` nor `Vec`, as long as it owns the context type, so you never commit to a global serialization for `Vec` up front. The costs are that the trait must be modified to add the context parameter, and that every value type a context touches must be wired explicitly, which grows tedious for a large type set.
+`MyAppA` serializes `Vec<u8>` as bytes, while `MyAppB` serializes it as hex. Each
+`@ValueSerializerComponent.Value: Provider` entry records a choice on its own context, so the
+choices do not conflict.
 
-The `open` form rides the dispatch machinery that every `#[cgp_component]` already generates, so the trait does not need an extra option. A legacy alternative writes the same dispatch with a `#[derive_delegate(UseDelegate<Value>)]` attribute on the trait and a `UseDelegate<new ValueSerializerComponents { Vec<u8>: SerializeBytes, ... }>` nested table in each context's wiring. It is retained for compatibility, but `open` is preferred for new code, and both forms appear side by side in [wiring](wiring.md).
+Owning the context satisfies the ownership requirement even when the component and value type are
+foreign. Rust's orphan rule still applies; the owned context makes this wiring legal. The tradeoff
+is a changed interface and explicit wiring for the value types the application uses.
+
+`open` uses the dispatch support generated by every `#[cgp_component]`. Older code adds
+`#[derive_delegate(UseDelegate<Value>)]` to the trait and stores dispatch entries in
+`UseDelegate<new ValueSerializerComponents { … }>`. That form remains for compatibility; prefer
+`open` for new wiring. See [wiring](wiring.md) for both forms.
 
 ## Tier 5: explicit wiring per type, per provider
 
-The finest grain overrides wiring *inside* a provider rather than at the context, using a [higher-order provider](higher-order-providers.md) whose inner provider defaults to `UseContext`. The default routes nested lookups back through the context as usual, while an explicit inner provider overrides one branch locally without touching the context's table:
+Use a [higher-order provider](higher-order-providers.md) when one nested operation must differ from
+the context's usual choice. Its inner provider can default to `UseContext`, which resolves through
+the context, while an explicit argument selects a provider for that operation alone:
 
 ```rust
 pub struct SerializeIteratorWith<Provider = UseContext>(pub PhantomData<Provider>);
@@ -177,16 +243,36 @@ delegate_components! {
 }
 ```
 
-Here `Vec<Vec<u8>>` serializes its inner `Vec<u8>` as hex strings, while a bare `Vec<u8>` elsewhere in the same context still serializes as bytes. The inner provider is overridden for that one branch only. Where `SerializeIteratorWith` is left without an argument, as for `Vec<u64>`, the `UseContext` default takes over and the item lookup goes back through the context, so the `u64` items resolve to `UseSerde` from the table. The gain is per-provider control. A wiring decision can be pinned at the point of use instead of globally at the context level. The cost is the higher-order plumbing itself: the extra provider parameter, the explicit context argument in the inner bound, and the discipline of choosing when to override versus when to defer to the context.
+`Vec<Vec<u8>>` serializes its inner vectors as hex, while a standalone `Vec<u8>` still serializes as
+bytes. The explicit `SerializeHex` argument changes only that nested operation.
+
+The default inner provider preserves the context's choices elsewhere. For `Vec<u64>`,
+`SerializeIteratorWith` uses `UseContext`, so each `u64` resolves to `UseSerde` through the table.
+This local control requires an extra provider parameter and a bound describing the inner operation.
+The higher-ranked bound remains explicit in this example.
 
 ## Choosing a tier
 
-Settle at the first tier that fits. Tiers 1 and 2 are plain Rust and do not need CGP at all. Reach for them when one implementation, or one per type, is all you need. Tier 3 buys reuse and swappable providers while leaving the trait and its existing users untouched. On a value context it is the right entry point for retrofitting CGP onto an established trait, and on an environmental context it is where most CGP code lives. Tier 4 pays a modified interface for the ability to choose per context about types you do not own. Tier 5 is a local refinement layered on top of tier 4, used only where a single nested branch must diverge from the context's global choice. Each higher tier trades ceremony for decoupling, so the discipline is to go only as far as the problem demands.
+Choose a tier by the scope of the implementation choice:
 
-Asking the right questions settles it faster than working through the tiers one by one. **Is the capability about the data, or about the application?** About the data means a value context and tier 3's retrofit case. About the application means an environmental context. **Does it concern a type you do not own, which different applications must treat differently?** If yes, the target moves into a parameter and you are at tier 4. If no, self-targeting is enough. Each arrangement answers a different question rather than representing a different amount of sophistication.
+| Need | Form |
+| --- | --- |
+| One shared implementation | Tier 1: generic function or blanket trait |
+| One implementation per type | Tier 2: ordinary trait impls |
+| Reusable providers for a self-targeted capability | Tier 3: component wiring |
+| A provider choice per context and target type | Tier 4: parameter-targeted component |
+| A different choice for one nested operation | Tier 5: higher-order provider |
 
-Further reference:
-[coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md)
-for the rules this hierarchy escapes, and
-[modular serialization](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/examples/modular-serialization.md)
-for the full worked example.
+Tiers 1 and 2 use plain Rust. Tier 3 preserves the consumer interface and supports both retrofitting
+a value trait and selecting application capabilities. Tier 4 changes the interface to separate the
+context from the target. Tier 5 adds local control over nested calls.
+
+Start by deciding whether `Self` represents the data or the application. If it represents the
+application, use a target parameter when the operation concerns a separate type whose behavior must
+vary by application. Add an explicit inner provider only when a nested call must differ from that
+context's normal choice.
+
+Read these references for the rules and the complete example:
+
+- [Coherence](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/concepts/coherence.md): Ownership and overlap restrictions.
+- [Modular serialization](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/examples/modular-serialization.md): The full serialization example.

@@ -1,16 +1,24 @@
 # Abstract types
 
-An abstract type is a CGP trait carrying a single associated type that generic code names as `Self::Foo` without committing to a concrete type. The concrete choice is left to wiring, so it can differ from one context to another.
+An abstract type lets generic code use an associated type while each context chooses its concrete
+form. A CGP abstract-type trait declares that type, and wiring selects it for the context.
 
 ## The idea
 
-An abstract type lets generic code name a type it does not fix. Instead of hard-coding `f64` or `String`, a trait declares one associated type, `trait HasNameType { type Name; }`, and code written against it refers to `Self::Name`, leaving the actual type open. The trait is the abstraction, and the associated type is the slot a context fills in. This is the type-level analogue of an impl-side dependency. Just as a getter lets a context supply a *value* a provider needs, an abstract-type trait lets a context supply a *type* a provider builds on.
+An abstract-type trait names a type without fixing its concrete form. For example,
+`trait HasNameType { type Name; }` lets generic code refer to `Self::Name` instead of choosing
+`String` or another concrete type. The context supplies the type, just as it supplies the values a
+provider needs through getters.
 
-The payoff is the same one CGP gives for behavior. A provider written in terms of `Self::Name` works unchanged whether a context chooses `String`, `&'static str`, or a custom name type, and two contexts can make different choices from the same generic code. Under the hood an abstract type is nothing more than an ordinary Rust trait with one associated type. Generic functions constrain `Context: HasNameType` and use `Context::Name` exactly as they would any associated type. The CGP machinery only makes declaring and wiring these traits cheap.
+Providers can reuse the same abstract type across contexts with different concrete choices. Code
+written in terms of `Self::Name` can work with `String`, `&'static str`, or a custom name type. The
+abstraction remains an ordinary Rust associated type: generic functions require
+`Context: HasNameType` and use `Context::Name`. CGP adds macros for declaring and wiring the trait.
 
 ## Direct implementation: it's just a trait
 
-Because an abstract type is a vanilla associated-type trait, the most transparent way to bind it is to implement it directly on a concrete context. Given the trait, a context names the concrete type in a plain `impl`:
+Implement an abstract-type trait directly to choose a concrete type for a context. In this example,
+the ordinary Rust impl sets `Person::Name` to `String`:
 
 ```rust
 #[cgp_type]
@@ -25,11 +33,16 @@ impl HasNameType for Person {
 }
 ```
 
-This makes `Person::Name` resolve to `String`, and any generic code constrained on `HasNameType` sees that choice. The direct form is the right mental model for newcomers. It hides nothing, since an associated type is simply pinned to a concrete one, and it is barely longer than the wired form shown below. The rest of this reference explains the `#[cgp_type]` macro and the wiring conveniences that make the choice swappable through a delegation table instead.
+The direct impl fixes `Person::Name` to `String` for generic code using `HasNameType`. Use this form
+to explain abstract types to newcomers: the context implements a trait and specifies its associated
+type. The wiring form below makes the same choice through a delegation table.
 
 ## Making a type swappable with `#[cgp_type]`
 
-The `#[cgp_type]` macro turns an abstract-type trait into a full component, so the concrete type can be chosen through wiring rather than a hand-written impl. It is the abstract-type specialization of `#[cgp_component]`. Applied to a trait with exactly one associated type and without methods, it produces everything `#[cgp_component]` would (the consumer trait, the provider trait, the blanket impls, the `…Component` marker), but each impl forwards the *associated type* rather than a method.
+`#[cgp_type]` generates a component whose associated type can be selected through wiring. Apply it
+to a trait with exactly one associated type and without methods. It generates the consumer trait,
+provider trait, blanket impls, and component marker that `#[cgp_component]` would generate, with
+impls forwarding the associated type:
 
 ```rust
 #[cgp_type]
@@ -38,13 +51,21 @@ pub trait HasNameType {
 }
 ```
 
-The default provider name is keyed off the *associated type* name, not the trait name, with a `TypeProvider` suffix. So `type Name;` yields the provider `NameTypeProvider` and the component marker `NameTypeProviderComponent`. A bound on the associated type, such as `type Name: Clone;`, is carried everywhere the type appears in the expansion and enforced on whatever concrete type a context chooses. You can override the derived provider name by passing one, exactly as with `#[cgp_component]`: `#[cgp_type(ProvideName)]`.
+The associated type determines the default provider name. `type Name;` produces `NameTypeProvider`
+and `NameTypeProviderComponent`. Override the provider name with an argument such as
+`#[cgp_type(ProvideName)]`.
 
-`#[cgp_type]` differs from a plain component in one extra blanket impl, for the `UseType` provider described next. That impl lets a context pick a concrete type without writing a provider of its own.
+Bounds on the associated type apply throughout the expansion. For example, `type Name: Clone;`
+requires the concrete type selected by the context to implement `Clone`.
+
+`#[cgp_type]` differs from a plain component in one extra blanket impl, for the `UseType` provider
+described next. That impl lets a context pick a concrete type without writing a provider of its own.
 
 ## Wiring a concrete type with `UseType`
 
-A context binds an abstract type to a concrete one by wiring its provider component to `UseType<T>`. Every abstract-type provider has the same trivial shape, "the associated type *is* this concrete type," so `#[cgp_type]` generates that shape once as a blanket impl of the provider trait for `UseType<Name>`, setting the associated type to the generic parameter. The context then names the concrete type directly in its delegation table:
+Wire an abstract-type component to `UseType<T>` to select `T` as its concrete type. `#[cgp_type]`
+generates a blanket provider impl for `UseType<Name>` that sets the associated type to `Name`, so
+the context can name its choice directly in the table:
 
 ```rust
 delegate_components! {
@@ -54,9 +75,12 @@ delegate_components! {
 }
 ```
 
-Wiring `NameTypeProviderComponent` to `UseType<String>` makes `Person` implement `HasNameType` with `Name = String`, without a bespoke provider, and any bound on the associated type is checked against `String` at the wiring site. `UseType<T>` is a zero-sized marker struct that exists only to be named in a delegation table, never constructed. This is the type-level mirror of how `UseField` supplies a value-level getter (see [functions and getters](functions-and-getters.md)).
+This entry makes `Person` implement `HasNameType` with `Name = String` without a custom provider.
+The selected type must satisfy any associated-type bounds. `UseType<T>` is a zero-sized marker named
+in the table and never constructed. It supplies a type much as `UseField` supplies a getter value;
+see [functions and getters](functions-and-getters.md).
 
-The blanket impl that `#[cgp_type]` generates for the example above is:
+`#[cgp_type]` generates this blanket impl to supply the associated type from the provider parameter:
 
 ```rust
 impl<Name, __Context__> NameTypeProvider<__Context__> for UseType<Name> {
@@ -64,13 +88,19 @@ impl<Name, __Context__> NameTypeProvider<__Context__> for UseType<Name> {
 }
 ```
 
-This says `UseType<T>` is a provider that supplies `T` as the abstract type, for any context. If the associated type carried a bound, that bound would be copied into the impl's `where` clause, so the concrete type must satisfy it.
+This says `UseType<T>` is a provider that supplies `T` as the abstract type, for any context. If the
+associated type carried a bound, that bound would be copied into the impl's `where` clause, so the
+concrete type must satisfy it.
 
-A word of caution on the name: the `UseType<T>` *provider struct* shown here is a different construct from the `#[use_type]` *attribute* covered below. The provider wires a concrete type *into* a context. The attribute imports an abstract type *into* a definition and rewrites bare mentions of it. They share a name because both center on abstract types, but they live in different places and do different jobs.
+`UseType<T>` and `#[use_type]` serve different purposes. The provider struct `UseType<T>` selects a
+concrete type through wiring. The attribute `#[use_type]` imports an abstract type into a definition
+and rewrites bare uses of its name.
 
 ## The built-in `HasType` / `TypeProvider` component
 
-Underneath every named abstract type sits CGP's single built-in abstract-type component, `HasType`. It is tag-indexed. `HasType<Tag>` is the consumer trait, `TypeProvider` is its provider trait, and a context can carry many distinct abstract types, one per `Tag`, resolving each through wiring.
+`HasType<Tag>` is CGP's built-in abstract-type component. Its provider trait is `TypeProvider`, and
+each tag identifies a separate type choice. A context can therefore select several abstract types
+through wiring:
 
 ```rust
 #[cgp_component(TypeProvider)]
@@ -79,15 +109,29 @@ pub trait HasType<Tag> {
 }
 ```
 
-Every `#[cgp_type]` component you define is wired on top of this substrate. The macro generates an internal `WithProvider` impl that adapts a `TypeProvider` into the named component, so the same `UseType<T>` marker satisfies both the built-in `HasType` and any user-defined abstract type at once. In practice you rarely name `HasType<Tag>` directly. You define a readable `HasNameType` with `#[cgp_type]` and get `Self::Name` and its own provider, all resolving down to this `HasType` machinery. When you do want to name that adapter explicitly, its alias is `WithType<T>` (the `WithProvider` family from [wiring](wiring.md)).
+`#[cgp_type]` adapts the built-in `HasType` component to a named abstract type. It generates an
+internal `WithProvider` impl that adapts `TypeProvider`, allowing `UseType<T>` to supply both
+built-in and user-defined abstract types.
+
+Prefer a descriptive trait such as `HasNameType` for routine use. It exposes `Self::Name` and its
+own provider while using `HasType` underneath. To name the adapter explicitly, use `WithType<T>`, an
+alias in the [WithProvider family](wiring.md).
 
 ## Choosing the concrete type from a table with `UseDelegatedType`
 
-`UseDelegatedType<Components>` is the type-level analogue of the `UseDelegate` dispatcher. Where `UseType<T>` binds an abstract type to one fixed `T`, `UseDelegatedType` looks the concrete type up in an inner `DelegateComponent` table keyed by the type tag. So one provider can answer several abstract-type components at once, or route each tag to a type chosen elsewhere. It reads an entry out of the same kind of table `UseDelegate` reads, but yields a *type* rather than a method. It is the abstract-type mirror of the per-value behavioral dispatch in [wiring](wiring.md). Its `WithProvider` alias is `WithDelegatedType`. Reach for it only when a bundle of related types must be decided together. For a single concrete type per component, `UseType<T>` is simpler.
+Use `UseDelegatedType<Components>` when a group of related types must be selected together. It looks
+up each concrete type in an inner `DelegateComponent` table keyed by the type tag. One provider can
+then supply several abstract-type components or use choices recorded elsewhere. For a single
+concrete type per component, prefer `UseType<T>`.
+
+`UseDelegatedType` reads the same kind of table as `UseDelegate`, but returns a type. Its
+`WithProvider` alias is `WithDelegatedType`. See [wiring](wiring.md) for the corresponding per-value
+dispatch of behavior.
 
 ## Abstract type as a getter return type
 
-When an abstract type's only role is to be the return type of a getter, you can declare it inline with `#[cgp_auto_getter]` rather than defining a separate `#[cgp_type]` trait. The getter trait carries the associated type locally, and the field's type is inferred from it:
+Declare an associated type directly in `#[cgp_auto_getter]` when only that getter needs it. The
+field determines the concrete type, so a separate `#[cgp_type]` trait is unnecessary:
 
 ```rust
 #[cgp_auto_getter]
@@ -98,13 +142,24 @@ pub trait HasName {
 }
 ```
 
-A context implementing this through its field wiring supplies both the concrete `Name` and the value. This keeps a one-off abstract type local to the getter that uses it instead of promoting it to a shared, wired component. See [functions and getters](functions-and-getters.md) for how `#[cgp_auto_getter]` derives the getter from a field.
+The context supplies both the concrete `Name` and the value through its field. This keeps the type
+local to the getter that uses it. See [functions and getters](functions-and-getters.md) for the
+generated field access.
 
 ## Importing an abstract type with `#[use_type]`
 
-The strongly recommended way to *refer to* an abstract type from another definition is the `#[use_type]` attribute. A provider or component often needs a type that lives on a different trait, such as a `Scalar` from `HasScalarType` or an `Error` from `HasErrorType`. Rust requires every mention to be written in fully qualified form, `<Self as HasScalarType>::Scalar`, because a bare `Scalar` is not a type the compiler knows. Writing that prefix on every occurrence is verbose and easy to get wrong.
+Prefer `#[use_type]` when a definition needs an abstract type from another trait. It lets the
+definition use a bare name such as `Scalar` or `Error` while the macro generates a qualified path
+such as `<Self as HasScalarType>::Scalar`.
 
-`#[use_type]` lets you write the bare identifier everywhere and have the macro expand it. You declare the import once alongside `#[cgp_fn]`, `#[cgp_impl]`, or `#[cgp_component]` as `#[use_type(Trait.AssocType)]`, where a `.` (not `::`) separates the trait from the associated type. The macro rewrites each standalone `Scalar` into `<Self as HasScalarType>::Scalar` and adds `HasScalarType` as a supertrait (for `#[cgp_component]`) or a `where`-clause bound (for `#[cgp_impl]` and `#[cgp_fn]`). The `.` separator keeps the trait unambiguous even when it is a full path or carries generic arguments (`errors::HasErrorType.Error`, `HasFooType<X>.Foo`). Consider a `rectangle_area` function that multiplies two implicit fields:
+Declare imports alongside `#[cgp_fn]`, `#[cgp_impl]`, or `#[cgp_component]` with
+`#[use_type(Trait.AssocType)]`. The dot separates the trait from its associated type, including when
+the trait has a path or generic arguments, as in `errors::HasErrorType.Error` or
+`HasFooType<X>.Foo`.
+
+The attribute rewrites the imported name and adds the required trait bound. For `#[cgp_component]`,
+it adds a supertrait; for `#[cgp_impl]` and `#[cgp_fn]`, it adds a `where` bound. Here,
+`rectangle_area` uses the imported `Scalar` for its fields and return type:
 
 ```rust
 pub trait HasScalarType {
@@ -122,7 +177,8 @@ fn rectangle_area(
 }
 ```
 
-The macro rewrites every bare `Scalar` to the qualified path and adds the supertrait/bound, so the effective trait and impl read:
+The expansion qualifies each `Scalar` and adds the trait requirements. The resulting trait and impl
+are:
 
 ```rust
 pub trait RectangleArea: HasScalarType {
@@ -145,33 +201,78 @@ where
 }
 ```
 
-The substitution is purely textual at the type level. It matches single-segment, argument-free type paths whose identifier equals the imported name, so a bare `Scalar` in the return type, an implicit-argument annotation, or a `let` binding inside the body is rewritten the same way. Beyond saving keystrokes, the always-qualified rewrite removes the ambiguity the bare form cannot express, which is why this is the default way to import abstract types in every host macro.
+The substitution matches single-segment type paths without arguments whose identifier equals the
+imported name. It rewrites matching return types, implicit-argument annotations, and `let` bindings
+alike. The qualified result identifies which trait supplies the type and avoids ambiguity.
 
-The attribute has a few richer forms worth knowing.
+Additional import forms support named contexts, dependent types, aliases, and equality constraints.
 
-A trailing `in Context` clause changes the rewrite target from `Self` to a named type, which imports a *foreign* abstract type from a generic parameter. `#[use_type(HasScalarType.Scalar in Types)]` rewrites `Scalar` to `<Types as HasScalarType>::Scalar` and adds `Types: HasScalarType` as a `where` bound rather than a supertrait. That bound lands on the generated impl *and*, on `#[cgp_fn]`/`#[cgp_component]`, on the generated trait itself, so a plain unbounded `<Types>` parameter is enough. You do not restate `Types: HasScalarType` by hand.
+Use `in Context` to import an associated type from a named type instead of `Self`. For example,
+`#[use_type(HasScalarType.Scalar in Types)]` rewrites `Scalar` to `<Types as HasScalarType>::Scalar`
+and adds `Types: HasScalarType` as a `where` bound. The bound appears on the generated impl and, for
+`#[cgp_fn]` and `#[cgp_component]`, on the generated trait. A plain `<Types>` parameter is
+sufficient; do not repeat the bound manually.
 
-Imports may refer to each other. The `in Context` clause may point at another abstract type imported in the same attribute, chaining through several hops (`HasTypes.Types, HasScalarType.Scalar in Types` yields `<<Self as HasTypes>::Types as HasScalarType>::Scalar`). A *generic argument of the imported trait* may do the same, so an alias can parameterize the trait it is imported from (`HasDbType.Db, HasPoolType<Db>.Pool` projects against `HasPoolType<<Self as HasDbType>::Db>`). The order you write the imports in does not matter, and several imports may share one context. The one arrangement rejected is a **cycle**, where the contexts or trait arguments resolve through each other (`HasA.A in B, HasB.B in A`, or the degenerate `HasAType.A in A`). A cycle is a compile error naming the cycle rather than a confusing unresolved-name error later.
+Imports can refer to other imports in the same attribute. A context can be an imported type:
+`HasTypes.Types, HasScalarType.Scalar in Types` resolves `Scalar` to
+`<<Self as HasTypes>::Types as HasScalarType>::Scalar`. A trait argument can also be imported:
+`HasDbType.Db, HasPoolType<Db>.Pool` projects against `HasPoolType<<Self as HasDbType>::Db>`. Import
+order does not matter, and several imports may use the same context.
 
-A braced list imports several types from one trait, each optionally renamed with `as` or constrained with `=`. `#[use_type(HasScalarType.{Scalar = f64})]` both imports `Scalar` and emits `Self: HasScalarType<Scalar = f64>`, pinning it. When the trait is generic the pin joins its existing arguments, so `HasFooType<u8>.{Foo = u32}` emits `Self: HasFooType<u8, Foo = u32>`. This equality form is the modern replacement for a hand-written `where Self: HasScalarType<Scalar = f64>` clause on a `#[cgp_impl]` or `#[cgp_fn]`. Prefer moving such a pin into the attribute rather than leaving it as an explicit `where`.
+Import dependencies must not form a cycle. For example, `HasA.A in B, HasB.B in A` and
+`HasAType.A in A` are rejected. The compiler reports the cycle directly.
 
-The right-hand side of `=` is substituted too, so an imported alias is grounded wherever it appears in it. Naming another alias outright *unifies* two abstract types (`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]` emits `Self: HasHashedPasswordType<HashedPassword = <Self as HasPasswordType>::Password>`), while an alias nested inside the type is grounded in place (`#[use_type(HasDbType.Db, HasTransactionType.{Transaction = Tx<Db>})]` emits `Self: HasTransactionType<Transaction = Tx<<Self as HasDbType>::Db>>`). The `= ...` equality form is rejected on `#[cgp_component]`, since a trait definition cannot carry the impl-side equality constraint it produces. It belongs on `#[cgp_fn]` and `#[cgp_impl]`.
+Use a braced list to import several types from one trait, rename them with `as`, or constrain them
+with `=`. For example, `#[use_type(HasScalarType.{Scalar = f64})]` imports `Scalar` and adds
+`Self: HasScalarType<Scalar = f64>`. Existing trait arguments are retained:
+`HasFooType<u8>.{Foo = u32}` produces `Self: HasFooType<u8, Foo = u32>`. Prefer this equality form
+over an explicit associated-type equality bound on `#[cgp_impl]` or `#[cgp_fn]`.
 
-To import types from *several* traits, separate the trait paths with commas inside one attribute, as in `#[use_type(HasUserIdType.UserId, HasCurrencyType.Currency, HasErrorType.Error)]`. Prefer that combined form over stacking one `#[use_type]` attribute per trait, since it reads as a single import list. Stacked attributes behave identically, so use them only when a real reason calls for it. Two imports may not resolve to the same identifier or alias, across specs or within one braced list, since the substitution could then match only one. A collision is a compile error on every host macro, as is the import cycle described above.
+Equality constraints also substitute imported aliases on the right-hand side.
+`#[use_type(HasPasswordType.Password, HasHashedPasswordType.{HashedPassword = Password})]` equates
+the types by adding
+`Self: HasHashedPasswordType<HashedPassword = <Self as HasPasswordType>::Password>`. Substitution
+also applies inside a larger type:
+`#[use_type(HasDbType.Db, HasTransactionType.{Transaction = Tx<Db>})]` adds
+`Self: HasTransactionType<Transaction = Tx<<Self as HasDbType>::Db>>`.
+
+Use equality constraints only on `#[cgp_fn]` and `#[cgp_impl]`. `#[cgp_component]` rejects the
+`= ...` form because it produces an impl-side equality constraint.
+
+Combine imports from several traits in one comma-separated attribute, as in
+`#[use_type(HasUserIdType.UserId, HasCurrencyType.Currency, HasErrorType.Error)]`. Stacked
+attributes behave identically, but prefer one import list unless there is a reason to separate it.
+
+Every imported identifier or alias must be unique across the attribute specifications and within
+each braced list. Duplicate names make substitution ambiguous and produce a compile error on every
+host macro.
 
 ## Sharing one type across contexts
 
-The value of an abstract type compounds when several pieces of generic code share it. Because the type lives on a trait the context implements, every provider and trait that needs a `Scalar` refers to the *same* `Self::Scalar`, so a context fixes the choice once and all of them agree. This is sharpest when a trait's main subject is a generic parameter rather than the context itself, such as a `CanCalculateAreaOfShape<Shape>` implemented by one context for many shapes. The shapes do not carry a scalar type of their own. The shared context supplies a single `Scalar` through its `HasScalarType` wiring, and switching `UseType<f32>` to `UseType<f64>` changes the scalar for every shape at once. The same arrangement is how CGP shares one error type across an application. `HasErrorType` is itself defined with `#[cgp_type]`, and every fallible provider refers to the same `Self::Error` (see [error handling](error-handling.md)).
+A context can select one abstract type for all providers and traits that depend on it. Every use of
+its `Self::Scalar` refers to the same choice. For example, a context implementing
+`CanCalculateAreaOfShape<Shape>` for several shapes can supply `Scalar` through `HasScalarType`. The
+shapes need not define scalar types themselves. Changing the context's wiring from `UseType<f32>` to
+`UseType<f64>` changes the scalar for all those shapes.
+
+The same pattern shares an error type across an application. `HasErrorType` is defined with
+`#[cgp_type]`, and fallible providers use the context's common `Self::Error`; see [error
+handling](error-handling.md).
 
 ## Related references
 
-Abstract types are wired into a context with [components](components.md) and consumed by [functions and getters](functions-and-getters.md). `UseType<T>` is one of the higher-order providers described in [higher-order providers](higher-order-providers.md), and the shared error type pattern is covered in [error handling](error-handling.md).
+These references explain how abstract types connect to other CGP constructs:
+
+- [Components](components.md): The traits and providers used to wire an abstract type.
+- [Functions and getters](functions-and-getters.md): Code that uses abstract types and reads values.
+- [Higher-order providers](higher-order-providers.md): Provider composition and generic parameters.
+- [Error handling](error-handling.md): Sharing one error type across a context.
 
 ## Further reference
 
-Online docs:
-[`#[cgp_type]`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/cgp_type.md),
-[`HasType`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/components/has_type.md),
-[`UseType` provider](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/providers/use_type.md),
-[`#[use_type]`
-attribute](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/attributes/use_type.md).
+Consult the online knowledge base for complete syntax and expansions:
+
+- [`#[cgp_type]`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/cgp_type.md)
+- [`HasType`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/components/has_type.md)
+- [`UseType` provider](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/providers/use_type.md)
+- [`#[use_type]` attribute](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/attributes/use_type.md)

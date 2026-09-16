@@ -18,92 +18,73 @@ description: >-
 
 # Context-Generic Programming (CGP) in Rust
 
-CGP is a modular programming paradigm for Rust that works around the language's coherence
-restrictions. It lets you write many overlapping or "orphan" trait implementations and then choose
-which one applies by **wiring** them onto a concrete context type. This file is a self-contained
-primer. Read it top to bottom and you hold the whole mental model: every core term, the shape of
-every construct, and enough of each expansion to read, write, and debug most CGP code. It is longer
-than a typical skill on purpose, because CGP's surface is broad and an agent who stops here should
-still be competent.
+CGP lets Rust contexts choose among interchangeable trait implementations through **wiring**.
+It works around coherence restrictions by separating the trait callers use from the trait providers
+implement. This primer introduces the vocabulary, core constructs, and macro expansions needed to
+read CGP code.
 
-**This primer is the map, not the territory. Load the sub-skill before you act on any construct it
-covers.** The primer gives you the shape of each construct. The `references/` sub-skills give you the
-exact grammar, the full expansion, the corner cases, and the worked examples. Mistakes live in the
-gap between the two. The primer tells you `#[cgp_impl]` writes a provider, but
-[components](references/components.md) tells you what `self` rewrites to, and
-[macro-grammar](references/macro-grammar.md) tells you which attribute forms parse. Without them you
-can emit an impl that fails to compile in a way the error message will not explain. So before you
-write, modify, review, or debug code that uses a construct, even a simple one, **open the sub-skill
-that owns it.** Each entry in [the sub-skill index](#sub-skills-load-the-one-that-owns-your-task)
-says what it adds beyond this primer, so you can tell what you would be guessing at without it.
+Load the relevant sub-skill before writing, modifying, reviewing, or debugging any construct it
+covers. The primer introduces each construct; the `references/` sub-skills supply its exact grammar,
+full expansion, corner cases, and worked examples. For example,
+[components](references/components.md) explains how `#[cgp_impl]` rewrites `self`, and
+[macro-grammar](references/macro-grammar.md) specifies which attribute forms parse. Use the
+[sub-skill index](#sub-skills-load-the-one-that-owns-your-task) to find the references your task
+requires.
 
-CGP is implemented almost entirely as procedural macros. Every macro desugars to ordinary Rust
-traits and impls, so the reliable way to understand any construct is to know the code it expands
-to. This primer shows those expansions where they matter and leaves them out where they do not.
+CGP's procedural macros expand to ordinary Rust traits and impls. Understanding those expansions
+helps explain how the constructs work and why their errors occur. This primer includes expansions
+where they help establish that connection.
 
 ## Tooling: use cargo-cgp for readable errors and expansions
 
-**Before debugging any CGP compile error, use `cargo-cgp` if it is available.** Its `check` command
-reshapes the errors, and its [`expand`](#reading-what-a-macro-generated-cargo-cgp-expand) command
-shows the code the macros generated. `cargo-cgp` is CGP's first-class toolchain: a cargo subcommand
-that stands in for `cargo check` and rewrites CGP's compiler errors into a compact, root-cause-first
-form, tagging each rewritten message with a `[CGP-Exxx]` code. A raw CGP error is
-often a wall of generated types with the real cause buried or hidden entirely. `cargo-cgp` names the
-cause and renders the dependency chain that leads to it. Recommend it to the user for building and
-checking CGP code, and prefer it over plain `cargo check` whenever a wiring failure needs diagnosing.
+Use `cargo-cgp` when it is available to diagnose CGP compile errors. Its `check` command replaces
+`cargo check` for diagnosis and rewrites CGP errors into a compact summary that leads with the root
+cause. Each rewritten message retains rustc's error code, adds a `[CGP-Exxx]` tag, and shows the
+dependency chain. Its [`expand`](#reading-what-a-macro-generated-cargo-cgp-expand) command displays
+the generated code. Recommend `cargo-cgp` for checking CGP code, and prefer it when diagnosing a
+wiring failure.
 
-**Check whether it is installed** with `cargo cgp --version`, or run `cargo cgp check` in a CGP
-project. If the subcommand is missing, it is not installed.
+Check availability with `cargo cgp --version` or `cargo cgp check` in a CGP project. If the
+subcommand is missing, recommend installing it for clearer errors. Install it on the user's behalf
+only with their approval: setup provisions a nightly toolchain and builds a compiler-linked driver.
 
-**If it is not installed, recommend installing it.** Tell the user it makes CGP errors far more
-readable, and **install it on their behalf only with their approval**, because it provisions a
-nightly toolchain and builds a compiler-linked driver, which is heavy.
+Prefer installation through cargo on most machines. Run `cargo install cargo-cgp`, then
+`cargo cgp setup`. Installation builds the small front-end with the existing toolchain; setup uses
+rustup to provision the pinned nightly and build its matching driver.
 
-**Prefer the cargo path**, which is the default for almost every machine: run
-`cargo install cargo-cgp`, then `cargo cgp setup`. The install puts the small front-end on whatever
-toolchain is present, and `setup` provisions the pinned nightly and builds the matching driver in
-lockstep. It needs rustup.
-
-**Reach for Nix only if the host has it**, shown by a `nix` command on `PATH` or a `flake.nix` in the
-project, or if the user asks for it. Otherwise do not bring Nix up. When Nix is present but
-cargo-cgp is not installed, the lightest move is to **not install** and instead run the tool through
-the flake from the project directory:
-`nix run github:contextgeneric/cargo-cgp/v0.1.0-alpha -- check` (arguments after `--` go to
-`cargo check`). To install into a Nix profile instead, use
+Use Nix only when the host has a `nix` command on `PATH`, the project has a `flake.nix`, or the user
+requests it. Otherwise, omit Nix from the recommendation. When Nix is present and `cargo-cgp` is
+absent, prefer running it from the project directory without installing it:
+`nix run github:contextgeneric/cargo-cgp/v0.1.0-alpha -- check`. Arguments after `--` go to
+`cargo check`. To install into a Nix profile, use
 `nix profile install github:contextgeneric/cargo-cgp/v0.1.0-alpha`.
 
-cargo-cgp requires a specific pinned Rust nightly, installed by `cargo cgp setup` or built by the
-Nix flake. It forces that nightly only for its own check, so the user's project keeps its own
-toolchain. Full instructions:
-<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/reference/installation.md>.
+The pinned nightly applies only to cargo-cgp's own check, so the project retains its toolchain.
+`cargo cgp setup` installs that nightly, or the Nix flake builds it. See the
+[installation instructions](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/reference/installation.md)
+for details.
 
-**Using it:** run it wherever you would run `cargo check`, with arguments after `check` forwarded:
-`cargo cgp check`, `cargo cgp check --workspace`. It keeps rustc's own error code and adds a
-`[CGP-Exxx]` tag, leading with the root cause over a `cargo tree`-style dependency chain. The codes
-are catalogued at
-<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/error-code.md>.
+Run `cargo cgp check` wherever you would run `cargo check`. Arguments after `check` are forwarded,
+as in `cargo cgp check --workspace`. The
+[error-code catalog](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/error-code.md)
+explains the `[CGP-Exxx]` tags.
 
 ### Reading what a macro generated: `cargo cgp expand`
 
-**When a CGP error stops making sense, read the code the macros produced rather than reasoning about
-what you think they produce.** A wiring failure always means the emitted impls do not resolve, and
-the impls are generated, so the fastest way past a confusing diagnostic is often to look at them.
-`cargo cgp expand` prints the crate after macro expansion, with CGP's type-level constructs
-**resugared**. A field tag reads `Symbol!("width")`, not the raw `Symbol<5, Chars<'w', …>>` list
-the compiler prints. A pipeline reads `Product![StepOne, StepTwo]`, and a namespace key reads
-`Path!(@app.GreeterComponent)`. So the generated code is legible in the same vocabulary as the
-source.
+Read the macro expansion when a diagnostic leaves the generated impls unclear. `cargo cgp expand`
+prints the expanded crate with CGP's type-level constructs restored to readable macro notation.
+For example, it displays a field tag as `Symbol!("width")`, a pipeline as
+`Product![StepOne, StepTwo]`, and a namespace key as `Path!(@app.GreeterComponent)`.
 
-Reach for it when the answer is in the generated code rather than in the message:
+Use expansion to investigate these questions:
 
-- **A diagnostic names a type you did not write** (`IsProviderFor<…>`, a `PathCons<…>` key, a
-  `__Context__` parameter) and you need to see the impl it came from.
-- **A wiring table does not resolve** and you want the real `DelegateComponent` keys and `Delegate`
-  values it produced, rather than inferring them from the table's syntax.
-- **You are unsure what a construct emits**, such as the exact `where` clauses of a provider impl, or
-  whether a getter's blanket impl requires the field you think it does. Reading the expansion beats
-  guessing, and beats trusting a remembered expansion.
-- **Two forms differ and only one compiles.** Expand both and diff them. The delta is the bug.
+- **Generated types:** Find the impl behind an unfamiliar `IsProviderFor<…>`, `PathCons<…>`, or
+  `__Context__` in a diagnostic.
+- **Wiring entries:** Inspect the actual `DelegateComponent` keys and `Delegate` values produced by
+  a table that does not resolve.
+- **Generated bounds:** Check a provider's `where` clauses or a getter's field requirements.
+- **Different syntax forms:** Expand and compare forms when only one compiles to locate the
+  difference responsible for the failure.
 
 Run it on one target, narrowed to what you care about:
 
@@ -130,11 +111,13 @@ when it is long and read that instead of flooding your context.
   the *consumer* trait (`--item CanCalculateArea`) gives just the consumer trait and its routing
   blanket.
 
-Keep its limits in mind when you read the output. **`expand` is not a check.** It stops once the
-macros are expanded, so it reports nothing about wiring. Use `cargo cgp check` for that, and expect
-`expand` to succeed even on a crate that does not type-check, which makes it useful
-mid-debugging. **The output is for reading, not compiling.** The `cgp::macro_prelude::` qualifier is
-stripped, and an `open` statement's per-key entry keeps its raw `PathCons<…>` key.
+Use `cargo cgp check` to verify wiring. `expand` stops after macro expansion, so it can succeed
+on a crate that fails type checking. That makes it useful while debugging, but its success does not
+verify the generated impls.
+
+Read the expansion as diagnostic output. It is not intended for compilation: the tool strips the
+`cgp::macro_prelude::` qualifier, and an `open` statement's per-key entry retains its raw
+`PathCons<…>` key.
 
 `expand` is newer than cargo-cgp v0.1.0-alpha, so a crates.io install does not carry it yet. Until
 the next release it comes from the Nix flake without a tag
@@ -152,7 +135,7 @@ compiles on any **stable Rust ≥ 1.89**, so plain `cargo check` works on a CGP 
 the user's Rust Analyzer settings implicitly.** Mention this option and let them opt in. Edit their
 editor configuration only when they ask you to.
 
-**When cargo-cgp is not available, or leaves an error largely unrewritten**, read the raw compiler
+When cargo-cgp is not available, or leaves an error largely unrewritten, read the raw compiler
 output by hand. Only then load the [error-extraction sub-skill](references/error-extraction.md), the
 technique for reducing a raw CGP cascade to its root cause. When cargo-cgp has reshaped the error,
 its `[CGP-Exxx]` headline and root-cause tree are already the compact summary that sub-skill would
@@ -174,21 +157,22 @@ act on a mismatch:
 
 ## The problem CGP solves
 
-Rust's coherence rules permit at most one implementation of a trait for a given type, and the
-orphan rule forbids implementing a foreign trait for a foreign type. This makes it hard to offer
-several interchangeable implementations of one interface, or to let a downstream crate choose an
-implementation for a type it does not own. CGP sidesteps both limits with a two-trait split. An
-implementation is written against a **provider trait** whose `Self` is a dummy marker type the
-crate owns, so coherence never blocks it. A concrete **context** type later picks which provider it
-uses through a small type-level table. The choice is local to the context, so two different
-contexts can wire the same interface to different implementations.
+CGP lets contexts select different implementations of the same interface despite Rust's coherence
+restrictions. Rust permits at most one implementation of a trait for a given type, and its orphan
+rule forbids implementing a foreign trait for a foreign type. Those rules limit interchangeable
+implementations and downstream choices for types a crate does not own.
+
+CGP separates the caller's interface from the provider's implementation to allow those choices.
+A provider trait uses a marker type owned by the implementing crate as `Self`. A concrete context
+then selects that provider through a type-level table. The choice belongs to the context, so
+different contexts can select different implementations of the same interface.
 
 ## Blanket traits and impl-side dependencies
 
-CGP grows out of blanket trait implementations (extension traits). The single most important idea
-to internalize is the **impl-side dependency**: a blanket impl can require constraints in its
-`where` clause that are *not* part of the trait interface. Those hidden requirements are the
-paradigm's form of dependency injection. For example:
+An impl-side dependency is a constraint required by an implementation but absent from its trait
+interface. CGP uses these dependencies for dependency injection. The technique starts with ordinary
+blanket trait implementations, also called extension traits. Here, the `CanGreet` implementation
+requires `HasName`, while the trait itself does not:
 
 ```rust
 pub trait CanGreet {
@@ -217,50 +201,49 @@ themselves CGP components, but the technique recurs throughout CGP.
 
 ## The core vocabulary
 
-CGP code is readable once you hold a few terms in mind. A **consumer trait** is the ordinary,
-`self`-style trait you call (`CanGreet`, `CanCalculateArea`). It reads as a verb (`CanDoX`). A
-**provider trait**, generated by `#[cgp_component]`, is the same interface with `Self` moved to an
-explicit `Context` generic parameter (`Greeter<Context>`, `AreaCalculator<Context>`). It reads as
-a noun (`SomethingDoer`, or `…Provider` when a noun does not fit). A **provider** is a zero-sized
-marker struct (`GreetHello`, `RectangleArea`) that implements a provider trait. It is never
-instantiated and exists only as a name at the type level. **Wiring** tells a context which provider
-implements each component, recorded in a type-level table. An **impl-side dependency** is a
-`where`-clause constraint a provider needs but the consumer trait does not expose. A **component**
-is the whole bundle a macro generates: consumer trait, provider trait, and a `…Component` marker
-type that keys the wiring table.
+CGP separates the interface callers use from the implementation a context selects. The following
+terms describe those roles:
 
-The duality is the crux. You *use* a consumer trait and *implement* a provider trait. The
-macro-generated blanket impls connect them, so wiring a context to a provider makes the context
-implement the consumer trait. When a provider trait method takes
-`context: &Context` where the consumer took `&self`, that is the same method with `self` renamed to
-`context`.
+- **Consumer trait:** The ordinary `self`-style trait callers use, such as `CanGreet` or
+  `CanCalculateArea`. Its name describes an action (`CanDoX`).
+- **Provider trait:** The interface generated by `#[cgp_component]`, with `Self` moved to an explicit
+  `Context` parameter, as in `Greeter<Context>`. Its name is a noun such as `SomethingDoer`, or uses
+  the `Provider` suffix when a noun does not fit.
+- **Provider:** A zero-sized marker struct, such as `GreetHello`, that implements a provider trait.
+  It exists as a type-level name and is never instantiated.
+- **Wiring:** A type-level table that selects a provider for each component on a context.
+- **Impl-side dependency:** A provider's `where`-clause constraint that the consumer trait does not
+  expose.
+- **Component:** The generated bundle of consumer trait, provider trait, and `…Component` marker
+  used as the wiring key.
 
-**"Context" covers situations that look alike and behave differently, and this is where a
-reader's model of CGP most often breaks.** A **value context** *is* the data the capability operates
-on: the `String` in `String: CanEncode`, the `Rectangle` in `Rectangle: CanCalculateArea`. An
-**environmental context** exists to supply choices and capabilities rather than to be operated on:
-an application, a test harness, a service. It is by far the more common kind in real CGP code, and
-it often lacks fields entirely. `struct App;` is a complete context, because its whole job is to be a
-name the wiring table hangs off. Both sit in the `Self` position and both carry a wiring table, so
-nothing in a signature distinguishes them.
+Callers use consumer traits, and providers implement provider traits. Generated blanket impls
+connect them: wiring a context to a provider makes the context implement the consumer trait.
+A provider method's `context: &Context` serves the same role as the consumer method's `&self`.
 
-Another, independent distinction describes the **component** rather than its context. A component
-is **self-targeted** when the capability is about the `Self` type (`CanGreet`, `HasErrorType`, every
-getter), and **parameter-targeted** when it is about a type parameter while `Self` only decides
-(`CanEncodeValue<Value>`, `CanCalculateArea<Shape>`). A parameter alone does not settle it. In
-`CanCompute<Code, Input>` the target is `Input`, while `Code` is a *selector* the wiring dispatches
-on, and a component may carry both. The pairing decides how many independent choices are available.
-A self-targeted component wired on a foreign value type gets one provider program-wide, while an
-environmental context can be defined as many times as needed.
-[modularity-hierarchy](references/modularity-hierarchy.md) works out which to reach for. **When you
-explain CGP to a user, say which arrangement the example is in.** Moving from a value context to an
-environmental one does not change a signature, so readers otherwise lose track of what a context is.
+A context can hold the data being operated on or supply the capabilities an operation needs.
+A **value context** is the data, such as `String` in `String: CanEncode` or `Rectangle` in
+`Rectangle: CanCalculateArea`. An **environmental context** supplies choices and capabilities for
+an application, test harness, or service. Environmental contexts are more common in CGP code and
+may be fieldless: `struct App;` can exist solely to carry wiring. Both kinds occupy the `Self`
+position and carry a wiring table, so their signatures do not distinguish them.
 
-One confusion to avoid: inside a provider, `self`/`Self` (in `#[cgp_impl]`) or the
-`context`/`Context` parameter (in the raw provider-trait form) always refer to the **context**,
-never to the provider struct. The provider struct is a pure type-level name with neither fields nor
-a runtime value. You cannot store state in it, and any attempt to read a "field" of a provider at
-runtime is a mistake.
+A component's target determines what its capability operates on. A self-targeted component acts on
+`Self`, as in `CanGreet`, `HasErrorType`, and getters. A parameter-targeted component acts on a type
+parameter while `Self` selects the implementation, as in `CanEncodeValue<Value>` or
+`CanCalculateArea<Shape>`. A parameter can also select wiring: in `CanCompute<Code, Input>`,
+`Input` is the target and `Code` is a selector.
+
+The context and target together determine how many independent provider choices are available.
+A self-targeted component wired on a foreign value type has one provider program-wide; authors can
+define additional environmental contexts to make independent choices. Consult
+[modularity-hierarchy](references/modularity-hierarchy.md) when choosing an arrangement. When
+explaining CGP, identify the arrangement in the example because a change from value context to
+environmental context may leave the signature unchanged.
+
+Inside a provider, `self` and `Self` in `#[cgp_impl]` refer to the context. The raw provider-trait
+form names them `context` and `Context`. The provider struct is only a type-level name, so it cannot
+store state or supply fields at runtime.
 
 ## Reading CGP code on sight
 
@@ -286,14 +269,12 @@ A consumer trait can also be implemented directly on a context like any normal R
 (`impl CanGreet for Person { … }`). CGP traits are a superset of vanilla traits, and the macros
 only save boilerplate.
 
-## Which construct to use: prefer this, not that
+## Choosing a construct
 
-When two constructs can express the same thing, CGP has a preferred one. Choosing wrong produces
-code that compiles but reads as dated or misuses an advanced tool. This table is the quick answer,
-so you pick the right pattern even without reading further. Each preference is a default with
-narrow exceptions, spelled out under [Writing providers](#writing-providers) and, with full
-before/after examples, in [modern-idioms](references/modern-idioms.md). The "avoid" column is not
-wrong. You *read* it in generated code and legacy wiring, but you do not *write* it anew.
+Prefer the modern forms in this table when writing CGP. Explicit forms remain useful for reading
+generated code and legacy implementations, and some advanced cases still require them. See
+[Writing providers](#writing-providers) for exceptions and
+[modern-idioms](references/modern-idioms.md) for complete before-and-after examples.
 
 | To… | Prefer | Not (legacy / advanced / read-only) |
 |---|---|---|
@@ -325,10 +306,9 @@ that uses CGP:
 use cgp::prelude::*;
 ```
 
-**A substantial minority of CGP's public traits and markers are *not* in the prelude, and a missing
-import is the likeliest reason agent-written CGP fails to compile.** The prelude carries the
-constructs everyday code uses. The rest are imported from the homes below, and knowing the list is
-faster than guessing:
+Import traits and markers outside the prelude from their defining modules. Missing imports can
+prevent otherwise valid CGP code from compiling. These modules contain names that commonly need
+explicit imports:
 
 | Import from | What lives there |
 |---|---|
@@ -340,10 +320,10 @@ faster than guessing:
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
-Memorize the casts and the optional-field layer, because both read as core vocabulary and neither is
-in the prelude. Also memorize the neighbouring pairs that disagree: `ConcatPath` is in the prelude
-while `StaticString` and `StaticFormat` are not, `DefaultNamespace` is while
-`DefaultImpls1`/`DefaultImpls2` are not, and every builder trait is except `TakeField`.
+Check imports for casts and optional-field traits because neither group is in the prelude.
+Related names can also differ: `ConcatPath` and `DefaultNamespace` are in the prelude, while
+`StaticString`, `StaticFormat`, `DefaultImpls1`, and `DefaultImpls2` are not. Among the builder
+traits, `TakeField` requires an explicit import.
 
 This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0-alpha**. See
 [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on
@@ -352,10 +332,10 @@ import for brevity.
 
 ---
 
-## Components: the heart of CGP
+## Components
 
-A component is the bundle `#[cgp_component]` builds from one trait, so that *using* a capability
-and *implementing* it become separate, swappable things. Applying it to a consumer trait:
+`#[cgp_component]` generates the traits and wiring support that separate using a capability from
+implementing it. Apply it to the consumer trait that callers will use:
 
 ```rust
 #[cgp_component(Greeter)]
@@ -364,10 +344,8 @@ pub trait CanGreet {
 }
 ```
 
-generates the items below, of which you write or call only the consumer trait. The **consumer
-trait** `CanGreet` is emitted unchanged, so callers write `person.greet()`. The **provider trait**
-is the same interface with `Self` moved to a leading `Context` parameter and `self` rewritten to
-`context`:
+The macro emits `CanGreet` unchanged, so callers write `person.greet()`. It also generates the
+provider trait with `Self` moved to a leading `Context` parameter and `self` renamed to `context`:
 
 ```rust
 pub trait Greeter<Context>: IsProviderFor<GreeterComponent, Context, ()> {
@@ -402,26 +380,25 @@ trait is fine, and a const-generic provider struct supplies it as usual. See
 [macro-grammar](references/macro-grammar.md) for the full argument grammar and
 [components](references/components.md) for the complete expansion.
 
-**A component trait may declare as many items as any Rust trait. Group the items that one provider
-choice decides together.** Everything in one component is answered by one provider, so items settled
-by one decision belong together and items settled by different decisions do not. Most application
-capabilities are one decision and so one method, which is why single-method components dominate. But
-a method plus the associated type it produces is one decision too, which is why CGP's own
-`CanCompute` and `CanHandle` declare `type Output` beside their method. A getter component groups
-several field reads because one `UseFields` provider answers them all by name. Grouping *different*
-decisions costs reuse, as an entity trait does (`Shape` with `area`, `perimeter`, `scale`, `rotate`).
-Each provider then carries the union of every method's dependencies, a higher-order provider must
-forward the methods it does not change, and a context that needs part of the surface must still
-answer all of it with placeholder types and `unimplemented!()` bodies. A consumer trait named after a
-noun rather than a verb is the usual sign. When you write or review one, check that a second context
-could plausibly reuse one of its providers *whole*. If not, implement the trait directly on the
-concrete context and skip the machinery. [components](references/components.md) carries the
-multi-item cases, the costs, and the procedure for splitting a trait that has grown past one
-decision.
+A component trait can contain as many methods, associated types, and consts as an ordinary Rust
+trait. Group items when one provider choice determines their implementation. A method and its
+associated output type can form one such choice, as in `CanCompute` and `CanHandle`. A getter
+component can group several field reads that one `UseFields` provider supplies by name.
+
+Combining independent choices in one component reduces provider reuse. For example, a `Shape`
+trait with `area`, `perimeter`, `scale`, and `rotate` requires each provider to satisfy all methods'
+dependencies. A higher-order provider must forward methods it does not change, and a context using
+only part of the interface may need placeholder types and `unimplemented!()` bodies for the rest.
+
+Check whether another context could reuse a provider's complete implementation. A consumer trait
+named after an entity rather than an action can signal unrelated choices grouped together. If the
+provider would not be reusable, implement the trait directly on the concrete context. See
+[components](references/components.md) for multi-item examples, reuse costs, and how to split a
+component.
 
 ### `IsProviderFor` and error messages
 
-`IsProviderFor<Component, Context, Params>` is an empty marker trait that rides as a supertrait on
+`IsProviderFor<Component, Context, Params>` is an empty marker trait used as a supertrait on
 every provider trait. Its only purpose is good error messages. A provider lists its dependencies in
 a `where` clause, and the macros implement `IsProviderFor` for the provider under the *same* bounds.
 So when a dependency is unmet, the compiler can name the missing bound instead of vaguely saying
@@ -431,9 +408,8 @@ is missing." You never write `IsProviderFor` yourself. The provider macros gener
 
 ### Writing providers
 
-A provider can be written at several levels of sugar over the same machinery. **Prefer
-`#[cgp_impl]`.** It lets you write the provider in consumer-style syntax, keeping `self`, `Self`,
-and the consumer method signatures, and the macro rewrites it into the provider-trait shape:
+Prefer `#[cgp_impl]` when writing a provider. It accepts consumer-style method signatures with
+`self` and `Self`, then rewrites them into the provider-trait form:
 
 ```rust
 #[cgp_impl(new GreetHello)]
@@ -445,14 +421,16 @@ impl Greeter {
 }
 ```
 
-The provider name goes in the attribute argument, and a leading `new` keyword also declares the
-`struct GreetHello;`. The dependency is declared with [`#[uses]`](#uses-extend-extend_where) rather
-than a hand-written `where Self: HasName` clause. `#[uses]` is the preferred form and desugars to
-exactly that bound. **Prefer the unqualified `impl Greeter` form and let the macro insert the
-context parameter.** Omitting `for Context` makes a provider read like an ordinary trait impl. Write
-the explicit `impl<Context> Greeter for Context` only when you must bound or name the context
-readably, for example for a lifetime or HRTB the sugar cannot express. It must then be declared in
-the impl generics. Remember that `self`/`Self` here mean the context. `#[cgp_impl]` desugars to:
+The attribute names the provider, and `new` also declares `struct GreetHello;`. The
+[`#[uses(HasName)]`](#uses-extend-extend_where) attribute generates the impl-side bound
+`where Self: HasName`.
+
+Prefer `impl Greeter` and let the macro insert the context parameter. Use the explicit
+`impl<Context> Greeter for Context` form only when you must name or bound the context, such as for
+a lifetime or higher-ranked trait bound the shorthand cannot express. Declare that context in the
+impl generics. In either form, `self` and `Self` mean the context.
+
+The example expands to a provider-trait impl with an explicit context parameter:
 
 ```rust
 #[cgp_new_provider]
@@ -466,63 +444,46 @@ where
 }
 ```
 
-You mostly *read* the lower forms rather than write them. `#[cgp_provider]` is applied to a
-provider-trait impl written directly on an existing provider struct. It passes the impl through and
-generates the matching `IsProviderFor` impl from the same `where` clause. `#[cgp_new_provider]` does
-the same but also declares the provider struct. A generic provider gets a `PhantomData` field over
-its parameters, such as `pub struct Multiply<Field>(PhantomData<Field>);`. The attribute argument
-can override the component name, which otherwise defaults to the provider trait's name plus
-`Component`. One special form, `#[cgp_impl(Self)]`, bypasses the provider rewrite entirely and emits
-the block as a *direct* consumer-trait impl on the concrete context. The `for Context` clause is then
-required. This is useful when you want to implement a consumer trait by hand while still applying
-companion attributes such as `#[use_provider]`.
+The lower-level provider macros accept explicit provider-trait impls. `#[cgp_provider]` preserves
+an impl on an existing provider struct and generates `IsProviderFor` with the same `where` bounds.
+`#[cgp_new_provider]` also declares the provider struct. Generic providers receive a `PhantomData`
+field over their parameters, as in `pub struct Multiply<Field>(PhantomData<Field>);`. The attribute
+can override the component name, which defaults to the provider trait's name plus `Component`.
 
-**Strongly prefer the modern, vanilla-looking idioms when you write CGP, and reach for the explicit
-forms only when a construct cannot express the case.** Each idiom below trades a piece of visible
-machinery for syntax that reads like ordinary Rust:
+`#[cgp_impl(Self)]` emits a direct consumer-trait impl on a concrete context. This form requires
+`for Context` and bypasses the provider rewrite while still applying companion attributes such as
+`#[use_provider]`.
 
-- **Write providers with `#[cgp_impl]`**, not `#[cgp_provider]` or `#[cgp_new_provider]`, and omit
-  `for Context` so the header reads `impl Greeter`.
-- **Declare dependencies with attributes, not hand-written bounds.** Capability dependencies go in
-  [`#[uses(...)]`](references/functions-and-getters.md), and inner-provider dependencies in
-  [`#[use_provider(...)]`](references/higher-order-providers.md), instead of raw `Self:` /
-  `Provider: …<Self>` `where` clauses. When one of these attributes, or
-  [`#[use_type]`](references/abstract-types.md), carries several arguments, put them all in one
-  attribute separated by commas (`#[uses(A, B)]`, `#[use_type(T.X, U.Y)]`) rather than stacking the
-  same attribute repeatedly. One attribute reads as a single dependency list.
-- **Read context fields with [`#[implicit]`](references/functions-and-getters.md) arguments** rather
-  than a getter trait. This is the default for *any* field a provider reads from its own context,
-  including one that several providers each read. An implicit argument reads only from `self` and
-  takes a plain `&T` by reference without cloning. Use `#[cgp_auto_getter]` sparingly, only where an
-  implicit argument cannot reach: a getter for a field on *another* type, which takes that type as
-  the getter's first argument in place of `self` (`fn foo_bar(foo: &Self::Foo) -> &Self::Bar`) or is
-  required as a `where` bound on it (`Request: HasBasicAuthHeader<Self>`); an accessor other code
-  depends on as a named capability; or a getter carrying an associated type inferred from the field.
-  Reserve `#[cgp_getter]` for the advanced case of choosing the source field per context.
-- **Add non-type capability supertraits with [`#[extend(...)]`](references/functions-and-getters.md)**
-  rather than native `: Supertrait` syntax, which reads as OOP-style inheritance rather than a
-  capability import.
-- **Import abstract types with [`#[use_type]`](references/abstract-types.md)**, writing the bare
-  alias (`Scalar`, `Error`) instead of a hand-written `: HasScalarType` supertrait and a qualified
-  `Self::Scalar` at every use. This holds even in `#[cgp_component]` definitions: prefer
-  `#[use_type(HasErrorType.Error)]` over `: HasErrorType` + `Self::Error`. When a provider *pins* an
-  abstract type to a concrete one (a `where Self: HasErrorType<Error = AppError>` clause), use the
-  equality form `#[use_type(HasErrorType.{Error = AppError})]`, which emits the same bound. The
-  equality form is a `#[cgp_impl]`/`#[cgp_fn]` tool and is rejected on `#[cgp_component]`.
-  [abstract-types](references/abstract-types.md) covers how the right-hand side of `=` is itself
-  substituted, so one abstract type can be pinned in terms of another.
-- **Dispatch a generic-parameter component with the `open` statement or a namespace**, skipping
-  `#[derive_delegate]`/`UseDelegate` when defining a new component.
+Use these modern forms by default, with explicit syntax only where the attributes cannot express
+the required bounds:
 
-The explicit forms remain correct, and you *read* them in generated code and desugaring. The
-exceptions that still need them are narrow. An associated-type-equality bound on a trait you would
-never `#[use_type]` from (`Iterator<Item = u8>`, `From<X>`) stays an explicit `where` clause. A
-lifetime or HRTB forces a named context. A **local** associated type such as `Self::Output` stays
-qualified because it is the trait's own type, not an imported abstract one. An equality bound on an
-**abstract-type** trait is not an exception: `#[use_type(HasErrorType.{Error = AppError})]` replaces
-the hand-written `where Self: HasErrorType<Error = AppError>`. For the full legacy-to-modern
-before/after mapping of each idiom, see [modern-idioms](references/modern-idioms.md), the reference
-to load whenever you read or modernize existing CGP.
+- **Providers:** Write `#[cgp_impl]` with an `impl Greeter` header, omitting `for Context`.
+- **Dependencies:** Use [`#[uses]`](references/functions-and-getters.md) for capabilities and
+  [`#[use_provider]`](references/higher-order-providers.md) for inner providers.
+- **Field access:** Prefer [`#[implicit]`](references/functions-and-getters.md) for fields on the
+  provider's context, including fields read by several providers. Use getter traits for access on
+  other types, named capabilities, or associated types inferred from fields.
+- **Capability supertraits:** Use [`#[extend]`](references/functions-and-getters.md).
+- **Abstract types:** Import them with [`#[use_type]`](references/abstract-types.md) and use the bare
+  alias, including in `#[cgp_component]` definitions.
+- **Per-type dispatch:** Use `open` or a namespace when defining new components.
+
+Combine multiple `#[uses]` or `#[use_type]` arguments in one comma-separated attribute, as in
+`#[uses(A, B)]` or `#[use_type(T.X, U.Y)]`. Each `#[use_provider]` binds one provider, so use a
+separate attribute for each binding.
+
+Use `#[use_type]`'s equality form to fix an abstract type to a concrete type. For example,
+`#[use_type(HasErrorType.{Error = AppError})]` replaces
+`where Self: HasErrorType<Error = AppError>`. This form works on `#[cgp_impl]` and `#[cgp_fn]` but
+is rejected on `#[cgp_component]`. The right-hand side is also substituted, so an abstract type can
+be defined in terms of another imported type; see [abstract-types](references/abstract-types.md).
+
+Keep explicit bounds where the attributes cannot express the dependency. Equality bounds on traits
+you would not import types from, such as `Iterator<Item = u8>` or `From<X>`, remain in `where`
+clauses. A lifetime or higher-ranked trait bound (HRTB) may require a named context. A trait's own
+associated type remains qualified as `Self::Output`; only imported abstract types use bare aliases.
+Load [modern-idioms](references/modern-idioms.md) when reading or modernizing existing CGP for the
+complete mapping between explicit and modern forms.
 
 The provider's `where` clause is where **impl-side dependencies** live, whether you write it by hand
 or let `#[uses]` generate it. `GreetHello` requires `Self: HasName`, but `CanGreet` does not expose
@@ -583,7 +544,7 @@ The next section explains why.
 To understand what wiring *does*, picture the explicit version. `delegate_components!` is
 equivalent to implementing the consumer trait by hand and forwarding to the provider:
 `impl CanGreet for Person { fn greet(&self) { <GreetHello as Greeter<Person>>::greet(self) } }`.
-The macro generates that plumbing, plus the `IsProviderFor` propagation, for you.
+The macro generates the forwarding impls and propagates `IsProviderFor`.
 
 ### `UseContext`
 
@@ -612,19 +573,19 @@ delegate_components! {
 }
 ```
 
-The `open … ;` header opens one or more components for per-value wiring and **must lead** the
-block. It comes before any plain `Component: Provider` mappings, or the macro fails to parse. The
-braces are optional when opening a single component (`open AreaCalculatorComponent;`), and the
-braced list `open { A, B };` opens several at once. Each `@Component.Key: Provider` entry then
-assigns a provider for one value of the dispatch parameter. Grouping forms share one provider
-across several values, and they are **not** interchangeable. A braced group holds whole path *tails*
-and ends the path (`@AreaCalculatorComponent.{u32, u64, bool}: SomeProvider`). A bracketed group
-holds alternatives for *one segment* and may be followed by more path
-(`@app.[FooComponent, BarComponent].[u64, String]: P` writes every combination). A key may also
-carry generics (`@SomeComponent.<'a, T> &'a T: SomeProvider`). `open` works through the
-`RedirectLookup` impl that every `#[cgp_component]` already generates, so it does not need an extra
-attribute on the component. It does not combine with a joined namespace (`#[prefix(...)]`), which is
-the full namespace feature.
+Place `open` statements before plain `Component: Provider` mappings or the macro will fail to
+parse. Use `open AreaCalculatorComponent;` for one component or `open { A, B };` for several.
+Each `@Component.Key: Provider` entry assigns a provider to one value of the dispatch parameter.
+
+Choose path grouping by what the alternatives represent. Braces group complete path tails and
+end the path, as in `@AreaCalculatorComponent.{u32, u64, bool}: SomeProvider`. Brackets group
+alternatives for one segment and allow further segments:
+`@app.[FooComponent, BarComponent].[u64, String]: P` creates every combination. Keys may carry
+generics, as in `@SomeComponent.<'a, T> &'a T: SomeProvider`.
+
+`open` uses the `RedirectLookup` impl generated by `#[cgp_component]`, so it does not need an
+extra component attribute. It does not combine with a joined namespace (`#[prefix(...)]`); use the full namespace
+feature for that arrangement.
 
 **Legacy form (read but don't write):** older code dispatches the same way by wrapping a nested
 table in the `UseDelegate` provider, as in
@@ -674,26 +635,21 @@ both macros can appear once per module without clashing. Override the name with
 `#[check_trait(Name)]`. When the delegated component has generic parameters, add
 `#[check_params(...)]` on the entry. Skip a single entry's check with `#[skip_check]`.
 
-**This fused macro is a convenience for basic wiring and for getting started, not the default for
-advanced code.** It exists so a newcomer cannot forget to write a separate `check_components!` and
-then hit confusing lazy-wiring errors, and it derives a check only for the plain
-`Component: Provider` delegation form. It cannot easily derive checks for advanced mappings:
-generic-parameter dispatch (the `open` statement and `@`-path keys), namespaces, or per-layer
-higher-order checks. **In larger, more advanced codebases, keep `delegate_components!` and
-`check_components!` separate.** That gives full control over what is checked:
-`#[check_providers(...)]` per provider layer, concrete parameters for generic keys, and checks over
-opened or namespaced wiring. The one non-negotiable is that a context's wiring *is* checked somehow.
-Which macro you use scales with the wiring's complexity.
+Use `delegate_and_check_components!` for basic wiring or a starter context. It helps newcomers
+avoid omitting checks and encountering delayed wiring errors. It derives checks only for plain
+`Component: Provider` entries, so advanced mappings need more control.
 
-One case makes `delegate_and_check_components!` wrong, not just unnecessary: an **aggregate
-provider** (the `new MyComponents { … }` table above). That target is a provider other contexts
-delegate to, not a context itself. So the check's `CanUseComponent` assertion asks whether the
-bundle can use each component *as a context*, a role it never plays, and the answer is uninformative
-either way. It passes vacuously when the bundled providers need nothing from their context, and it
-fails blaming the bundle when any of them needs a field or a type the real context would have
-supplied. Wire an aggregate provider with plain `delegate_components!`. It is verified indirectly
-when a real context that delegates to it is checked, or directly with a `#[check_providers(...)]`
-block that asserts `IsProviderFor` on it.
+Keep `delegate_components!` and `check_components!` separate in larger or more advanced codebases.
+Separate checks support `open` and namespaced wiring, concrete parameters for generic keys, and
+`#[check_providers(...)]` assertions for individual provider layers. Every context's wiring must be
+checked regardless of which macro is used.
+
+Wire aggregate providers with plain `delegate_components!`. An aggregate provider supplies
+implementations to other contexts, so checking it as a context with `delegate_and_check_components!`
+asks the wrong question. The check passes vacuously if its providers need nothing from the context,
+or blames the aggregate for fields and types that the actual context would supply. Verify the
+aggregate through a real context that delegates to it, or use `#[check_providers(...)]` to assert
+`IsProviderFor` directly.
 
 Not every unsatisfied bound is a CGP component. Some are ordinary or blanket traits that
 `check_components!` cannot verify, and those must be satisfied by ordinary Rust means.
@@ -703,11 +659,11 @@ tells you a layer is broken but not which one. The `#[check_providers(...)]` att
 `check_components!` table changes the assertion from `CanUseComponent` on the context to
 `IsProviderFor` on each named provider. A dependency missing only from the outer wrapper then errors
 on its line alone, while one missing from the inner provider errors on both, which pinpoints the
-layer. See [checking](references/checking.md) for the debugging playbook.
+layer. See [checking](references/checking.md) for debugging instructions.
 
 ---
 
-## Functions and getters: the ergonomic surface
+## Functions and getters
 
 Most basic CGP reads and writes values from the context, and the constructs here make that look like
 plain Rust.
@@ -764,34 +720,36 @@ fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64 {
 }
 ```
 
-`#[extend(Trait)]` adds *supertrait* bounds to the generated trait. It is the only way to add
-supertraits in `#[cgp_fn]`, whose `where` clauses are impl-side dependencies, and the **preferred**
-way to add a *non-type capability* supertrait on `#[cgp_component]` too. `#[extend(HasName)]` reads
-as importing a capability, whereas the native `pub trait CanGreet: HasName` syntax reads as OOP-style
-inheritance from a parent class, which a CGP supertrait is not. When the supertrait is an
-abstract-type component whose associated type the signatures name, prefer `#[use_type]` instead. It
-adds the supertrait *and* rewrites the type, and it is the recommended form for abstract-type
-components. `#[extend_where(Bound)]` adds `where` clauses to the generated trait definition
-(`#[cgp_fn]` only), and accepts arbitrary predicates including associated-type equality, unlike
-`#[uses]`/`#[extend]`. Another `#[cgp_fn]`-only attribute, `#[impl_generics(Param: Bound)]`, adds a
-bounded generic parameter to the generated *impl* alone, not the trait. This is how a `#[cgp_fn]`
-body borrows a generic value it does not want to expose as a trait parameter, for example
-`#[impl_generics(Name: Display)]` over an `#[implicit] name: &Name`.
+`#[extend(Trait)]` adds supertrait bounds to the generated trait. It is the only way to add
+supertraits in `#[cgp_fn]`, where ordinary `where` clauses declare impl-side dependencies. It is
+also the preferred form for non-type capability supertraits on `#[cgp_component]`: the attribute
+presents a capability dependency directly.
+
+Use `#[use_type]` for an abstract-type supertrait whose associated type appears in the signatures.
+It adds the supertrait and rewrites uses of the type.
+
+`#[extend_where(Bound)]` adds `where` clauses to a `#[cgp_fn]` trait definition. It accepts arbitrary
+predicates, including associated-type equality, beyond the forms accepted by `#[uses]` and
+`#[extend]`.
+
+`#[impl_generics(Param: Bound)]` adds a bounded parameter only to the impl generated by `#[cgp_fn]`.
+Use it when a function body borrows a generic value that should not become a trait parameter.
+For example, `#[impl_generics(Name: Display)]` can support an `#[implicit] name: &Name` argument.
 
 ### Getters: `#[cgp_auto_getter]`, `#[cgp_getter]`, `UseField`
 
-An `#[implicit]` argument (above) is the default way to read a context field, so use a getter trait
-*sparingly*, only where an implicit argument cannot reach. Because an implicit argument reads only
-from the provider's own `self` (and takes a plain `&T` by reference without a clone), it covers every
-same-context read, even a field several providers each consume. A getter trait earns its keep only
-in the cases an implicit argument cannot handle: a field that lives on a type *other* than the
-provider's context, an accessor other code depends on as a *named* capability through
-`#[uses(HasName)]` or a supertrait, and a getter carrying an *associated type inferred from the
-field*, so the type stays abstract for callers. For the field on another type, a getter reaches it
-either by taking that type as its first argument instead of `self`
-(`fn foo_bar(foo: &Self::Foo) -> &Self::Bar`, called as `App::foo_bar(&foo)`) or by being required
-as a `where` bound on it (`Request: HasBasicAuthHeader<Self>`), since either way it lacks a `self`
-field to read.
+Prefer `#[implicit]` arguments for reading fields from the provider's own context. They cover
+fields shared by several providers and borrow plain `&T` arguments without cloning.
+
+Use getter traits sparingly, for capabilities that implicit arguments cannot express:
+
+- **Access on another type:** Take that type as the first argument, as in
+  `fn foo_bar(foo: &Self::Foo) -> &Self::Bar`, called as `App::foo_bar(&foo)`, or require a getter
+  bound such as `Request: HasBasicAuthHeader<Self>`.
+- **Named access capability:** Expose an accessor that other code requires through a bound such as
+  `#[uses(HasName)]` or a supertrait.
+- **Abstract field type:** Declare an associated return type inferred from the field, keeping its
+  concrete type hidden from callers.
 
 `#[cgp_auto_getter]` generates a blanket getter impl over `HasField`, with the field name taken from
 the method name. It is the getter form to prefer for those cases:
@@ -967,7 +925,7 @@ infallible versus fallible, and input-taking versus input-free:
 - **`Computer` / `CanCompute`** is a synchronous, infallible transform `compute(&self, PhantomData<Code>, input) -> Output`. By-reference (`ComputerRef`) and async (`AsyncComputer`) variants exist.
 - **`TryComputer` / `CanTryCompute`** is the fallible computer.
 - **`Producer` / `CanProduce`** is input-free production (only a context and a `Code` tag).
-- **`Handler` / `CanHandle`** is the general **async, fallible, error-aware** computation, and the workhorse for I/O and pipelines. It supertraits `HasErrorType`.
+- **`Handler` / `CanHandle`** is the general **async, fallible, error-aware** computation, used for I/O and pipelines. It requires `HasErrorType` as a supertrait.
 - **`CanRun` / `CanSendRun`** are task runners.
 
 Any CGP trait with async methods, whether a handler, a runner, or one you define, declares them under
@@ -1018,27 +976,30 @@ pub struct Person {
 }
 ```
 
-Records are built field by field through the builder family (`HasBuilder`, `BuildField`). This
-**extensible builder pattern** assembles a context from independent per-field outputs. Variants are
-constructed with `FromVariant` and deconstructed with the `ExtractField` extractor family, and the
-**extensible visitor pattern** handles each variant. The type-level lists underneath are the product
-list (`Product![A, B, C]` over `Cons`/`Nil`) for records and the sum list (`Sum![A, B]` over
-`Either`/`Void`) for variants. Structural **casts** convert between shapes: `CanUpcast` widens a
-smaller enum into a larger one, `CanDowncast` narrows, and `CanBuildFrom` rebuilds a record from a
-superset. Dispatching extensible-data inputs to handlers uses the dispatch combinators above.
+The extensible builder pattern constructs records field by field through `HasBuilder` and
+`BuildField`. It assembles a context from independent outputs for each field. The underlying field
+list uses `Product![A, B, C]`, represented by `Cons` and `Nil`.
+
+The extensible visitor pattern handles each variant of an enum. `FromVariant` constructs variants,
+and the `ExtractField` family deconstructs them. Variant lists use `Sum![A, B]`, represented by
+`Either` and `Void`. The handler dispatch combinators described above route variant inputs to their
+handlers.
+
+Structural casts convert between data shapes. `CanUpcast` widens a smaller enum into a larger one,
+`CanDowncast` narrows an enum, and `CanBuildFrom` rebuilds a record from a superset of its fields.
 
 ---
 
 ## Namespaces
 
-Namespaces are reusable, inheritable wiring tables (a preset mechanism) that keep top-level wiring
-short as component counts grow. `cgp_namespace! { new MyNs: ParentNs { … } }` defines a namespace,
-optionally inheriting a parent after the colon. A context then **joins** it inside
-`delegate_components!` with a `namespace MyNs;` statement. After that, every lookup the context does
-not wire directly forwards through the namespace, so any direct entry overrides just that key. A
-component **registers into** a namespace with the `#[prefix(@path in MyNs)]` attribute on its
-`#[cgp_component]` trait. A `#[cgp_impl]` provider registers as a per-type default with
-`#[default_impl(T in DefaultImpls1<Component>)]`, which a context pulls in with a
+Namespaces provide reusable wiring tables that can inherit from a parent. Define one with
+`cgp_namespace! { new MyNs: ParentNs { … } }`, omitting the parent when inheritance is unnecessary.
+A context joins it with `namespace MyNs;` inside `delegate_components!`. Lookups without a direct
+context entry forward through the namespace, so direct entries override individual keys.
+
+Register a component in a namespace with `#[prefix(@path in MyNs)]` on its `#[cgp_component]`
+trait. A `#[cgp_impl]` provider registers a per-type default through
+`#[default_impl(T in DefaultImpls1<Component>)]`. The context imports those defaults with a
 `for <T, Provider> in Table { … }` loop.
 
 The underlying mechanism is the `RedirectLookup` provider, which re-routes a component lookup along
@@ -1048,10 +1009,10 @@ a type-level `Path!`. The `open` statement above is a lightweight special case o
 
 ---
 
-## Type-level primitives: a decoder ring
+## Type-level primitives
 
-CGP encodes lists, strings, and numbers as types. You mostly use the sugared macros and only need to
-*recognize* the expanded forms in errors:
+CGP encodes lists, strings, and numbers as types. Use the shorthand macros when writing code, and
+recognize their expanded forms when reading errors:
 
 - **`Symbol!("name")`** is a type-level string (field-name tag). It expands to `Symbol<4, Chars<'n', Chars<'a', Chars<'m', Chars<'e', Nil>>>>`. The leading length works around missing const-generics.
 - **`Product![A, B, C]`** is a type-level list. It expands to `Cons<A, Cons<B, Cons<C, Nil>>>`. `product![…]` is the value-level form. Used for field lists and handler pipelines.
@@ -1062,48 +1023,70 @@ CGP encodes lists, strings, and numbers as types. You mostly use the sugared mac
 - **`Life<'a>`** is a lifetime lifted into a type, used when a component has lifetime parameters.
 - **`MRef`** is an owned-or-borrowed value.
 
-Prefer the sugar (`Symbol!`, `Product!`) and the readable names (`Cons`/`Nil`) in anything you write.
+Prefer the shorthand macros (`Symbol!`, `Product!`) and readable type names (`Cons`/`Nil`) when
+writing code.
 
 ---
 
 ## Sub-skills: load the one that owns your task
 
-The primer gave you the shape of every construct. Each sub-skill below is the ground truth for one
-area: the exact grammar, the full expansion, the corner cases, and worked examples. **Loading the
-relevant sub-skill is not optional polish. It is the step that turns a plausible guess into correct
-code.** Every entry names what it adds beyond this primer *and* what you would be guessing at without
-it, so you can see the risk of skipping it. Load a sub-skill whenever your task touches its area,
-whether reading it, writing it, reviewing it, or debugging an error that mentions it, and re-load it
-when you move into an unfamiliar corner. When a task spans several areas, load each one. They
-cross-link, and following those links is expected.
+Load each sub-skill that applies before reading, writing, reviewing, or debugging code in its
+area. These references provide exact grammar, expansions, corner cases, and worked examples beyond
+the primer. Load all relevant references when a task spans several areas, follow their cross-links,
+and reload a reference when entering an unfamiliar part of the topic.
 
-Some sub-skills are cross-cutting rather than construct-specific, and one applies to almost every
-task. Start with **[references/macro-grammar.md](references/macro-grammar.md)** for any task
-that writes, edits, or debugs CGP syntax. It is the single reference for the formal grammar of every
-macro, the invariant each expansion preserves, and a decoder for the compiler errors CGP produces.
-*Without it* you are guessing which attribute forms parse, what a macro emits, and what an
-`IsProviderFor` or `DelegateComponent` error is telling you. Reach for
-**[references/modern-idioms.md](references/modern-idioms.md)** whenever you read or modernize
-existing CGP. It maps every legacy, explicit form to the modern idiom you should prefer, both to
-write vanilla-looking code and to decode the inside-out provider impls, hand-written `where` bounds,
-`Self::Type` paths, and `UseDelegate` tables you meet in older code. *Without it* you will either
-propagate outdated syntax or fail to recognize that legacy code and modern code mean the same thing.
+Start with [macro-grammar](references/macro-grammar.md) whenever writing, editing, or debugging CGP
+syntax. It defines the accepted macro forms, the invariants their expansions preserve, and how to
+interpret compiler errors involving `IsProviderFor` and `DelegateComponent`.
 
-The remaining sub-skills each own one construct family:
+Load [modern-idioms](references/modern-idioms.md) when reading or modernizing existing CGP. It maps
+explicit and legacy forms to current syntax, including provider impls, handwritten `where` bounds,
+`Self::Type` paths, and `UseDelegate` tables.
 
-- **[references/components.md](references/components.md)** covers `#[cgp_component]` and the full expansion (consumer/provider traits, the blanket impls, the `…Component` marker), why `IsProviderFor` exists, the provider-writing macros (`#[cgp_impl]`, `#[cgp_provider]`, `#[cgp_new_provider]`), and how many methods a component should carry, with the costs a monolithic entity trait pays and how to split one. *Without it* you will misjudge what `self`/`Self` mean inside a provider, how the blanket impls route a call, and how coarse a component can get before its providers stop being reusable. Load it before writing any component or provider.
-- **[references/wiring.md](references/wiring.md)** covers `DelegateComponent`, every `delegate_components!` form (arrays, `new`, generic tables), `open` per-type dispatch, direct consumer-trait impls, `UseContext` and its circular-dependency trap, the legacy `UseDelegate` tables, and the other providers you see in tables (`WithProvider` and its `WithField`/`WithType`/`WithContext` aliases, `UseDefault`). *Without it* you will not know when a hand-written impl collides with the table, why `UseContext` overflows, or what a `WithField<…>` entry means. Load it before wiring any context.
-- **[references/checking.md](references/checking.md)** covers why wiring is lazy, how check traits and `CanUseComponent` force readable errors, every `check_components!` / `delegate_and_check_components!` option (`#[check_trait]`, `#[check_providers]`, `#[check_params]`, `#[skip_check]`), and a debugging playbook. *Without it* you cannot localize a broken wiring or read the error it throws. Load it whenever a wiring fails to compile.
-- **[references/error-extraction.md](references/error-extraction.md)** is the **fallback for when `cargo-cgp` is not available, or leaves an error largely unrewritten**. See [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) first: `cargo-cgp`'s `[CGP-Exxx]` headline and root-cause tree already are the compact summary this sub-skill produces, so reach for the sub-skill only when the tool is absent or passes the error through. It covers how to reduce a long raw CGP compile error to a compact, root-cause-first summary, the hidden-versus-surfaced distinction that decides whether the root cause is even present in the output, how to confirm a suspected cause by grepping for one signature line, and how to delegate the reading to a sub-agent so a wall of generated-type errors does not consume your context. *Without it* you will read a cascade inline, chase a cause a hidden error does not contain, or hand back raw output instead of the few facts that matter.
-- **[references/functions-and-getters.md](references/functions-and-getters.md)** covers `HasField`/`#[derive(HasField)]`, `#[cgp_fn]`, `#[implicit]` and its access rules, `#[uses]`/`#[extend]`/`#[extend_where]`/`#[impl_generics]`, the getters `#[cgp_auto_getter]`/`#[cgp_getter]`/`UseField`/`WithField`, and `ChainGetters` for nested-context fields. *Without it* you will reach for a getter trait where an implicit argument is idiomatic, or misapply the `.clone()`/`.as_str()`/`&mut` field-access rules. Load it for the ergonomic day-to-day surface.
-- **[references/abstract-types.md](references/abstract-types.md)** covers `#[cgp_type]`, the built-in `HasType`/`TypeProvider`, wiring with `UseType<T>` (and `UseDelegatedType` for table-chosen types), importing types with the `#[use_type]` attribute (distinct from the `UseType` provider), and the `WithType`/`WithDelegatedType` adapters. *Without it* you will confuse the provider and the attribute and write `Self::` paths by hand. Load it for any associated-type abstraction.
-- **[references/higher-order-providers.md](references/higher-order-providers.md)** covers providers parameterized by other providers, the stray `<Self>` on the inner bound, `#[use_provider]`, `UseContext` defaults, generic-parameter components, and cross-context dependencies. *Without it* you will call the inner provider as a method instead of `Provider::method(self)` and misplace the context slot. Load it before composing providers.
-- **[references/error-handling.md](references/error-handling.md)** covers `HasErrorType`, `CanRaiseError`/`CanWrapError`, the backend providers (`RaiseFrom`, `DebugError`, …), and, critically, which names come from the prelude versus `cgp::core::error` / `cgp::extra::error`. *Without it* you will fail to import the wiring keys and backends. Load it for any fallible CGP code.
-- **[references/handlers.md](references/handlers.md)** covers the `Computer`/`TryComputer`/`Producer`/`Handler`/runner family across its axes, `#[cgp_computer]`/`#[cgp_producer]`/`#[cgp_auto_dispatch]`, the combinators (`PipeHandlers`, `Promote*`, dispatch matchers), monadic handlers, the `HasRuntime`/`HasRuntimeType` runtime components, and the `Send`-recovery pattern. *Without it* you will pick the wrong family member or miswire a pipeline. Load it for computation and I/O pipelines.
-- **[references/extensible-data.md](references/extensible-data.md)** covers the `CgpData`/`CgpRecord`/`CgpVariant` derives, the builder and extractor families (with the optional/defaulted-field extension), `Product!`/`Sum!` lists and their `AppendProduct`/`ConcatProduct`/`MapFields` algebra, structural casts (`CanUpcast`/`CanDowncast`/`CanBuildFrom`), and the builder/visitor patterns. *Without it* you will miss the compile-time exhaustiveness guarantees and the single-payload variant rule. Load it for generic struct/enum manipulation.
-- **[references/namespaces.md](references/namespaces.md)** covers `cgp_namespace!`, the `namespace`/`for … in` statements that join a namespace, the `#[prefix]`/`#[default_impl]` attributes that register into one, `RedirectLookup`, `Path!`, and the `DefaultNamespace` family. *Without it* you cannot read or write preset/inheritance wiring. Load it whenever wiring is grouped or inherited.
-- **[references/type-level-primitives.md](references/type-level-primitives.md)** covers `Symbol!`/`Chars`, `Product!`/`Cons`/`Nil`, `Sum!`/`Either`/`Void`, `Index`, `Field`, `Path!`/`PathCons`, `Life`, `MRef`, and the `StaticFormat` recovery traits. *Without it* you cannot decode the long nested types in error messages and expansions. Load it as the decoder ring.
-- **[references/modularity-hierarchy.md](references/modularity-hierarchy.md)** covers the tiered hierarchy from a plain blanket trait to per-provider wiring, and which coherence rule each tier escapes. *Without it* you will reach for more CGP machinery than a problem needs. Load it when deciding *how much* CGP to apply.
+Choose the remaining references by task:
+
+- **[Components](references/components.md):** Load before writing components or providers. Covers
+  the complete `#[cgp_component]` expansion, `IsProviderFor`, provider macros, the meaning of
+  `self`/`Self`, and how component grouping affects reuse.
+- **[Wiring](references/wiring.md):** Load before wiring a context. Covers `DelegateComponent`,
+  `delegate_components!` forms, `open`, direct consumer impls, `UseContext` cycles, legacy
+  `UseDelegate` tables, and adapters such as `WithProvider`, `WithField`, `WithType`, `WithContext`,
+  and `UseDefault`.
+- **[Checking](references/checking.md):** Load when wiring fails to compile. Explains lazy wiring,
+  check traits, `CanUseComponent`, and the `#[check_trait]`, `#[check_providers]`, `#[check_params]`,
+  and `#[skip_check]` options for locating missing dependencies.
+- **[Error extraction](references/error-extraction.md):** Load only when `cargo-cgp` is unavailable
+  or leaves an error largely unrewritten; see [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions)
+  first. Covers summarizing raw errors, distinguishing hidden from surfaced causes, confirming a
+  cause through a signature line, and delegating error reading to a sub-agent.
+- **[Functions and getters](references/functions-and-getters.md):** Load for field access and
+  function-style capabilities. Covers `HasField`, `#[cgp_fn]`, implicit access and its borrowing
+  rules, dependency attributes, getter macros, `UseField`/`WithField`, and `ChainGetters`.
+- **[Abstract types](references/abstract-types.md):** Load for associated-type abstraction. Covers
+  `#[cgp_type]`, `HasType`/`TypeProvider`, `UseType`/`UseDelegatedType` wiring, `#[use_type]` imports,
+  and `WithType`/`WithDelegatedType` adapters.
+- **[Higher-order providers](references/higher-order-providers.md):** Load before composing
+  providers. Covers inner-provider bounds, the context parameter, `#[use_provider]`, explicit
+  provider calls, `UseContext` defaults, generic components, and cross-context dependencies.
+- **[Error handling](references/error-handling.md):** Load for fallible CGP code. Covers
+  `HasErrorType`, raising and wrapping errors, backend providers, and which imports come from the
+  prelude, `cgp::core::error`, or `cgp::extra::error`.
+- **[Handlers](references/handlers.md):** Load for computation and I/O pipelines. Covers the
+  computation families, function and dispatch macros, combinators, monadic handlers,
+  `HasRuntime`/`HasRuntimeType`, and `Send` recovery for async methods.
+- **[Extensible data](references/extensible-data.md):** Load for generic struct and enum operations.
+  Covers data derives, builders, extractors, optional and defaulted fields, product and sum lists,
+  `AppendProduct`/`ConcatProduct`/`MapFields`, structural casts, exhaustiveness, and the single-payload
+  variant rule.
+- **[Namespaces](references/namespaces.md):** Load for grouped or inherited wiring. Covers
+  `cgp_namespace!`, joining and iterating namespaces, `#[prefix]`, `#[default_impl]`,
+  `RedirectLookup`, `Path!`, and `DefaultNamespace`.
+- **[Type-level primitives](references/type-level-primitives.md):** Load to interpret nested types
+  in errors and expansions. Covers symbols, product and sum lists, `Index`, `Field`, paths, `Life`,
+  `MRef`, and `StaticFormat` recovery traits.
+- **[Modularity hierarchy](references/modularity-hierarchy.md):** Load when deciding how much CGP
+  a problem needs. Compares plain blanket traits through per-provider wiring and identifies the
+  coherence restrictions each approach avoids.
 
 ### Exhaustive online reference
 
@@ -1122,27 +1105,22 @@ skill is deployed on its own.
 
 ## Instructions for explaining CGP to users
 
-Assume by default that the user has only basic Rust experience and is new to CGP, but do not
-over-explain. When code merely uses CGP concepts, write or modify it without lecturing, and add
-explanation only when asked. When you do explain, assume unfamiliarity with advanced Rust (generics,
-traits, blanket impls, coherence) and with functional or type-level programming. Describe type-level
-tables, lists, and strings through familiar analogies such as a map or a lookup table, and expand on
-advanced Rust as needed. Keep the simplified picture front and center. Present wiring as choosing a
-table entry, and keep `IsProviderFor`, `DelegateComponent`, and generated blanket impls out of the
-explanation unless the user asks about the internals. One caveat when you reach for an analogy: the
-"table lookup" is resolved at compile time and compiles down to direct static calls. If you use a
-runtime-flavored analogy like a vtable, say explicitly that CGP's resolution, unlike a real vtable, is
-static and zero-cost, without a runtime table or dynamic dispatch. Never leave a reader thinking CGP
-wiring has runtime lookup overhead.
+Assume basic Rust knowledge and unfamiliarity with CGP unless the user indicates otherwise.
+For code changes, add explanations only when asked. When explaining, introduce advanced Rust
+concepts such as generics, traits, blanket impls, and coherence as needed, along with unfamiliar
+functional or type-level programming concepts.
 
-**Never leave a reader thinking a CGP trait is limited to one item, either.** Because
-single-decision components dominate idiomatic CGP, an explanation built only from one-method traits
-reads as a restriction the macros impose. A reader who believes their traits are being capped pushes
-back on the whole paradigm rather than on the guidance. So say plainly, whenever the subject comes
-up, that a component trait is an ordinary trait taking as many methods, associated types, and consts
-as any other. CGP's own `CanCompute` and `CanHandle` carry an associated `Output` beside their method.
-Present the grouping guidance the way [components](references/components.md) frames it: a trade-off
-about how much reuse a provider can collect, decided by the author, never a rule about item counts.
+Explain wiring as choosing a provider from a table. Keep `IsProviderFor`, `DelegateComponent`, and
+generated blanket impls out of the explanation unless the user asks about internals. Familiar
+analogies can help explain type-level tables, lists, and strings, but make their limits explicit:
+CGP resolves wiring at compile time and generates direct static calls. If comparing it to a vtable,
+state that CGP resolves calls statically, without a runtime table, dynamic dispatch, or lookup cost.
+
+State that component traits can contain multiple items whenever component grouping comes up.
+Single-method examples must not imply a macro restriction: component traits can contain methods,
+associated types, and consts just as ordinary Rust traits can. `CanCompute` and `CanHandle`, for
+example, define an associated `Output` alongside their method. Present grouping as the author's
+choice about provider reuse, following [components](references/components.md).
 
 When asked to explain a specific piece of code, look up the definitions it depends on before
 answering. To explain a `delegate_components!` entry, find the consumer and provider traits behind

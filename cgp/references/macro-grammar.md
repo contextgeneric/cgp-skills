@@ -1,24 +1,69 @@
 # Macro grammar and expansion rules
 
-This file gives the grammar every CGP macro parses, the code each one expands to, and how to read the compiler errors that result. It is the reference for writing CGP that parses, and for decoding what goes wrong when it does not.
+Use this reference to check CGP macro syntax, understand generated code, and interpret compiler
+errors. It describes each macro’s custom grammar and the expansion rules that connect its input to
+ordinary Rust.
 
-CGP is almost entirely procedural macros, so "valid CGP code" means both input the macro's own parser accepts and output that expands to Rust the compiler accepts. This file covers both. It gives the formal grammar of each macro's custom syntax, states the invariant each expansion preserves, and closes with a decoder for the error messages both layers produce. Read it to check a form you are unsure about, to predict what a macro emits, or to trace an error back to its cause. Assume `use cgp::prelude::*;` throughout. The CGP version is v0.8.0.
+Valid CGP code must satisfy both the macro parser and the Rust compiler. The grammars below describe
+accepted input; the expansion rules explain the resulting traits and impls. The error guide covers
+failures at either stage. Examples assume `use cgp::prelude::*;` and CGP v0.8.0.
 
 ## How to read the grammars
 
-The grammars use the notation of the [Rust Reference](https://doc.rust-lang.org/nightly/reference/notation.html), in production-rule form. A production is `Name -> Expression`, one per line inside an `ebnf` block. `x?` is optional, `x*` is zero-or-more, `x+` is one-or-more, `A | B` is a choice, `( … )` groups, and juxtaposition is sequence. A terminal is written in backticks (`` `new` ``, `` `:` ``, `` `@` ``), and a nonterminal is a CamelCase name.
+The grammars follow the [Rust Reference notation](https://doc.rust-lang.org/nightly/reference/notation.html).
+Each line in an `ebnf` block defines a production as `Name -> Expression`. Backticks mark literal
+tokens, and CamelCase names refer to other productions.
 
-A CamelCase name this file does not define is a production of the **Rust grammar**, reused rather than re-specified: `Type`, `Generics` (the `< … >` parameter list), `GenericArgs` (the `< … >` argument list), `WhereClause`, `TypePath`, and `Expression`. An `ALL_CAPS` name is a Rust lexer token. `IDENTIFIER` is a Rust identifier and `STRING_LITERAL` a string literal. Each grammar describes only the tokens the macro itself parses, meaning the argument tokens inside an attribute's `#[name(…)]` or `#[name{…}]` delimiters, or the body tokens inside a function-like macro's `name!{ … }`. It never describes the delimiters themselves, nor the plain Rust item an attribute is applied to.
+Read the operators as follows:
+
+| Notation | Meaning |
+| --- | --- |
+| `x?` | Optional occurrence |
+| `x*` | Zero or more occurrences |
+| `x+` | One or more occurrences |
+| `A` or `B`, separated by a vertical bar | Choice between alternatives |
+| `( … )` | Grouping |
+| Adjacent expressions | Sequence |
+
+Undefined CamelCase names refer to existing Rust grammar productions. These include `Type`,
+`Generics` for parameter lists, `GenericArgs` for argument lists, `WhereClause`, `TypePath`, and
+`Expression`. Uppercase names denote lexer tokens, such as `IDENTIFIER` and `STRING_LITERAL`.
+
+Each grammar describes only the tokens parsed by the macro. For an attribute, these are the
+arguments inside `#[name(…)]` or `#[name{…}]`; for a function-like macro, they are the contents of
+`name!{ … }`. The surrounding delimiters and the annotated Rust item are outside that grammar.
 
 ## Reserved identifiers the expansions introduce
 
-Every macro that turns a trait or impl "inside out" invents identifiers, and it wraps them in double underscores so they cannot collide with a user's names. Recognizing them lets you read raw expansions and the errors that quote them. The context type parameter is `__Context__` (overridable), the provider parameter is `__Provider__`, a rewritten `self` receiver is `__context__`, the component key generic is `__Component__`, an inner delegation table is `__Components__`, a looked-up delegate is `__Delegate__`, the `IsProviderFor` params tuple is `__Params__`, a getter's free field tag is `__Tag__`, and a namespace's table generic is `__Table__`. Throughout this file the readable names `Context`/`Provider`/`Params` stand in for these where clarity is served, but the emitted code uses the reserved forms.
+Generated identifiers use double underscores to distinguish them from user-defined names.
+Recognizing these names helps connect raw expansions and diagnostics to the original code. This
+reference sometimes uses `Context`, `Provider`, and `Params` for readability; generated code uses
+the reserved forms listed below.
 
-One more name appears in expansions and resolves through the prelude. Any CGP construct the output references is emitted as `::cgp::macro_prelude::<Name>`, so an expansion compiles in a crate that has only `cgp` in scope. You never write that path yourself.
+The generated names identify these roles:
+
+| Identifier | Role |
+| --- | --- |
+| `__Context__` | Context type parameter; can be overridden |
+| `__Provider__` | Provider type parameter |
+| `__context__` | Rewritten `self` receiver |
+| `__Component__` | Component key parameter |
+| `__Components__` | Inner delegation table |
+| `__Delegate__` | Provider selected from a table |
+| `__Params__` | Parameter tuple passed to `IsProviderFor` |
+| `__Tag__` | Getter's field tag parameter |
+| `__Table__` | Namespace table parameter |
+
+Generated references to CGP constructs use `::cgp::macro_prelude::<Name>`. This allows expansions to
+compile when the crate has `cgp` in scope without separate imports for every generated name. Do not
+write these internal paths yourself.
 
 ---
 
 ## Component-definition macros
+
+Component macros generate consumer and provider traits from a trait definition. Their arguments
+select the generated names.
 
 ### `#[cgp_component]`
 
@@ -37,9 +82,27 @@ KeyValueArg      -> `name` `:` ComponentName
 ComponentName    -> IDENTIFIER GenericArgs?
 ```
 
-`ProviderName` is shorthand for setting `provider` alone. In the keyed form, written with brace delimiters as `#[cgp_component { … }]`, each key appears at most once, in any order, and `provider` is required. The `name` key defaults to the provider name with a `Component` suffix (`AreaCalculator` → `AreaCalculatorComponent`), and `context` defaults to `__Context__`. The provider name may not carry generics. The component name may.
+A bare provider name is shorthand for setting `provider` alone. In the keyed form, use braces as in
+`#[cgp_component { … }]`. Keys may appear in any order, but each may appear only once and `provider`
+is required.
 
-**Expansion invariant.** From one trait, `#[cgp_component]` emits a fixed set of items plus standard provider impls, and this shape never varies: the **consumer trait** unchanged; the **provider trait** with `Self` moved to a leading `Context` parameter, every `self`/`Self` rewritten to `context`/`Context`, and an `IsProviderFor<{Name}Component, Context, Params>` supertrait; the **consumer blanket impl** (`Context: {Provider}<Context>` ⟹ consumer trait); the **provider blanket impl** (delegates through `DelegateComponent<{Name}Component>`); and the zero-sized **`{Name}Component` marker**. Alongside these it emits a `UseContext` impl, a `RedirectLookup` impl (what the `open` statement and namespaces dispatch through), one `UseDelegate` impl per `#[derive_delegate]`, and prefix impls per `#[prefix]`. Any trait generics land *after* the context in the provider trait and are grouped into the `IsProviderFor` `Params` tuple. See [components](components.md) for the full worked expansion.
+The component name defaults to the provider name plus `Component`, as in `AreaCalculatorComponent`,
+and the context name defaults to `__Context__`. The component name may carry generic arguments; the
+provider name may not.
+
+`#[cgp_component]` preserves the consumer trait and generates the provider trait, component marker,
+and connecting blanket impls. In the provider trait, it moves `Self` to a leading context parameter,
+rewrites the receiver accordingly, and adds `IsProviderFor<{Name}Component, Context, Params>` as a
+supertrait.
+
+The consumer blanket impl makes `Context: {Provider}<Context>` imply the consumer trait. The
+provider blanket impl forwards through `DelegateComponent<{Name}Component>`, using the zero-sized
+component marker as the key.
+
+The macro also generates `UseContext` and `RedirectLookup` impls, a dispatcher impl for each
+`#[derive_delegate]`, and prefix impls for `#[prefix]`. Trait generics follow the context parameter
+in the provider trait and form the `IsProviderFor` `Params` tuple. See [components](components.md)
+for a complete expansion.
 
 ### `#[cgp_type]` and `#[cgp_getter]`
 
@@ -50,11 +113,22 @@ CgpTypeArgs   -> CgpComponentArgs   // default provider: {AssocType}TypeProvider
 CgpGetterArgs -> CgpComponentArgs   // default provider: strip leading `Has`, append `Getter`
 ```
 
-`#[cgp_type]` keys its default off the *associated type's* name (`type Scalar;` → `ScalarTypeProvider`, marker `ScalarTypeProviderComponent`). `#[cgp_getter]` strips a leading `Has` from the trait name and appends `Getter` (`HasName` → `NameGetter`). Beyond the shared component output, `#[cgp_type]` adds a `UseType<T>` blanket impl (the associated type *is* `T`) and a `WithProvider` impl adapting the built-in `TypeProvider`. `#[cgp_getter]` adds a `UseFields` impl (always) plus a `UseField<Tag>` impl and a `WithProvider` impl (only when the trait has exactly one method). See [abstract-types](abstract-types.md) and [functions-and-getters](functions-and-getters.md).
+`#[cgp_type]` derives the default provider name from the associated type: `type Scalar;` produces
+`ScalarTypeProvider` and `ScalarTypeProviderComponent`. It adds a `UseType<T>` blanket impl that
+supplies `T` and a `WithProvider` impl adapting the built-in `TypeProvider`. See
+[abstract-types](abstract-types.md).
+
+`#[cgp_getter]` derives its provider name by removing a leading `Has` and appending `Getter`, so
+`HasName` produces `NameGetter`. It always adds a `UseFields` impl. For single-method traits, it
+also adds `UseField<Tag>` and `WithProvider` impls. See
+[functions-and-getters](functions-and-getters.md).
 
 ---
 
 ## Provider-writing macros
+
+Provider macros generate implementations and matching dependency markers. Choose `#[cgp_impl]` for
+consumer-style method signatures or the lower-level macros for explicit provider-trait impls.
 
 ### `#[cgp_impl]`
 
@@ -67,11 +141,29 @@ ProviderType  -> Type
 ComponentType -> Type
 ```
 
-`new` makes the macro also emit `pub struct <ProviderType>;`. `ProviderType` takes the `Self` position of the generated provider impl: a plain name, a generic provider (`ScaledArea<Inner>`), or the literal `Self`. The optional `: ComponentType` overrides the component in the generated `IsProviderFor` impl, defaulting to the provider trait name plus `Component`.
+`ProviderType` becomes the implementing type in the generated provider impl. It can be a name, a
+generic type such as `ScaledArea<Inner>`, or the literal `Self`. Adding `new` also declares the
+public provider struct.
 
-The impl header has forms worth knowing. **Omit `for Context`** and the macro inserts `__Context__` for you. This is the preferred form, and it reads like an ordinary trait impl. Write `impl<Context> Trait for Context` explicitly only to bound or name the context readably (a lifetime or HRTB the sugar cannot spell). Naming the provider **`Self`**, as `#[cgp_impl(Self)]`, is a passthrough. It emits the block unchanged as a direct consumer-trait impl on the concrete context (the `for Context` clause is then *required*), which is how you apply companion attributes like `#[use_provider]` to a hand-written impl. `new` and the component override are ignored in this form.
+The optional `: ComponentType` overrides the component used in `IsProviderFor`. Without it, the
+component name is the provider trait’s name plus `Component`.
 
-**Expansion invariant.** `#[cgp_impl]` desugars to `#[cgp_provider]`, or to `#[cgp_new_provider]` with `new`. It moves the context back to the provider trait's leading position, swaps the provider name into `Self`, rewrites `&self` to `__context__: &__Context__`, every `self` to `__context__`, and every `Self` to the context type. The rewrite is scoped to the method bodies. A nested item's own `self`/`Self` is left alone, except inside a `macro!(…)` invocation, which the token rewrite cannot scope and so rewrites anyway. See [components](components.md).
+Prefer an impl header that omits `for Context`; the macro inserts `__Context__`. Use
+`impl<Context> Trait for Context` only when the context must be named or bounded explicitly, such as
+for a lifetime or higher-ranked trait bound the shorthand cannot express.
+
+`#[cgp_impl(Self)]` emits a direct consumer-trait impl while still applying companion attributes
+such as `#[use_provider]`. This form requires `for Context` and ignores `new` and the component
+override.
+
+`#[cgp_impl]` expands through `#[cgp_provider]`, or `#[cgp_new_provider]` when `new` is present. It
+places the context in the provider trait’s leading parameter and the provider type in the impl’s
+`Self` position. It rewrites `&self` to `__context__: &__Context__`, uses of `self` to the context
+value, and uses of `Self` to the context type.
+
+Body rewriting respects nested items’ own `self` and `Self` meanings. Macro invocations are an
+exception: the token rewrite cannot identify their scopes, so it rewrites those names inside
+`macro!(…)` tokens too. See [components](components.md).
 
 ### `#[cgp_provider]` and `#[cgp_new_provider]`
 
@@ -84,13 +176,20 @@ CgpNewProviderArgs -> ComponentType?
 ComponentType      -> Type
 ```
 
-Applied to a provider-trait impl written directly on a provider struct, the macro passes the impl through unchanged and derives the matching `IsProviderFor` impl from it. That derived impl is a copy with the body and associated types stripped, the trait swapped to `IsProviderFor`, and the same `where` clause kept. The trait arguments become `IsProviderFor<{Component}, {Context}, ({trailing params})>`: component first (the argument overrides the default), context second (the provider trait's leading argument), and a tuple of every remaining provider-trait parameter third (`()` when none). A **const argument in the provider trait's own argument list is rejected** with a spanned error, because a const cannot key the type-based `Params` tuple. A const generic on the provider *struct* flows through untouched.
+These macros preserve the provider-trait impl and generate `IsProviderFor` with the same `where`
+bounds. The marker impl omits method bodies and associated types. Its arguments are the selected
+component, the provider trait’s leading context argument, and a tuple of trailing parameters, using
+`()` when that tuple is empty.
+
+A const argument in the provider trait’s argument list is rejected because `Params` is a tuple of
+types. Const generics on the provider struct are preserved.
 
 ---
 
 ## Function, getter, and handler macros
 
-These macros are applied to a plain Rust function or trait, so most take only an optional name and read the rest of their behavior off the item's shape. Their grammars are small:
+Function, getter, and handler macros derive most of their behavior from the annotated Rust item.
+Their custom arguments select names:
 
 ```ebnf
 CgpFnArgs       -> TraitName?      // #[cgp_fn]:       default = fn name in PascalCase
@@ -103,31 +202,78 @@ ProviderName -> IDENTIFIER
 ContextName  -> IDENTIFIER
 ```
 
-`#[cgp_auto_getter]`, `#[cgp_auto_dispatch]`, and `#[async_trait]` **do not take an argument**. They are plain attributes on a trait without a custom grammar. Their behavior comes entirely from the annotated trait and from separate companion attributes.
+`#[cgp_auto_getter]`, `#[cgp_auto_dispatch]`, and `#[async_trait]` do not accept arguments. Their
+behavior comes from the annotated trait and supported companion attributes.
 
-The rest of each function macro's contract is read from the item, not the argument. `#[cgp_fn]` lifts function generics onto both the generated trait and impl while keeping the `where` clause impl-only, turns `#[implicit]` parameters into `HasField` reads, and forbids generics on the desugared *method* (a method-level generic is silently treated as a trait/impl generic). `#[cgp_computer]` collects the function's parameters into one tuple `Input`, chooses the base component and promotion bundle from whether the function is `async` and whether it returns `Result`, and wires the rest of the handler family by promotion. `#[cgp_producer]` requires a zero-parameter, non-`async`, non-generic function. `#[async_trait]` rewrites each `async fn` to `-> impl Future`. See [functions-and-getters](functions-and-getters.md) and [handlers](handlers.md) for the expansions.
+`#[cgp_fn]` puts function generics on the generated trait and impl, keeps ordinary `where` bounds on
+the impl, and converts implicit arguments to field reads. It does not generate method-level
+generics: parameters written on the function become trait and impl parameters.
+
+`#[cgp_computer]` combines function parameters into one input tuple. Whether the function is async
+and whether it returns `Result` determine the base component and promotion bundle. `#[cgp_producer]`
+requires a synchronous function without parameters or generics. `#[async_trait]` rewrites async
+methods to return `impl Future`. See [functions-and-getters](functions-and-getters.md) and
+[handlers](handlers.md) for expansions.
 
 ---
 
 ## Attribute modifiers
 
-These attributes refine what a host macro generates. None is a standalone macro. The list names each one's form, what it contributes, and which host macros accept it.
+Modifier attributes are interpreted by a host macro; they do not expand independently. The following
+table lists their accepted forms, effects, and hosts:
 
-- **`#[implicit]`** is a bare marker on a typed, plain-identifier function argument (`#[implicit] width: f64`). It does not take an argument of its own, and `#[implicit(x)]` or `#[implicit = "x"]` is rejected. It removes the argument, adds a `HasField<Symbol!("width")>` bound, and binds the value at the top of the body. A *mutable* implicit (its type carries a `&mut`) must be the sole implicit and needs `&mut self`. Host: `#[cgp_fn]`, `#[cgp_impl]`.
-- **`#[uses(Trait, Trait<P>, …)]`** is a comma-separated list of trait bounds, accumulating across repeats. It adds each as a `Self:` impl-side bound. The simple `Trait<Params>` form reads like an import and is idiomatic, but any `where`-clause bound is accepted, including associated-type equality (`HasErrorType<Error = AppError>`). Prefer `#[use_type]`'s equality form to pin an abstract type. Host: `#[cgp_fn]`, `#[cgp_impl]`.
-- **`#[extend(Trait, Trait<P>, …)]`** takes the same simple-path list. It adds each as a *supertrait* of the generated trait (and, in `#[cgp_fn]`, also as an impl bound). Host: `#[cgp_fn]`, `#[cgp_component]`. Not `#[cgp_impl]`, because a provider impl lacks a trait to attach supertraits to.
-- **`#[extend_where(Pred, …)]`** is a list of full `where`-clause predicates, including associated-type equality, added verbatim to the generated trait's `where` clause. Host: `#[cgp_fn]` only.
-- **`#[impl_generics(Param: Bound, …)]`** adds bounded generic parameters to the generated impl **only**, never the trait. Host: `#[cgp_fn]` only.
-- **`#[use_provider(Provider: Trait<…> + …)]`** completes an inner provider bound by inserting the context as the trait's leading argument (you write `: AreaCalculator`, and it means `AreaCalculator<Self>`) and moving it into the `where` clause. Several trait bounds on **one** provider are joined with `+`. Several **providers** take one stacked attribute each, because a comma-separated list of provider-and-trait pairs does *not* parse. After the first trait the parser is continuing that provider's bounds, so a comma reports `expected +`. This makes the attribute the exception to the one-attribute-comma-separated convention `#[uses]` and `#[use_type]` follow. It only *completes the bound*. It never rewrites the body, which must still call `Provider::method(self)` explicitly. Host: `#[cgp_impl]`, `#[cgp_fn]`.
-- **`#[derive_delegate(Wrapper<Param>)]`** generates a `UseDelegate`-style dispatcher impl keyed on `Param`. Repeat it for several dispatchers. The key may be a tuple `Wrapper<(A, B)>`. This is **legacy**. Prefer the `open` statement, and see [wiring](wiring.md). Host: `#[cgp_component]`.
-- **`#[prefix(@Path in Namespace)]`** registers the component into `Namespace` under `@Path`, emitting one `RedirectLookup` impl. Repeat it for several namespaces. Host: `#[cgp_component]`.
-- **`#[default_impl(Key in NamespacePath)]`** registers a `#[cgp_impl]` provider as a namespace's default for `Key`. The key is a type (`String in DefaultImpls1<Component>`, the per-type form, where the component is named inside the lookup trait) or a `@`-path (`@app.GreeterComponent in AppNamespace`, which binds a prefixed component's own path so a joining context needs no `for` loop). The path may name any lookup trait with a `Delegate` associated type, and the macro appends the table parameter. Repeat the attribute to register into several tables. Host: `#[cgp_impl]`.
+| Attribute | Effect | Host macros |
+| --- | --- | --- |
+| `#[implicit]` | Replaces an argument with a context-field read | `cgp_fn`, `cgp_impl` |
+| `#[uses(Trait, Trait<P>, …)]` | Adds `Self` bounds to the impl | `cgp_fn`, `cgp_impl` |
+| `#[extend(Trait, Trait<P>, …)]` | Adds supertraits; also adds impl bounds in `cgp_fn` | `cgp_fn`, `cgp_component` |
+| `#[extend_where(Pred, …)]` | Adds predicates to the generated trait's `where` clause | `cgp_fn` |
+| `#[impl_generics(Param: Bound, …)]` | Adds bounded parameters only to the impl | `cgp_fn` |
+| `#[use_provider(Provider: Trait<…> + …)]` | Inserts the context into inner-provider bounds | `cgp_impl`, `cgp_fn` |
+| `#[derive_delegate(Wrapper<Param>)]` | Generates a parameter-keyed dispatcher impl | `cgp_component` |
+| `#[prefix(@Path in Namespace)]` | Registers a component path through `RedirectLookup` | `cgp_component` |
+| `#[default_impl(Key in NamespacePath)]` | Registers a provider as a namespace default | `cgp_impl` |
+
+`#[implicit]` is a bare marker on an argument with a type and plain identifier, such as
+`#[implicit] width: f64`. It rejects `#[implicit(x)]` and `#[implicit = "x"]`. The host removes the
+argument, adds the field bound, and binds the value at the start of the body. A mutable implicit
+must be the only implicit argument and requires `&mut self`.
+
+`#[uses]` accepts comma-separated bounds and accumulates repeated attributes. Prefer the simple
+`Trait<Params>` form. Associated-type equality such as `HasErrorType<Error = AppError>` is also
+accepted, but use `#[use_type]` to constrain an abstract type and rewrite its uses together.
+
+`#[extend]` accepts the same simple-path list for public supertraits. It does not apply to
+`#[cgp_impl]`, which does not define a trait to extend. `#[extend_where]` instead accepts full
+`where` predicates, including associated-type equality. `#[impl_generics]` adds parameters only to
+the generated impl, leaving the trait's parameters unchanged.
+
+`#[use_provider]` accepts one provider per attribute. Join several bounds on that provider with `+`,
+and use separate attributes for different providers. A comma-separated list of provider-and-trait
+pairs fails with `expected +`. The attribute turns a bound such as `AreaCalculator` into
+`AreaCalculator<Self>` and adds it to the impl's `where` clause. It does not rewrite the body:
+call `Provider::method(self)` explicitly.
+
+`#[derive_delegate]` supports a single dispatch key or a tuple, such as `Wrapper<(A, B)>`. Repeat
+the attribute to generate several dispatchers. This is legacy syntax; prefer `open` for new wiring
+where applicable. See [wiring](wiring.md).
+
+`#[prefix]` registers a component in a namespace and generates a `RedirectLookup` impl. Repeat it
+to register the component in several namespaces.
+
+`#[default_impl]` accepts a type key or an `@`-path key. A type key such as
+`String in DefaultImpls1<Component>` names the component in the lookup trait. A path key such as
+`@app.GreeterComponent in AppNamespace` binds the prefixed component's own path, so a context can
+join without a `for` loop. The namespace path may name any lookup trait with a `Delegate`
+associated type; the macro appends the table parameter. Repeat the attribute to register in
+several tables.
 
 The check macros carry their own modifiers, covered with them below: `#[check_trait(Name)]` and `#[check_providers(…)]` on a table, `#[check_params(…)]` and `#[skip_check]` on an entry.
 
 ### `#[use_type]`
 
-This attribute has enough structure to warrant a grammar of its own:
+`#[use_type]` imports associated types and rewrites their local names to qualified paths. Its
+arguments identify the trait, imported types, and optional source context:
 
 ```ebnf
 UseTypeArgs  -> UseTypeSpec ( `,` UseTypeSpec )* `,`?
@@ -143,11 +289,24 @@ TypeItems    -> UseTypeIdent
 UseTypeIdent -> IDENTIFIER ( `as` IDENTIFIER )? ( `=` Type )?
 ```
 
-The `.` (not `::`) after the trait path starts the associated-type list. A trait path keeps its own `::` segments and may carry generics. Omitting the `in ContextPath` suffix defaults the rewrite target to `Self`. An `in Types` suffix rewrites against a named generic parameter and adds `Types: Trait` as a `where` bound rather than a supertrait. `in` is a reserved keyword, so it can never be mistaken for part of a type, and it reads like the `in` in `#[prefix(@Path in Namespace)]`. In each `UseTypeIdent`, `as` gives a local alias to write in signatures, and `= Type` pins the type with an equality bound. The equality is accepted on `#[cgp_fn]`/`#[cgp_impl]` and **rejected on `#[cgp_component]`**, whose trait definition cannot carry the impl-side equality. The macro rewrites every bare mention of the imported identifier (or alias) to the fully qualified `<Target as Trait>::Type`. Host: `#[cgp_fn]`, `#[cgp_impl]`, `#[cgp_component]`. See [abstract-types](abstract-types.md).
+Separate the trait path from its associated-type list with `.`. The trait path retains its own `::`
+segments and generic arguments. Each imported name can have an `as` alias and an `= Type` equality
+constraint. Bare uses of the imported name or alias become `<Target as Trait>::Type`.
+
+The target defaults to `Self`. An `in Types` suffix selects a named type and adds `Types: Trait` as
+a `where` bound instead of a supertrait. The reserved keyword `in` separates the target
+unambiguously from the preceding type.
+
+Equality constraints are accepted on `#[cgp_fn]` and `#[cgp_impl]`. `#[cgp_component]` accepts
+imports but rejects equality constraints because they produce impl-side bounds. See
+[abstract-types](abstract-types.md) for aliases, targets, and equality examples.
 
 ---
 
 ## Wiring and checking macros
+
+Wiring macros select providers, and check macros assert that the selected providers satisfy their
+dependencies. Namespaces share wiring across contexts.
 
 ### `delegate_components!`
 
@@ -187,15 +346,46 @@ ProviderValue -> Type
 InnerTable    -> IDENTIFIER GenericArgs? `{` TableBody `}`
 ```
 
-Every **statement must lead the block, before any mapping**. The parser reads statements first, so an `open`, `namespace`, or `for` written after a `Key: Value` line fails to parse (see error decoding below). A leading `Generics` list makes the whole table generic over the target, and `new` also emits the target struct. Of the mapping operators, `` `:` `` (map to a provider) is the common one. `` `->` `` forwards the key to *another table's* entry for that same key, adding a `Value: DelegateComponent<Key>` bound. It is a plain-wiring form without a namespace involved. `` `=>` `` redirects the lookup along an `@`-path and is the namespace mechanism, of which `open` is the sugared special case. The parser accepts any operator against any key form, but far fewer combinations are useful than the grammar allows.
+Place every `open`, `namespace`, and `for` statement before mappings. The parser reads statements
+first, so one appearing after `Key: Value` fails to parse. A leading generic list applies to the
+target table, and `new` also declares the target struct.
 
-A `Key` may be one type, a bracketed list expanding to one entry each, or an `@`-path. **The grouping forms inside a path key are different and easy to confuse.** A bracketed group holds alternative segments for *one position* and may be followed by `` `.` `` and more path (`@app.[FooComponent, BarComponent].[u64, String]`). A braced group holds alternative *whole tails* and ends the path, so only it can nest and its alternatives may differ in length (`@app.{ErrorRaiserComponent.{&'static str, String}, ErrorWrapperComponent}`). Both fan out to the cartesian product with the rest of the path. A `PathValue`, the right side of a `` `=>` ``, does not take groups. The nested-table `ProviderValue` form (`UseDelegate<new Inner { … }>`) defines an inner table in place. It is the legacy dispatch form, whose inner name may itself carry generics (`UseDelegate<new BarValue<T> { … }>`) and whose wrapper need not be `UseDelegate`. An `OpenStmt` opens one component (braces optional) or several (braces required) for per-value `@Component.Key: Provider` wiring folded into the context's own table. **Attributes are not accepted** on the table or any entry. An unknown attribute is a spanned error, not silently dropped. See [wiring](wiring.md).
+Choose the mapping operator according to the lookup required. `:` selects a provider directly. `->`
+forwards the same key to another table and adds a `Value: DelegateComponent<Key>` bound. `=>`
+redirects along an `@`-path, supporting namespaces and the `open` shorthand. The parser accepts any
+operator with any key form, though not every combination is useful.
 
-**Expansion invariant.** Each plain `Key: Provider` entry emits a `DelegateComponent<Key>` impl with `Delegate = Provider` plus a forwarding `IsProviderFor` impl that threads the provider's dependencies back through the target. An `open Component;` header emits `DelegateComponent<Component>` = `RedirectLookup<Target, PathCons<Component, Nil>>`, and each `@Component.Value: Provider` entry stores that provider under the path key `PathCons<Component, PathCons<Value, __Wildcard__>>` on the target. **The tail is a generic `__Wildcard__` parameter, not `Nil`**, so one entry answers a redirect of any length. The `RedirectLookup` impl appends the dispatch parameter onto the path at resolution time. An `open C;` header and a `C => @C,` mapping produce the identical impl.
+A key can be a type, a bracketed list of types, or an `@`-path. A list produces a separate entry for
+each key. Within paths, brackets and braces have different meanings.
+
+Brackets provide alternatives for one path segment and allow further segments, as in
+`@app.[FooComponent, BarComponent].[u64, String]`. Braces provide alternative complete tails and end
+the path. They may nest and contain tails of different lengths, as in
+`@app.{ErrorRaiserComponent.{&'static str, String}, ErrorWrapperComponent}`. Both forms produce all
+combinations with the rest of the path. A `PathValue` on the right of `=>` does not accept groups.
+
+A nested provider value such as `UseDelegate<new Inner { … }>` declares an inner table. This legacy
+dispatch syntax supports generic table names such as `BarValue<T>` and wrappers other than
+`UseDelegate`.
+
+`open` enables per-value `@Component.Key: Provider` entries directly on the target. Braces are
+optional for one component and required for several. Attributes are rejected on both the table and
+its entries, with an error at the attribute’s source location. See [wiring](wiring.md).
+
+Each plain `Key: Provider` mapping generates `DelegateComponent<Key>` with `Delegate = Provider` and
+a forwarding `IsProviderFor` impl. The latter carries the selected provider’s dependencies through
+the target.
+
+`open Component;` delegates the component to `RedirectLookup<Target, PathCons<Component, Nil>>`. A
+corresponding `@Component.Value: Provider` entry stores the provider under
+`PathCons<Component, PathCons<Value, __Wildcard__>>`. The tail is a generic `__Wildcard__`, so the
+entry can answer redirects with additional path segments. At resolution time, `RedirectLookup`
+appends the dispatch parameter. `open C;` and `C => @C,` generate the same impl.
 
 ### `delegate_and_check_components!`
 
-The same table shape, with a table-level check-trait attribute and per-entry check attributes:
+`delegate_and_check_components!` uses the wiring table grammar and adds attributes for naming the
+check trait and controlling individual checks:
 
 ```ebnf
 DelegateAndCheck -> TableAttr* Generics? `new`? TargetType `{` TableBody `}`
@@ -210,11 +400,20 @@ EntryAttr        -> `#` `[` `check_params` `(` Type ( `,` Type )* `,`? `)` `]`
                   | `#` `[` `skip_check` `]`
 ```
 
-`Mapping`, `Key`, `ProviderValue`, and `Statement` are exactly `delegate_components!`'s, so the **wiring** half accepts everything that macro does. The **check** half does not. A check entry is derived only from a mapping keyed on a component *name* (a `SingleKey` or `MultiKey`, under either `` `:` `` or `` `->` ``). So an `@`-path key, a `` `=>` `` redirect, and every `open`/`namespace`/`for` statement is wired and left **silently unchecked**. Nothing warns of the gap, which is the practical reason larger codebases keep the two macros apart. Its check trait defaults to `__CanUse{Context}`, distinct from `check_components!`'s `__Check{Context}`, so both fit one module. Each mapping carries at most one `EntryAttr`. `#[check_params(…)]` supplies the concrete generic parameters a parameterized component's check needs, and `#[skip_check]` wires without checking. They are mutually exclusive. See [checking](checking.md).
+The wiring half accepts the same `Mapping`, `Key`, `ProviderValue`, and `Statement` forms as
+`delegate_components!`. The checking half derives assertions only for component-name keys:
+`SingleKey` or `MultiKey` under `:` or `->`. Path keys, `=>` redirects, and `open`, `namespace`, and
+`for` statements remain silently unchecked. Use separate wiring and check blocks for these forms.
+
+The generated check trait defaults to `__CanUse{Context}`, distinct from `check_components!`’s
+`__Check{Context}`. Both can therefore appear in one module. Each mapping accepts at most one entry
+attribute: `#[check_params(…)]` supplies concrete parameters, while `#[skip_check]` disables its
+check. They are mutually exclusive. See [checking](checking.md).
 
 ### `check_components!`
 
-One or more check tables, each with optional attributes, generics, a context, an optional `where` clause, and a brace list of entries:
+`check_components!` accepts one or more tables. Each table names a context and entries to check,
+with optional attributes, generics, and a `where` clause:
 
 ```ebnf
 CheckComponents -> CheckTable+
@@ -239,9 +438,21 @@ CheckValue      -> CheckParam
 CheckParam      -> Generics? Type
 ```
 
-A `CheckEntry`'s value is omitted for a parameterless component and required otherwise. A bracketed key or value expands to the cartesian product, so a set of components is checked against a set of parameters. `#[check_trait(Name)]` overrides the derived `__Check{Context}` name. `#[check_providers(…)]` changes the check. Instead of asserting `CanUseComponent` on the context, it asserts `IsProviderFor` on each listed provider, so each layer of a higher-order stack is verified on its own line. See [checking](checking.md).
+Omit the entry value for a component without parameters; otherwise, supply the parameters to check.
+Arrays of keys or values generate checks for every combination. `#[check_trait(Name)]` overrides the
+default `__Check{Context}` name.
 
-**Expansion invariant.** A check table emits one marker trait aliasing the asserted bound plus one empty impl per entry. The impl compiles only if the bound holds. The default form aliases `CanUseComponent<Component, Params>` and implements it for the context. `#[check_providers(…)]` aliases `IsProviderFor<Component, Context, Params>` and implements it for each provider. A successful build *is* the passing assertion, and the checks do not exist at runtime.
+Use `#[check_providers(…)]` to assert `IsProviderFor` on each listed provider instead of
+`CanUseComponent` on the context. This gives each layer of a higher-order provider its own check
+location. See [checking](checking.md).
+
+A check table generates a marker trait for the asserted bound and an empty impl for each entry. The
+impl compiles only if the bound holds. A successful build is the passing assertion; the checks do
+not run at runtime.
+
+Default checks assert `CanUseComponent<Component, Params>` on the context. With
+`#[check_providers(…)]`, they assert `IsProviderFor<Component, Context, Params>` on each named
+provider.
 
 ### `cgp_namespace!`
 
@@ -256,7 +467,15 @@ ParentNamespace -> TypePath GenericArgs?
 NamespaceBody   -> Statement* ( Mapping ( `,` Mapping )* `,`? )?
 ```
 
-The mappings are `delegate_components!`'s `Mapping`, most often a `` `=>` `` redirect to an `@`-path or a `` `:` `` direct provider. The colon between `NamespaceName` and `ParentNamespace` is the *inheritance* colon, distinct from a mapping's `:`. Naming a parent makes the namespace resolve everything the parent does plus its own entries. The table may be omitted when the namespace has no entries of its own, so `new Child: Parent` alone emits the struct, the trait, and the inheritance impl; nothing but a `{` or the end of the input may follow the header, and `delegate_components!` always keeps its braces. This macro also owns the statement forms a context's `delegate_components!` table uses to consume a namespace:
+`cgp_namespace!` reuses the wiring mappings, usually `=>` for path redirection or `:` for a direct
+provider. The colon in the header names a parent namespace, adding its lookups to the child’s own
+entries.
+
+Omit the table when the namespace adds nothing to its parent. `new Child: Parent` generates the
+struct, trait, and inheritance impl. Only `{` or the end of input may follow the header. In
+contrast, `delegate_components!` always requires braces.
+
+Contexts use the following statements inside their wiring tables to import namespace entries:
 
 ```ebnf
 Statement     -> NamespaceStmt | ForStmt
@@ -269,13 +488,16 @@ ForStmt       -> `for` `<` IDENTIFIER `,` IDENTIFIER `>` `in` TypePath WhereClau
 NormalMapping -> Key `:` ProviderValue
 ```
 
-A `NamespaceStmt` forwards every unresolved lookup through the named namespace. A `ForStmt` binds a key variable and a provider variable, reads each entry of the table named after `in`, and emits one `:` mapping per entry. Its optional `where` clause is merged into every impl it generates. Like `delegate_components!`, the body does not accept attributes on any entry. See [namespaces](namespaces.md).
+`namespace Name;` forwards unresolved lookups through that namespace. A `for` statement binds key
+and provider variables from the table named after `in`, then generates the body’s `:` mappings for
+those entries. Its optional `where` clause is added to each generated impl. Entry attributes are
+rejected. See [namespaces](namespaces.md).
 
 ---
 
 ## Type-level construction macros
 
-The type-level macros build the vocabulary the rest of CGP keys on, and their grammars are minimal:
+Type-level construction macros encode strings, lists, and paths for CGP lookups. Their inputs are:
 
 ```ebnf
 SymbolInput  -> STRING_LITERAL
@@ -289,53 +511,115 @@ PathInput    -> `@` PathSegment ( `.` PathSegment )*
 PathSegment  -> Type
 ```
 
-Each expands to a fixed list, and knowing the list lets you read a printed type. `Symbol!("abc")` becomes `Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>`. The leading const is the *byte* length (so `Symbol!("世界")` records `6`), present only because stable Rust cannot compute a `Chars` length in const position. `Product![A, B]` becomes `Cons<A, Cons<B, Nil>>` and `product![…]` builds the matching value. The empty forms are `Product![]`/`product![]` over `Nil`. `Sum![A, B]` becomes `Either<A, Either<B, Void>>`, terminating in the uninhabited `Void` rather than `Nil`. `Path!(@app.error.FooComponent)` becomes a `PathCons` chain in which a lowercase, non-primitive segment is a `Symbol!` and a capitalized or primitive segment stays the named type. See [type-level-primitives](type-level-primitives.md).
+`Symbol!("abc")` expands to `Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>`. The leading const
+is the byte length, so `Symbol!("世界")` records `6`. It supplies a length that the supported stable
+Rust version cannot compute from `Chars` in const position.
+
+`Product![A, B]` expands to `Cons<A, Cons<B, Nil>>`, and `product![…]` constructs the corresponding
+value. Empty products use `Nil`. `Sum![A, B]` expands to `Either<A, Either<B, Void>>`, ending in the
+uninhabited `Void`.
+
+`Path!(@app.error.FooComponent)` expands to a `PathCons` chain. Lowercase non-primitive segments
+become `Symbol!` tags; capitalized or primitive segments remain types. See
+[type-level-primitives](type-level-primitives.md).
 
 ---
 
 ## Derives
 
-The data derives (`#[derive(HasField)]`, `HasFields`, `CgpData`, `CgpRecord`, `CgpVariant`, `BuildField`, `ExtractField`, `FromVariant`) do not take custom arguments. They are ordinary derives whose behavior is fixed by the item they annotate. Their one grammar-shaped constraint is on **variant shape**. The enum derives (`CgpVariant`, `CgpData` on an enum, `ExtractField`, `FromVariant`) require every variant to be a single unnamed-field tuple variant (`Circle(Circle)`), because each variant's payload must be one nameable type. A fieldless (`Empty`), multi-field (`Pair(A, B)`), or struct-style (`Named { x: A }`) variant fails with **"Expected variant to contain exactly one unnamed field"**. Wrap a richer payload in a dedicated struct. A named struct field is keyed by `Symbol!`, a tuple-struct field by `Index<N>`. See [extensible-data](extensible-data.md).
+Data derives do not accept custom arguments. `HasField`, `HasFields`, `CgpData`, `CgpRecord`,
+`CgpVariant`, `BuildField`, `ExtractField`, and `FromVariant` generate code from the annotated
+item’s structure. Named struct fields use `Symbol!` tags, and tuple fields use `Index<N>`.
+
+`CgpVariant`, enum `CgpData`, `ExtractField`, and `FromVariant` require one unnamed payload per
+variant, as in `Circle(Circle)`. Unit, multi-field tuple, and struct-style variants fail with
+“Expected variant to contain exactly one unnamed field”. Wrap a richer payload in a dedicated
+struct. See [extensible-data](extensible-data.md) for the derives and their restrictions.
 
 ---
 
 ## Reading error messages
 
-CGP errors come from the macro's own parser and from the compiler resolving the expanded code, and each layer has a recognizable vocabulary. The parser errors are usually clear, because most macros validate with spanned messages. The type errors are the ones that need decoding, because they name generated traits rather than the mistake you made.
+Determine whether an error comes from macro parsing or Rust type checking. Parser errors usually
+identify the rejected input directly. Type errors refer to generated traits and types, which must be
+traced back to the original component or wiring.
 
 ### Wiring and dependency errors
 
-**`the trait bound X: IsProviderFor<SomeComponent, Ctx, …> is not satisfied`** is the most common, and it never means "write an `IsProviderFor` impl." Read it as *the provider `X` is not a valid provider for this component on `Ctx`, because one of its impl-side dependencies is unmet*. The truly missing bound is named nearby (a `HasField`, an abstract type, another capability), and that is the thing to supply. `IsProviderFor` exists precisely to surface that named bound instead of a bare "trait not implemented". See [components](components.md).
+An `IsProviderFor` failure means the provider cannot satisfy the component for the given context.
+For example, `X: IsProviderFor<SomeComponent, Ctx, …>` may fail because a field, abstract type, or
+capability is missing. Read the nearby dependency notes and supply the named requirement. Do not
+write an `IsProviderFor` impl to suppress the error; the provider macros generate it. See
+[components](components.md).
 
-**`the trait bound Ctx: DelegateComponent<SomeComponent> is not satisfied`** means the component was never wired on `Ctx` at all, so add the `delegate_components!` entry. Contrast this with the `IsProviderFor` failure above, which means the component *was* wired but to a provider whose dependencies fail. A [check](checking.md) distinguishes the two for you. A failed `DelegateComponent` bound is "not wired," and a failed `IsProviderFor` bound is "wired but unsatisfied."
+A failed `Ctx: DelegateComponent<SomeComponent>` bound means the context lacks wiring for that
+component. Add the delegation entry. A [check](checking.md) distinguishes this from an
+`IsProviderFor` failure, where a provider is selected but its dependencies are unsatisfied.
 
-**A `CanUseComponent` error** comes from a `check_components!` or `delegate_and_check_components!` assertion firing at the wiring site, which is the point of checking. The named unmet bound is the first impl-side dependency the compiler could not satisfy. Trace it through the provider chain to its root. Not every unmet bound is a CGP component. A plain trait or blanket-impl bound a provider also needs lacks a `…Component` marker and cannot be surfaced through wiring, so it must be satisfied by ordinary Rust means.
+A `CanUseComponent` error reports a failed wiring assertion from `check_components!` or
+`delegate_and_check_components!`. Trace the named unmet bound through the provider chain. Some
+requirements are ordinary traits without component markers; satisfy those through Rust impls or
+bounds rather than wiring entries.
 
-**`overflow evaluating the requirement …`** on a component usually means a `UseContext` cycle: a component wired directly to `UseContext` whose only impl of that component *is* that delegation, so the context implements the consumer trait by calling a provider that implements the provider trait by calling the consumer trait. `UseContext` belongs as another provider's inner provider, not as a context's own delegate for the same component. See [wiring](wiring.md).
+An `overflow evaluating the requirement …` error on a component often indicates a `UseContext`
+cycle. If the context delegates a component to `UseContext` and that delegation is its only
+implementation, provider and consumer resolution call back into each other. Use `UseContext` as an
+inner provider rather than the context’s own delegate for that same component. See
+[wiring](wiring.md).
 
 ### Decoding printed type-level values
 
-A long `Symbol<N, Chars<'n', Chars<'a', …>>>` in an error is just a **field-name string**. Read the `Chars` characters in order (here `name`) and ignore the leading length. A `Cons<…, Cons<…, Nil>>` is a record field list, an `Either<…, Either<…, Void>>` an enum variant list, and a `PathCons<…, …>` a namespace/redirect route. The [type-level-primitives](type-level-primitives.md) sub-skill is the full decoder ring. The shortcut is that any nested type ending in `Nil` is a product list and any ending in `Void` is a sum.
+Read the characters in `Symbol<N, Chars<…>>` in order to recover the field name. The leading number
+is the length. Other common expanded forms identify different structures: `Cons<…, Cons<…, Nil>>` is
+a product list, `Either<…, Either<…, Void>>` is a sum list, and `PathCons<…, …>` is a namespace or
+redirect path. See [type-level-primitives](type-level-primitives.md) for the full representations.
 
 ### Errors that underline the whole macro block
 
-A coherence conflict (**`E0119`, conflicting implementations**) or an unconstrained-parameter error (**`E0207`**) whose caret covers an *entire* macro invocation rather than one entry is a span artifact, not a sign the whole block is wrong. The macros stamp generated items with a re-span onto the originating token, but a synthesized token that has lost its span falls back to the invocation site. When you see `E0119` between two generated impls, look for a **duplicated wiring entry** or two `open`/dispatch keys that overlap on the same type. When you see `E0207`, look for a generic parameter that appears in a provider or `#[cgp_fn]` header but is not bound by any argument or `where` clause.
+An error underlining an entire macro invocation may come from one generated entry. Generated tokens
+normally retain a source location, but synthesized tokens can fall back to the invocation’s
+location. The broad underline does not imply that every entry is wrong.
+
+For `E0119` conflicting impls, look for duplicate wiring entries or overlapping dispatch keys. For
+`E0207`, look for a generic parameter in a provider or `#[cgp_fn]` header that is not constrained by
+an argument or `where` clause.
 
 ### Macro-parser errors
 
-These fire before expansion and are worth recognizing by shape. An **`expected :` parse error near an `open`/`namespace`/`for`** almost always means a statement was written *after* a mapping. Statements must lead the block. An **"unsupported attribute"** (or a spanned rejection) on a `delegate_components!` / `cgp_namespace!` entry means those macros do not accept attributes there at all. A **const generic** on a `#[cgp_component]` trait or in a provider trait's argument list is rejected, because CGP dispatches on types, not values (an associated `const` item on the trait is fine). **"Expected variant to contain exactly one unnamed field"** is the variant-derive shape rule above. A **default-bodied `async fn`** inside `#[async_trait]` is unsupported (the body is not wrapped in `async {}`), and a **generic method on a `#[cgp_auto_dispatch]` trait** is rejected because Rust lacks the quantified bound the blanket impl would need.
+Parser and expansion errors often identify a specific input restriction. Use the diagnostic to
+locate the syntax to change:
+
+- **`expected :` near `open`, `namespace`, or `for`:** A statement usually appears after a mapping.
+  Move all statements before the mappings.
+- **Unsupported entry attribute:** `delegate_components!` and `cgp_namespace!` reject attributes on
+  entries. Remove the attribute or use the macro that supports it.
+- **Rejected const generic:** Component-trait parameters and provider-trait arguments must fit the
+  type-based dispatch representation. An associated `const` item on a trait is allowed.
+- **“Expected variant to contain exactly one unnamed field”:** Wrap the variant's payload in one
+  unnamed field, using a separate struct for richer data.
+- **Default-bodied async method:** `#[async_trait]` does not wrap a default body in `async {}`, so
+  that form is unsupported.
+- **Generic `#[cgp_auto_dispatch]` method:** Non-lifetime method parameters require a quantified
+  bound that Rust cannot express, so the macro rejects them.
 
 ---
 
 ## Further reference
 
-This file is a companion to the per-topic sub-skills, which show the same expansions in worked
-context: [components](components.md), [wiring](wiring.md), [checking](checking.md),
-[functions-and-getters](functions-and-getters.md), [abstract-types](abstract-types.md),
-[higher-order-providers](higher-order-providers.md), [namespaces](namespaces.md),
-[handlers](handlers.md), [extensible-data](extensible-data.md), and
-[type-level-primitives](type-level-primitives.md). For the authoritative, exhaustive grammar and
-expansion of any single construct (every accepted form, every corner case, and the implementing
-source), fetch the online knowledge base at
-`https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp`, whose `reference/macros/`
-documents carry the formal Syntax Grammar and Expansion sections these grammars are drawn from.
+The topic references explain these grammars through worked examples:
+
+- [Components](components.md): Trait generation and provider impls.
+- [Wiring](wiring.md): Delegation tables and dispatch.
+- [Checking](checking.md): Assertions and dependency diagnostics.
+- [Functions and getters](functions-and-getters.md): Function macros, field access, and modifiers.
+- [Abstract types](abstract-types.md): Type components and `#[use_type]`.
+- [Higher-order providers](higher-order-providers.md): Inner-provider bounds and calls.
+- [Namespaces](namespaces.md): Shared wiring and defaults.
+- [Handlers](handlers.md): Computation macros and promotion.
+- [Extensible data](extensible-data.md): Data derives and shape restrictions.
+- [Type-level primitives](type-level-primitives.md): Strings, lists, and paths.
+
+Fetch the relevant page from the online
+[CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp) for a
+construct's exhaustive syntax, corner cases, and implementing source. The `reference/macros/`
+documents contain the Syntax Grammar and Expansion sections used by this reference.

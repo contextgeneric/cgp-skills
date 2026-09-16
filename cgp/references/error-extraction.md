@@ -1,36 +1,89 @@
 # Extracting CGP compile errors
 
-This file shows how to turn a CGP compile error, often a wall of repeated failures naming generated types, into a compact, root-cause-first summary. It serves an extracting role and a delegating role, and your task decides which one applies. An agent **extracting** an error reads raw compiler output and reduces it to a few facts. An agent **delegating** hands a long error to a sub-agent so it never touches the main context. Both roles rely on the same shape knowledge, so read [The two shapes](#the-two-shapes-to-recognize) first, then jump to [extracting](#extracting-an-error-yourself) or [delegating](#delegating-the-extraction-to-a-sub-agent).
+Use manual error extraction when `cargo-cgp` is unavailable or leaves a CGP error largely
+unrewritten. The goal is a compact summary that identifies the error class, whether its cause is
+visible, and what to do next. Read [the error shapes](#the-two-shapes-to-recognize), then follow the
+instructions for [extracting](#extracting-an-error-yourself) or
+[delegating](#delegating-the-extraction-to-a-sub-agent) the analysis.
 
-**Prefer `cargo-cgp` first. This sub-skill is the fallback.** When [`cargo-cgp`](https://github.com/contextgeneric/cargo-cgp) is available, it has already done this extraction. It rewrites a recognized CGP error into a `[CGP-Exxx]` headline over a root-cause dependency tree, which *is* the compact summary below. Reach for the manual technique here only when the tool is not installed, or when it leaves an error largely as `rustc` wrote it (a class it does not yet rewrite). The main [SKILL.md tooling section](../SKILL.md) covers installing and running the tool. Everything below is for reading raw compiler output by hand.
+Prefer [`cargo-cgp`](https://github.com/contextgeneric/cargo-cgp) for diagnosis. It rewrites
+recognized errors into a `[CGP-Exxx]` headline and a dependency tree that already provide the
+summary described here. See the [main skill’s tooling section](../SKILL.md) for installation and
+usage. The remaining instructions apply to raw compiler output.
 
 ## Why extraction is a skill of its own
 
-CGP error output is disproportionately large and disproportionately misleading, so reading it well is a distinct task from fixing the code. Wiring is resolved [lazily](checking.md), so one broken link surfaces at every place that transitively needs it, and each failure quotes *generated* code: `IsProviderFor`, `DelegateComponent`, `CanUseComponent`, and the type-level `Symbol`/`Chars`/`PathCons` lists you never wrote. A single missing field can print screens of near-identical errors. Worse, some of that output is actively deceptive. A whole class of CGP errors reports that a trait's bounds are unsatisfied while *hiding* the dependency that failed. Reading such output inline, in the agent trying to fix the code, wastes context on noise and risks chasing a cause the output does not contain.
+Separate reading a long error from fixing the code. [Lazy wiring](checking.md) can report one
+missing dependency at every use that requires it, producing repeated failures involving
+`IsProviderFor`, `DelegateComponent`, `CanUseComponent`, and expanded `Symbol`/`Chars`/`PathCons`
+types. A single missing field can therefore generate many error blocks.
+
+Some CGP errors omit the failed dependency entirely. Reading more of that output cannot reveal the
+cause and may lead to an unsupported diagnosis. Classify the error before tracing its bounds.
 
 ## The two shapes to recognize
 
-Before decoding any nested type, read the *trait* in the error and decide which shape you are looking at, because the shapes differ in whether the root cause is even present. The [macro-grammar](macro-grammar.md) decoder and the [checking](checking.md) playbook cover the full set of error classes. Extraction needs only this distinction.
+Read the trait named in the error before decoding nested types. Determine whether the diagnostic
+exposes the failed dependency or stops at a consumer or provider trait. The [macro-grammar
+decoder](macro-grammar.md) and [checking guide](checking.md) describe the full error classes;
+extraction begins with this distinction.
 
-A **surfaced** error carries the root cause. It is an `E0277` note chain, typically topped by `CanUseComponent` or `IsProviderFor`, that names a concrete missing bound such as `HasField<Symbol!("name")>`. A [`check_components!`](checking.md) assertion produces exactly this, because the check requires `IsProviderFor` as a *direct* bound and forces the compiler to evaluate the provider's `where` clause. The concrete bound is the fact to extract. The compiler names it in a `help:`/"is not implemented" note, and the `required for …` notes trace the dependency path from it back to the check.
+A **surfaced error** includes the root cause. It is an `E0277` note chain, often headed by
+`CanUseComponent` or `IsProviderFor`, that names a concrete missing bound such as
+`HasField<Symbol!("name")>`. A [`check_components!`](checking.md) assertion exposes this bound by
+requiring `IsProviderFor` directly and forcing evaluation of the provider’s `where` clause. Extract
+the missing bound from the `help:` or “is not implemented” note, then follow the `required for …`
+notes back to the check.
 
-A **hidden** error does not carry the root cause. It is an `E0599` "the method `greet` exists for struct `Person`, but its trait bounds were not satisfied", or an `E0277` that a consumer trait like `Person: CanGreet` is unsatisfied. It names the consumer or provider trait and then stops, without a note descending to the missing field or dependency. This happens when broken wiring is exercised by *calling the consumer-trait method directly* rather than through a check. The compiler sees the consumer trait's blanket impl among the candidate impls, finds it inapplicable, and suppresses the nested bound that made it so. The cause is **absent**, not buried. Do not scan a hidden error for a root cause, because it is not there. The fix is to *promote* it into a surfaced error. Add a `check_components!` for the failing component at the wiring site, and read that instead.
+A **hidden error** omits the root cause. It may be an `E0599` reporting that `greet` exists on
+`Person` but its bounds are unsatisfied, or an `E0277` reporting an unmet consumer bound such as
+`Person: CanGreet`. The diagnostic stops at the consumer or provider trait without identifying the
+missing dependency.
+
+Direct consumer-trait calls can produce hidden errors because Rust suppresses the nested bound that
+made a blanket impl inapplicable. Add `check_components!` for the failing component at the wiring
+site and rerun the build to expose that bound. Do not search the original error for a cause it does
+not contain.
 
 ## The cheap first move: grep for the suspected line
 
-Before committing to either role, try to answer your question with a grep. The main agent can often confirm or dismiss a hypothesis without reading the log itself or spawning a sub-agent to read it. Reach for this whenever you have a specific suspicion (a field you think you forgot, a key you think you wired twice, a `UseContext` you think is a cycle) and the failing build is captured to a file. Grep avoids the need to delegate. A targeted search costs a few lines of output where delegating costs a whole sub-agent turn, so a hypothesis you can phrase as a pattern is one you should grep for rather than delegate.
+Search a captured log first when you have a specific hypothesis. A suspected missing field,
+duplicate key, or `UseContext` cycle can often be confirmed with a few matching lines. This avoids
+reading the full log or delegating a question that a targeted search can answer.
 
-Grep the error headlines first, because that one search does the classifying. `grep -nE '^error' /tmp/cgp-error.txt` prints one line per error block, the code and the trait each names, which decides the [shape](#the-two-shapes-to-recognize) and, with the [macro-grammar decoder](macro-grammar.md), the class. A second grep for the class's signature then confirms the cause: `grep -n 'help:'` for a surfaced dependency leaf (a `HasField<Symbol<…>>` spells the field name letter by letter on one line), `conflicting implementation` for a duplicate key, `overflow evaluating` for a cycle, `does not contain any DelegateComponent entry` for an unwired component, `is not constrained` for an unconstrained generic, and so on. The [debugging guide's grep table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log) lists the signature line for every class.
+Search error headlines to classify the failure. `rg -n '^error' /tmp/cgp-error.txt` prints each
+error code and named trait, helping identify the [shape](#the-two-shapes-to-recognize) and [error
+class](macro-grammar.md).
 
-Grep gives way to a full read or a delegation in these cases. A **hidden** error cannot be grepped. If the only headline is an `E0599` "method … exists … but its trait bounds were not satisfied", the cause is absent from the output, so promote it with a `check_components!` and re-run rather than searching for a leaf that is not there. And when the headline grep shows several unrelated classes at once, or the cause hides behind an elided `...` whose full form sits in a `long-type-….txt` file, the search will not converge. That is the point to escalate to [delegation](#delegating-the-extraction-to-a-sub-agent) and let a sub-agent absorb the whole log. The rule is the same throughout: a targeted question is a grep, and an open-ended read is a delegation.
+Search the class’s signature to test the suspected cause. Use `help:` for a surfaced dependency,
+`conflicting implementation` for a duplicate key, `overflow evaluating` for a cycle,
+`does not contain any DelegateComponent entry` for absent wiring, or `is not constrained` for an
+unconstrained generic. A `HasField<Symbol<…>>` line spells out the field name character by
+character. The [debugging guide’s search
+table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log)
+lists signatures for the full set of classes.
+
+Add a check before searching further when the error is hidden. An `E0599` headline without a nested
+dependency requires a new diagnostic, not a broader search.
+
+Delegate a long, open-ended analysis when targeted searches cannot resolve it. Several unrelated
+error classes or a relevant type abbreviated as `...` may require the full log and its
+`long-type-….txt` files. Give that material to a
+[sub-agent](#delegating-the-extraction-to-a-sub-agent) for a compact summary.
 
 ## Extracting an error yourself
 
-You are in this role whenever you are the one reading the raw output, whether as a sub-agent handed the job or as the main agent facing an error short enough to read inline. Your product is the [compact summary](#reduce-to-the-compact-summary) below, never the raw dump.
+Return a [compact summary](#reduce-to-the-compact-summary) when reading raw output yourself. This
+applies both to a sub-agent assigned the analysis and to a main agent reading a short error. Do not
+return the raw log.
 
 ### Capture the output without flooding context
 
-Capture the compiler output to a file rather than letting it stream into your transcript, and target the smallest unit that reproduces the failure. A whole-workspace build multiplies the cascade across crates. A single crate, test, example, or ten-line scratch module shrinks it to the one thing you care about. The commands are your project's ordinary build and test invocations, with nothing CGP-specific:
+Capture the smallest build or test that reproduces the failure. A single crate, test, example, or
+small scratch module limits repeated errors across unrelated code. Save its compiler output to a
+file for targeted reading and keep the full log out of the agent transcript. These commands use
+`tee` to save and print the output; use direct file redirection when terminal output would enter
+the transcript:
 
 ```bash
 # Target the smallest failing unit and redirect everything to a scratch file.
@@ -40,9 +93,18 @@ cargo check -p <your-crate> 2>&1 | tee /tmp/cgp-error.txt
 cargo test -p <your-crate> --test <target> 2>&1 | tee /tmp/cgp-error.txt
 ```
 
-Some plain `rustc` behaviors recur here, and none is CGP-specific. When a type in the error is elided as `...`, the compiler writes its full form to a file named in a final note (`the full name for the type has been written to '….long-type-….txt'`). That elided middle is frequently the one segment that reveals *which* context or path the error is about, so read that file when the cause hinges on a long type. And watch for the **near-contradiction** shape: "the trait `X` is not implemented for `T`" immediately followed by a `help:` note that `X` *is* implemented for `T`. It means an impl exists but a nested bound it carries does not hold, or two candidates are ambiguous. Trust the error, not the `help:`.
+Read the compiler’s long-type file when an abbreviated type hides a relevant context or path. Rust
+names the file in a final note such as “the full name for the type has been written to …”. The
+missing middle of the type may distinguish the failing dependency.
 
-When the cause hinges on *what the macro emitted* rather than on the message itself, stop reading the error and read the expansion. Reach for `cargo cgp expand` first. It prints the crate after macro expansion with CGP's type-level constructs resugared, so a field tag that the error rendered as a `Chars` list reads `Symbol!("height")` in the expansion. The generated code is often easier to read than the diagnostic about it. Narrow it to the part you care about, since a whole crate's expansion is long and a filtered one keeps your context clear:
+Treat a contradictory-looking `help:` note as evidence of conditional or ambiguous impls. If the
+error says `X` is not implemented for `T` while a note lists such an impl, that impl may have an
+unmet nested bound or compete with another candidate. The note does not establish that the
+requirement is satisfied.
+
+Inspect the macro expansion when the failure depends on generated code. Prefer `cargo cgp expand`,
+which restores readable CGP notation such as `Symbol!("height")` in place of expanded `Chars` lists.
+Filter the expansion to the relevant item or save it to a file:
 
 ```sh
 cargo cgp expand --lib --item AreaCalculator     # a trait: every impl of it (what a component generated)
@@ -50,24 +112,45 @@ cargo cgp expand --lib --item contexts::MockApp  # a type: its HasField impls an
 cargo cgp expand --lib > /tmp/expanded.rs        # or redirect the whole thing and grep it
 ```
 
-Pass `--lib` or `--bin NAME` when the package has several targets, or cargo refuses to run. Plain `cargo expand` is the fallback where `cargo cgp expand` is unavailable. It shows the same expansion without the resugaring. In a project set up with the CGP test utilities, the `snapshot_*!` helpers from `cgp-macro-test-util` also pin an expansion as a reviewable snapshot. The [macro-grammar](macro-grammar.md) skill covers how to read the expanded impls once you have them.
+Select `--lib` or `--bin NAME` when the package has several targets. Use plain `cargo expand` if
+`cargo cgp expand` is unavailable; it shows the expansion without restoring CGP notation. In
+projects using CGP test utilities, `snapshot_*!` helpers from `cgp-macro-test-util` also record
+expansions for review. See [macro-grammar](macro-grammar.md) for interpreting the generated impls.
 
 ### Reduce to the compact summary
 
-Reduce the output to the same few facts a CGP error catalog records, and nothing more:
+Summarize the diagnostic with the facts needed to decide the next action:
 
-- **Class and code**: the error code(s) and the trait(s) named (`E0599` on a provider trait, `E0277` through `CanUseComponent`, `E0119` conflicting `DelegateComponent`, `E0207` unconstrained generic, and so on).
-- **Hidden or surfaced**: whether the root cause is present in the output at all.
-- **Root cause and position**: if surfaced, the concrete failing bound and where it sits (in the compiler's `help:` note, near the last or second-to-last block of a cascade, or inside the `long-type-….txt` file). If hidden, say so plainly.
-- **Recommended next action**: fix the named field or wiring, promote a hidden error with a `check_components!`, break a cycle, remove a duplicate key, or whatever else the class implies.
+- **Class and code:** Record the error codes and named traits, such as `E0277` through
+  `CanUseComponent`, `E0119` on `DelegateComponent`, or `E0207` for an unconstrained generic.
+- **Hidden or surfaced:** State whether the output contains the root cause.
+- **Root cause and location:** Name the concrete failed bound and where it appears, such as a
+  `help:` note, a later error block, or a long-type file. State explicitly when the cause is hidden.
+- **Next action:** Identify the relevant fix or diagnostic step: supply a dependency, add a check,
+  break a cycle, or remove a duplicate key.
 
-A good summary is a few lines, not a transcript. Never hand back the raw output. That defeats the purpose of extracting it.
+Keep the summary to a few lines. Include the relevant bound and evidence without reproducing the
+compiler transcript.
 
 ## Delegating the extraction to a sub-agent
 
-You are in this role when you are the main agent and the error is long: a deep cascade, many crates, or output that runs to screens. Spawn a sub-agent to read it and return only the [compact summary](#reduce-to-the-compact-summary). The sub-agent absorbs the wall of text while you keep your own context clean. Give the sub-agent the exact command to run (or the path to an already-captured output file), this skill so it knows the two shapes and the summary format, and the instruction to return *only* the summary. This is the intended workflow both when documenting an error class, where a sub-agent gathers the facts from a failing reproduction, and in an ordinary debugging session, where a sub-agent reads an error too long to justify reading inline. When the returned summary says the error is hidden, the follow-up is almost always to add a check and re-run, which itself may be worth delegating.
+Delegate long error logs to a sub-agent and request only the [compact
+summary](#reduce-to-the-compact-summary). This applies to deep dependency failures, errors repeated
+across crates, and output too long to justify reading in the main context.
+
+Give the sub-agent the captured log’s path or the exact reproduction command, this reference, and
+the required summary format. The same workflow supports documenting an error class and diagnosing a
+failure during development. If the summary identifies a hidden error, add a check and rerun; that
+follow-up can also be delegated.
 
 ## Further reference
 
-- Sibling skills: [checking](checking.md) for why wiring is lazy and how checks force a surfaced error, [macro-grammar](macro-grammar.md) for the full error decoder and how to read an expansion, and [wiring](wiring.md) for the delegation mechanics behind a conflict or cycle.
-- Online: the [error catalog](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/errors) documents each error class and where its root cause sits, and the [debugging guide](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md) is the full tracing playbook.
+Use these references to interpret the error and choose a follow-up:
+
+- [Checking](checking.md): Lazy wiring and checks that expose missing dependencies.
+- [Macro grammar](macro-grammar.md): Error classes and generated impls.
+- [Wiring](wiring.md): Delegation rules behind conflicts and cycles.
+- [Error catalog](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/errors):
+  Documented error classes and the locations of their root causes.
+- [Debugging guide](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md):
+  The complete procedure for tracing failures.
