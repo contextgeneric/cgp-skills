@@ -80,7 +80,8 @@ impl AreaCalculator {
 
 ## Dependencies: `#[uses]` and `#[use_provider]` over hand-written `where`
 
-Declare context capabilities with [`#[uses(...)]`](functions-and-getters.md) and inner-provider
+Declare trait dependencies on the context with [`#[uses(...)]`](functions-and-getters.md) and
+inner-provider
 requirements with [`#[use_provider(...)]`](higher-order-providers.md). These attributes generate
 [impl-side dependencies](components.md): `#[uses(CanCalculateArea)]` adds `Self: CanCalculateArea`,
 and `#[use_provider(Inner: AreaCalculator)]` adds `Inner: AreaCalculator<Self>`. The explicit form
@@ -108,7 +109,7 @@ impl<InnerCalculator> AreaCalculator {
 }
 ```
 
-Use one comma-separated `#[uses]` attribute for several capabilities, as in
+Use one comma-separated `#[uses]` attribute for several traits, as in
 `#[uses(CanQueryUserBalance, CanRaiseHttpError<ErrNotFound, String>)]`. It accepts `where`-clause
 bounds, though the simple `Trait<Params>` form is preferred. For an abstract-type equality such as
 `Self: HasErrorType<Error = AppError>`, prefer the
@@ -154,7 +155,7 @@ impl AreaCalculator {
 Use `#[cgp_auto_getter]` when the access needs a trait of its own:
 
 - **Another type's field:** Require a getter on that type, such as `Request: HasBasicAuthHeader<Self>`.
-- **Named capability:** Expose an accessor that other code requires through a trait bound.
+- **Named accessor:** Expose an accessor that other code requires through a trait bound.
 - **Abstract field type:** Infer a getter's associated return type from the field.
 
 Reserve `#[cgp_getter]` for choosing the getter's source field per context through wiring. Ordinary
@@ -220,8 +221,8 @@ pub trait HasLoggedInUser<App> {
 
 The attribute supplies `App: HasUserIdType`, so the generic parameter needs only the name `App`.
 
-Import abstract types explicitly even when a capability's supertrait already supplies the bound. If
-`CanCreateFoo` extends `HasFooType`, use `#[uses]` for the capability and `#[use_type]` for its
+Import abstract types explicitly even when an imported trait's supertrait already supplies the bound. If
+`CanCreateFoo` extends `HasFooType`, use `#[uses]` for the trait and `#[use_type]` for its
 type:
 
 ```rust
@@ -286,7 +287,8 @@ bound. `#[cgp_component]` rejects it.
 
 ## Supertraits: `#[extend]` over native `:` syntax
 
-Add capability supertraits with [`#[extend(...)]`](functions-and-getters.md). It generates the same
+Add supertraits that contribute methods with [`#[extend(...)]`](functions-and-getters.md). It
+generates the same
 bound as native `pub trait CanDoX: Supertrait` syntax, while distinguishing a public dependency from
 the impl-side dependencies declared with `#[uses]`. The explicit form places `HasName` after the
 trait name:
@@ -308,7 +310,7 @@ pub trait CanGreet {
 }
 ```
 
-Use `#[extend]` for capabilities and `#[use_type]` for abstract types named in the signature. The
+Use `#[extend]` for method supertraits and `#[use_type]` for abstract types named in the signature. The
 latter also rewrites the type aliases. In `#[cgp_fn]`, ordinary `where` clauses describe impl-side
 dependencies, so use `#[extend]` to add a supertrait.
 

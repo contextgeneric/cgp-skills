@@ -88,7 +88,7 @@ returns a product of references. Generic algorithms can use `HasFields`, `ToFiel
 to process this structure without naming the concrete struct.
 
 Derive `HasField` as well when code needs access to individual fields by tag. `HasField<Tag>`
-supplies the per-field capability used by getters, while `HasFields` describes the complete
+supplies the per-field access used by getters, while `HasFields` describes the complete
 structure. See [functions and getters](functions-and-getters.md).
 
 ## Records: building a struct field by field

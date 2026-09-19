@@ -548,7 +548,7 @@ traced back to the original component or wiring.
 
 An `IsProviderFor` failure means the provider cannot satisfy the component for the given context.
 For example, `X: IsProviderFor<SomeComponent, Ctx, …>` may fail because a field, abstract type, or
-capability is missing. Read the nearby dependency notes and supply the named requirement. Do not
+trait implementation is missing. Read the nearby dependency notes and supply the named requirement. Do not
 write an `IsProviderFor` impl to suppress the error; the provider macros generate it. See
 [components](components.md).
 

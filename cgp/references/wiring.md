@@ -173,14 +173,14 @@ where
 ```
 
 Use `UseContext` as an inner provider when a [higher-order provider](higher-order-providers.md)
-should defer to the context's existing capability. Higher-order providers often make it the default
+should defer to the context's existing implementation. Higher-order providers often make it the default
 type argument, allowing wiring to name an explicit inner provider only when that choice should
 differ.
 
 Never delegate a component to `UseContext` when that delegation is the context's only implementation
 of the component. Resolution would require the consumer trait to obtain the provider trait, then
 require the same consumer trait again. The cycle produces an overflow or unsatisfied-bound error. An
-inner `UseContext` call must resolve through an independently available capability.
+inner `UseContext` call must resolve through an independently available implementation.
 
 ## Other providers you will see in tables: `WithProvider` and `UseDefault`
 
@@ -197,7 +197,7 @@ Common aliases avoid spelling out the adapter:
 
 - **`WithField` and `WithFieldRef`:** Adapt a field getter to a getter component.
 - **`WithType` and `WithDelegatedType`:** Adapt a type provider to an abstract-type component.
-- **`WithContext`:** Adapt the context's own capability.
+- **`WithContext`:** Adapt the context's own implementation.
 
 An entry such as `NameGetterComponent: WithField<…>` selects the field getter named inside the
 adapter.

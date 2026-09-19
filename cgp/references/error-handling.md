@@ -37,7 +37,7 @@ The concrete error type must implement `Debug`. This supports `.unwrap()` and de
 an additional bound. `ErrorOf<Context>` abbreviates the associated-type path, so generic code can
 return `Result<T, Self::Error>` or `Result<T, ErrorOf<Context>>` without naming the concrete error.
 
-A shared error type lets fallible operations compose within a context. Each capability depends on
+A shared error type lets fallible operations compose within a context. Each fallible trait depends on
 `HasErrorType` instead of declaring an independent associated error type that callers would have to
 reconcile. `HasErrorType` defines only the type; the raising and wrapping components define
 behavior.
@@ -101,7 +101,7 @@ The component attributes name the provider traits `ErrorRaiser` and `ErrorWrappe
 definitions shown above use `#[derive_delegate(UseDelegate<...>)]` to support dispatch by
 `SourceError` or `Detail`. The wiring examples below use the preferred `open` form.
 
-A provider can require raising and wrapping capabilities without naming a concrete context or error
+A provider can require the raising and wrapping traits without naming a concrete context or error
 type:
 
 ```rust
@@ -165,7 +165,7 @@ delegate_components! {
 
 Wire a string handler alongside `DebugError` or `DisplayError`. These providers format a source
 error or detail as a `String`, then forward it through the context’s `CanRaiseError<String>` or
-`CanWrapError<String>` capability. They do not choose the concrete error type.
+`CanWrapError<String>` implementation. They do not choose the concrete error type.
 
 Use `open` to select a provider per source type. This example sends strings directly to `RaiseFrom`
 and parse errors through `DebugError` first:

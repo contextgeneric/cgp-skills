@@ -9,7 +9,7 @@ reference before working with components or providers.
 A component contains a consumer trait, a provider trait, a `…Component` marker, and blanket impls
 that connect them. The consumer trait is the interface callers use, while the provider trait accepts
 implementations on separate provider types. This separation allows interchangeable implementations
-and capabilities for types the implementing crate does not own.
+and trait implementations for types the implementing crate does not own.
 
 Ordinary trait implementations tie an interface to its implementation on a type. The type receiving
 `.area()` also supplies the trait impl, and coherence permits only one impl of that trait for that
@@ -251,7 +251,7 @@ arguments and getters that read context fields.
 Group component items according to the provider choice that determines their implementation. A
 component trait can contain as many items as an ordinary Rust trait, but one provider supplies them
 all. Keep items together when one choice determines them; separate items that need independent
-choices. Single-method components are common because many application capabilities represent one
+choices. Single-method components are common because many application operations represent one
 choice.
 
 A method and its associated output type often belong in one component. The provider chooses both the
@@ -286,7 +286,7 @@ for the procedure and trade-offs.
 
 Implement a consumer trait directly when provider reuse is unnecessary. An ordinary
 `impl CanGreet for Person { ... }` supports `person.greet()` without wiring. Use the provider
-machinery when the capability needs interchangeable implementations.
+machinery when the trait needs interchangeable implementations.
 
 ## Further reference
 

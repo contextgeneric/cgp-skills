@@ -83,7 +83,7 @@ pub trait CanHandle<Code, Input> {
 }
 ```
 
-A function bounded by `Context: CanHandle<Code, Input>` accepts any wired computation regardless of which capabilities the underlying provider uses. `HandlerRef` borrows the input.
+A function bounded by `Context: CanHandle<Code, Input>` accepts any wired computation regardless of which traits the underlying provider depends on. `HandlerRef` borrows the input.
 
 `CanProduce` creates a value without input. It takes a context and `Code` tag, supports tag-based
 delegation, and does not require `HasErrorType`:

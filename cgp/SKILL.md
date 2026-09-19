@@ -221,14 +221,22 @@ Callers use consumer traits, and providers implement provider traits. Generated 
 connect them: wiring a context to a provider makes the context implement the consumer trait.
 A provider method's `context: &Context` serves the same role as the consumer method's `&self`.
 
-A context can hold the data being operated on or supply the capabilities an operation needs.
+Do not call any of these a **capability**. What a component, a `#[cgp_fn]` function, or a getter
+defines is a *trait*; the thing a caller invokes is a *method* or an *operation*; what `#[uses]`
+imports is a *trait dependency*; and a `#[cgp_fn]` or `#[blanket_trait]` trait that is not a
+component is a *blanket trait*. The word "capability" names a different construct in the
+object-capability model and in Rust's context-and-capabilities proposal, so using it for CGP's
+own constructs misleads readers who know either. Use it only when describing those other systems.
+
+A context can hold the data being operated on or implement the traits an operation needs.
 A **value context** is the data, such as `String` in `String: CanEncode` or `Rectangle` in
-`Rectangle: CanCalculateArea`. An **environmental context** supplies choices and capabilities for
-an application, test harness, or service. Environmental contexts are more common in CGP code and
+`Rectangle: CanCalculateArea`. An **environmental context** carries the wiring choices and implements
+the traits an application, test harness, or service relies on. Environmental contexts are more common
+in CGP code and
 may be fieldless: `struct App;` can exist solely to carry wiring. Both kinds occupy the `Self`
 position and carry a wiring table, so their signatures do not distinguish them.
 
-A component's target determines what its capability operates on. A self-targeted component acts on
+A component's target determines what its methods operate on. A self-targeted component acts on
 `Self`, as in `CanGreet`, `HasErrorType`, and getters. A parameter-targeted component acts on a type
 parameter while `Self` selects the implementation, as in `CanEncodeValue<Value>` or
 `CanCalculateArea<Shape>`. A parameter can also select wiring: in `CanCompute<Code, Input>`,
@@ -257,7 +265,7 @@ Most CGP code is readable once you recognize a handful of shapes:
   *context*, and `#[uses]` lists the impl-side dependencies. It desugars to `where Self: HasName`,
   the form you read in older code.
 - `#[cgp_fn] fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64 { … }`
-  defines a single-implementation capability as a blanket-impl trait, pulling `width`/`height` from
+  defines a trait with a single blanket implementation, pulling `width`/`height` from
   the context's fields automatically.
 - `delegate_components! { Person { GreeterComponent: GreetHello } }` wires the `Person` context. It
   says "for the `Greeter` component, `Person` uses the `GreetHello` provider." After this, `Person`
@@ -280,13 +288,13 @@ generated code and legacy implementations, and some advanced cases still require
 |---|---|---|
 | write a provider | `#[cgp_impl]`, header `impl Trait` (omit `for Context`) | raw `#[cgp_provider]` / `#[cgp_new_provider]` |
 | read a field from your own context | an `#[implicit]` argument | `#[cgp_auto_getter]` / any getter trait declared just to read it |
-| declare a getter (field on *another* type, or a named shared capability) | `#[cgp_auto_getter]`, used sparingly | `#[cgp_getter]` (only for per-context field choice) |
-| require a capability | `#[uses(Trait)]` | `where Self: Trait` |
+| declare a getter (field on *another* type, or a named accessor other code requires) | `#[cgp_auto_getter]`, used sparingly | `#[cgp_getter]` (only for per-context field choice) |
+| require a trait on the context | `#[uses(Trait)]` | `where Self: Trait` |
 | require an inner provider | `#[use_provider(P: Trait)]` | `where P: Trait<Self>` |
 | name an abstract type (e.g. `Error`) | `#[use_type(Trait.Type)]` + the bare alias | `: Trait` supertrait + `Self::Type` |
 | pass several args to `#[uses]` / `#[use_type]` | one attribute, comma-separated | repeating the same attribute |
 | bind several inner providers with `#[use_provider]` | one attribute per provider | a comma-separated list of pairs (it does not parse) |
-| add a capability supertrait | `#[extend(Trait)]` | native `pub trait …: Supertrait` |
+| add a supertrait that contributes methods | `#[extend(Trait)]` | native `pub trait …: Supertrait` |
 | dispatch a component per type | the `open` statement (or a namespace) | `#[derive_delegate]` + `UseDelegate<new …>` tables |
 | verify a context is fully wired | separate `check_components!` (or `delegate_and_check_components!` for a basic starter context) | leaving a context's wiring unchecked |
 | build a field/list/string/path type | `Symbol!` / `Product!` / `Sum!` / `Path!` sugar | hand-written `Cons`/`Nil`/`Chars`/`Either`/`PathCons` |
@@ -334,8 +342,8 @@ import for brevity.
 
 ## Components
 
-`#[cgp_component]` generates the traits and wiring support that separate using a capability from
-implementing it. Apply it to the consumer trait that callers will use:
+`#[cgp_component]` generates the traits and wiring support that separate calling a trait's methods
+from implementing them. Apply it to the consumer trait that callers will use:
 
 ```rust
 #[cgp_component(Greeter)]
@@ -458,12 +466,12 @@ Use these modern forms by default, with explicit syntax only where the attribute
 the required bounds:
 
 - **Providers:** Write `#[cgp_impl]` with an `impl Greeter` header, omitting `for Context`.
-- **Dependencies:** Use [`#[uses]`](references/functions-and-getters.md) for capabilities and
+- **Dependencies:** Use [`#[uses]`](references/functions-and-getters.md) for trait dependencies and
   [`#[use_provider]`](references/higher-order-providers.md) for inner providers.
 - **Field access:** Prefer [`#[implicit]`](references/functions-and-getters.md) for fields on the
   provider's context, including fields read by several providers. Use getter traits for access on
-  other types, named capabilities, or associated types inferred from fields.
-- **Capability supertraits:** Use [`#[extend]`](references/functions-and-getters.md).
+  other types, named accessors other code requires, or associated types inferred from fields.
+- **Method supertraits:** Use [`#[extend]`](references/functions-and-getters.md).
 - **Abstract types:** Import them with [`#[use_type]`](references/abstract-types.md) and use the bare
   alias, including in `#[cgp_component]` definitions.
 - **Per-type dispatch:** Use `open` or a namespace when defining new components.
@@ -722,8 +730,8 @@ fn scaled_rectangle_area(&self, #[implicit] scale_factor: f64) -> f64 {
 
 `#[extend(Trait)]` adds supertrait bounds to the generated trait. It is the only way to add
 supertraits in `#[cgp_fn]`, where ordinary `where` clauses declare impl-side dependencies. It is
-also the preferred form for non-type capability supertraits on `#[cgp_component]`: the attribute
-presents a capability dependency directly.
+also the preferred form for a non-type supertrait on `#[cgp_component]`: the attribute
+presents the trait dependency directly.
 
 Use `#[use_type]` for an abstract-type supertrait whose associated type appears in the signatures.
 It adds the supertrait and rewrites uses of the type.
@@ -741,12 +749,12 @@ For example, `#[impl_generics(Name: Display)]` can support an `#[implicit] name:
 Prefer `#[implicit]` arguments for reading fields from the provider's own context. They cover
 fields shared by several providers and borrow plain `&T` arguments without cloning.
 
-Use getter traits sparingly, for capabilities that implicit arguments cannot express:
+Use getter traits sparingly, for the cases implicit arguments cannot express:
 
 - **Access on another type:** Take that type as the first argument, as in
   `fn foo_bar(foo: &Self::Foo) -> &Self::Bar`, called as `App::foo_bar(&foo)`, or require a getter
   bound such as `Request: HasBasicAuthHeader<Self>`.
-- **Named access capability:** Expose an accessor that other code requires through a bound such as
+- **Named accessor:** Expose an accessor that other code requires through a bound such as
   `#[uses(HasName)]` or a supertrait.
 - **Abstract field type:** Declare an associated return type inferred from the field, keeping its
   concrete type hidden from callers.
@@ -856,7 +864,7 @@ the provider trait appends the parameters after the context (`AreaCalculator<Con
 `IsProviderFor` groups them into its `Params` tuple, and lifetimes are lifted into the `Life<'a>`
 type. Such a component is most useful for **cross-context dependencies**. When the main target is a
 generic parameter (`CanCalculateArea<Shape>: HasScalarType`), individual shape types need not
-implement shared capabilities. The common context supplies the shared abstract type, value-level
+implement the shared traits. The common context supplies the shared abstract type, value-level
 injection (a global scale factor via a getter), and lazy per-context provider binding, so two apps
 can wire the same shape to different providers.
 
@@ -1060,7 +1068,7 @@ Choose the remaining references by task:
   first. Covers summarizing raw errors, distinguishing hidden from surfaced causes, confirming a
   cause through a signature line, and delegating error reading to a sub-agent.
 - **[Functions and getters](references/functions-and-getters.md):** Load for field access and
-  function-style capabilities. Covers `HasField`, `#[cgp_fn]`, implicit access and its borrowing
+  function-style traits. Covers `HasField`, `#[cgp_fn]`, implicit access and its borrowing
   rules, dependency attributes, getter macros, `UseField`/`WithField`, and `ChainGetters`.
 - **[Abstract types](references/abstract-types.md):** Load for associated-type abstraction. Covers
   `#[cgp_type]`, `HasType`/`TypeProvider`, `UseType`/`UseDelegatedType` wiring, `#[use_type]` imports,
@@ -1111,7 +1119,9 @@ concepts such as generics, traits, blanket impls, and coherence as needed, along
 functional or type-level programming concepts.
 
 Explain wiring as choosing a provider from a table. Keep `IsProviderFor`, `DelegateComponent`, and
-generated blanket impls out of the explanation unless the user asks about internals. Familiar
+generated blanket impls out of the explanation unless the user asks about internals. Say "trait",
+"method", or "operation" for what a component or `#[cgp_fn]` defines, never "capability", per
+[The core vocabulary](#the-core-vocabulary). Familiar
 analogies can help explain type-level tables, lists, and strings, but make their limits explicit:
 CGP resolves wiring at compile time and generates direct static calls. If comparing it to a vtable,
 state that CGP resolves calls statically, without a runtime table, dynamic dispatch, or lookup cost.
@@ -1125,7 +1135,7 @@ choice about provider reuse, following [components](references/components.md).
 When asked to explain a specific piece of code, look up the definitions it depends on before
 answering. To explain a `delegate_components!` entry, find the consumer and provider traits behind
 the component key and the body of the provider it maps to. To explain a provider, read its own
-definition and the definitions of every capability in its `where` clause. To explain how a context
+definition and the definitions of every trait in its `where` clause. To explain how a context
 implements something, follow its wiring to see which providers are chosen and trace a method call
 through them. For instance, if `NameGetterComponent` is wired to `UseField<Symbol!("first_name")>`,
 then a `self.name()` call inside another provider returns the context's `first_name` field.

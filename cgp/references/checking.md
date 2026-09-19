@@ -274,7 +274,7 @@ in `#[check_providers(...)]` to assert `IsProviderFor` for that real context dir
 Trace a failed check from the named bound through the provider's dependencies. The error identifies
 an impl-side requirement the compiler could not satisfy. If `GreetHello` requires `HasName`, supply
 the field or wire the getter component. For a deeper failure, follow each delegation from the
-checked component to the provider requiring the missing capability.
+checked component to the provider requiring the missing trait.
 
 Isolate a failing component in a separate `check_components!` block when a large table produces many
 errors. Specify its parameters so the output concerns only that component's dependencies. For nested

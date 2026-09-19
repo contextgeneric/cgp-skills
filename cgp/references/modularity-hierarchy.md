@@ -14,17 +14,18 @@ Identify the context and the operation's target before choosing a tier. These ro
 provider choices belong and whether different applications can make independent choices.
 
 The context occupies the `Self` position. A **value context** is the data being operated on, such as
-the `Vec<u8>` being serialized. An **environmental context** supplies an application's choices and
-capabilities. Both can carry wiring, but an environmental context may be fieldless because it exists
-only to select providers.
+the `Vec<u8>` being serialized. An **environmental context** carries an application's wiring choices
+and implements the traits its providers rely on. Both can carry wiring, but an environmental
+context may be fieldless because it exists only to select providers.
 
 The target is either `Self` or a type parameter. Self-targeted components include `CanGreet` and
 `HasErrorType`; parameter-targeted components include `CanSerializeValue<Value>` and
 `CanCalculateArea<Shape>`. Not every parameter is a target: in `CanCompute<Code, Input>`, `Input` is
 the target and `Code` selects the wiring.
 
-Tier 3 covers both value contexts targeting themselves and environmental contexts supplying their
-own capabilities. Tiers 4 and 5 use environmental contexts to choose behavior for a separate target
+Tier 3 covers both value contexts targeting themselves and environmental contexts implementing
+operations about themselves. Tiers 4 and 5 use environmental contexts to choose behavior for a
+separate target
 type.
 
 Owning the context permits independent wiring choices even without a target parameter. A foreign
@@ -158,7 +159,8 @@ delegate_components! { TestApp { EmailSenderComponent: RecordEmails } }
 ```
 
 `App` sends email through SMTP, while `TestApp` records it. This common CGP arrangement does not
-need a target parameter: each context chooses a capability about itself. Tier 4 extends that choice
+need a target parameter: each context chooses an implementation of an operation about itself. Tier
+4 extends that choice
 to a separate target type.
 
 ## Tier 4: unique wiring per type, per context
@@ -259,12 +261,13 @@ Choose a tier by the scope of the implementation choice:
 | --- | --- |
 | One shared implementation | Tier 1: generic function or blanket trait |
 | One implementation per type | Tier 2: ordinary trait impls |
-| Reusable providers for a self-targeted capability | Tier 3: component wiring |
+| Reusable providers for a self-targeted component | Tier 3: component wiring |
 | A provider choice per context and target type | Tier 4: parameter-targeted component |
 | A different choice for one nested operation | Tier 5: higher-order provider |
 
 Tiers 1 and 2 use plain Rust. Tier 3 preserves the consumer interface and supports both retrofitting
-a value trait and selecting application capabilities. Tier 4 changes the interface to separate the
+a value trait and selecting implementations for an application. Tier 4 changes the interface to
+separate the
 context from the target. Tier 5 adds local control over nested calls.
 
 Start by deciding whether `Self` represents the data or the application. If it represents the

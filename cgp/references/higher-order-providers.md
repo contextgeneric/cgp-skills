@@ -198,7 +198,7 @@ shape to a different `ScaledArea<...>`.
 
 ## Cross-context dependencies through a shared context
 
-A shared context can supply capabilities for operations on several target types. The target is a
+A shared context can supply the traits that operations on several target types rely on. The target is a
 generic parameter, while supertraits constrain the context. Here, `Shape` identifies the target and
 the context supplies the result’s abstract scalar type:
 
@@ -210,7 +210,7 @@ pub trait CanCalculateAreaOfShape<Shape> {
 }
 ```
 
-Shape types do not need to implement capabilities supplied by the common context. `HasScalarType`
+Shape types do not need to implement the traits supplied by the common context. `HasScalarType`
 lets one application select `f64` and another select a fixed-point type, with all shape providers
 using that context’s [abstract type](abstract-types.md).
 
@@ -219,7 +219,7 @@ implicit argument and apply it to every shape, so the application configures the
 context.
 
 Provider selection is lazy and local to each context. `BaseApp` can select `RectangleArea` for a
-shape, while `ScaledApp` selects `GloballyScaledArea<RectangleArea>`. The same capability then has
+shape, while `ScaledApp` selects `GloballyScaledArea<RectangleArea>`. The same operation then has
 different behavior without changing the shape type.
 
 Record these choices through `open`, or read them from legacy `derive_delegate`/`UseDelegate` tables
