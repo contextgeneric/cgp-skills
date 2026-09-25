@@ -345,6 +345,37 @@ delegate_components! {
 }
 ```
 
+A legacy `UseInputDelegate` table, which dispatches on a later parameter such as a handler's
+`Input`, converts the same way. The `open` redirect appends every type parameter to the lookup path,
+so each table entry becomes a key with one segment per parameter:
+
+```rust
+// legacy
+delegate_components! {
+    Interpreter {
+        ComputerComponent:
+            UseInputDelegate<new EvalComponents {
+                MathExpr: DispatchEval,
+                Plus<MathExpr>: EvalAdd,
+            }>,
+    }
+}
+
+// modern
+delegate_components! {
+    Interpreter {
+        open ComputerComponent;
+
+        @ComputerComponent.<Code> Code.MathExpr: DispatchEval,
+        @ComputerComponent.<Code> Code.Plus<MathExpr>: EvalAdd,
+    }
+}
+```
+
+A `UseDelegate` table nested around `UseInputDelegate` tables, keyed first on the code and then on
+the input, becomes keys with a concrete first segment: `@ComputerComponent.Eval.Plus<MathExpr>`. See
+[wiring](wiring.md#dispatching-on-a-later-parameter) for the one overlap rule.
+
 Components dispatched through `open` or namespaces do not need
 `#[derive_delegate(UseDelegate<Param>)]`. That attribute generates the provider support for legacy
 `UseDelegate` tables. Some CGP error and handler components retain it for compatibility.

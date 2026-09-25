@@ -43,8 +43,10 @@ pub trait CanCompute<Code, Input> {
 ```
 
 The generated provider trait is `Computer<Context, Code, Input>`, with marker `ComputerComponent`.
-The `#[derive_delegate]` attributes support dispatch by `Code` through `UseDelegate` or by `Input`
-through `UseInputDelegate`; see [dispatching](#dispatching-over-extensible-data).
+A context dispatches it by `Code`, by `Input`, or by both with the `open` statement, whose path keys
+take one segment per parameter; see [wiring](wiring.md#dispatching-on-a-later-parameter). The
+`#[derive_delegate]` attributes keep the legacy `UseDelegate` and `UseInputDelegate` tables working
+for existing code.
 
 `AsyncComputer`/`CanComputeAsync` declares `async fn compute_async` under `#[async_trait]`.
 `ComputerRef` and `AsyncComputerRef` borrow `&Input`. These infallible components do not require
@@ -292,28 +294,37 @@ Matching stops at the first successful extraction. Each miss excludes a variant 
 and an uninhabited final remainder proves exhaustiveness without a wildcard.
 `MatchWithValueHandlers<Provider>` builds the adapter list automatically from the enum’s field list.
 
-Use `UseInputDelegate` for dispatch keyed by input type. This nested table assigns payload
-computations and an enum matcher:
+Dispatch by input type with `open` and a two-segment path key. The `open` redirect appends both
+`Code` and `Input` to the lookup path, and a per-key generic `<Code> Code` first segment matches
+every code, so these entries assign payload computations and an enum matcher by input alone:
 
 ```rust
 delegate_components! {
     App {
-        ComputerComponent:
-            UseInputDelegate<new AreaComputers {
-                [Circle, Rectangle]: ComputeArea,
-                [Shape]: MatchWithValueHandlers,
-            }>,
+        open ComputerComponent;
+
+        @ComputerComponent.<Code> Code.[Circle, Rectangle]: ComputeArea,
+        @ComputerComponent.<Code> Code.Shape: MatchWithValueHandlers,
     }
 }
 ```
 
-The table sends `Circle` and `Rectangle` to `ComputeArea`, while `Shape` uses the matcher. Arrays
-let several inputs share one provider.
+The table sends `Circle` and `Rectangle` to `ComputeArea`, while `Shape` uses the matcher, which
+routes each payload back through the context's own wiring. A bracketed segment lets several inputs
+share one provider. See [wiring](wiring.md#dispatching-on-a-later-parameter) for the key forms and
+the one overlap rule.
 
-Keep input-keyed dispatch in a `UseInputDelegate<Input>` table. The `open` statement uses the
-default `RedirectLookup`, which selects by the primary `Code` parameter. Use `open` for code-keyed
-dispatch and the nested table for input-keyed dispatch; see [wiring](wiring.md). This distinction
-changes the wiring syntax, not the dispatch combinators.
+**Legacy form (read but don't write):** older code wires the same dispatch through a nested
+`UseInputDelegate` table. It still works, since the handler components keep
+`#[derive_delegate(UseInputDelegate<Input>)]`:
+
+```rust
+ComputerComponent:
+    UseInputDelegate<new AreaComputers {
+        [Circle, Rectangle]: ComputeArea,
+        [Shape]: MatchWithValueHandlers,
+    }>,
+```
 
 `BuildWithHandlers<Output, Handlers>` constructs a record by passing an empty builder through field
 adapters, then finalizing it. `BuildAndSetField<Tag, Provider>` computes one field, and

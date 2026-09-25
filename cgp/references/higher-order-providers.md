@@ -191,7 +191,9 @@ deprecated, though it is still common in existing wiring. See [wiring](wiring.md
 Separate `#[derive_delegate]` attributes can generate dispatchers for different parameters. For
 example, `UseDelegate<Code>` selects by `Code`, while a user-defined `UseInputDelegate<Input>`
 selects by `Input`. Each dispatcher reads its own table and passes the other parameters through. The
-custom dispatcher struct uses the same single-parameter shape as `UseDelegate`.
+custom dispatcher struct uses the same single-parameter shape as `UseDelegate`. The `open`
+statement needs no second dispatcher: it appends every type parameter to its lookup path, so one key
+can select on `Code`, `Input`, or both; see [wiring](wiring.md#dispatching-on-a-later-parameter).
 
 Per-type dispatch can select higher-order providers. An `open` entry or nested table can map each
 shape to a different `ScaledArea<...>`.

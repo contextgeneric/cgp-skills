@@ -217,16 +217,19 @@ the matching variant and otherwise passes the remainder to the next step:
 ```rust
 delegate_components! {
     Interpreter {
-        ComputerComponent:
-            UseInputDelegate<new EvalComponents {
-                MathExpr: DispatchEval,         // the whole enum → variant dispatcher
-                Plus<MathExpr>: EvalAdd,         // one provider per variant
-                Times<MathExpr>: EvalMultiply,
-                Literal<u64>: EvalLiteral,
-            }>,
+        open ComputerComponent;
+
+        @ComputerComponent.<Code> Code.MathExpr: DispatchEval,        // the whole enum → dispatcher
+        @ComputerComponent.<Code> Code.Plus<MathExpr>: EvalAdd,        // one provider per variant
+        @ComputerComponent.<Code> Code.Times<MathExpr>: EvalMultiply,
+        @ComputerComponent.<Code> Code.Literal<u64>: EvalLiteral,
     }
 }
 ```
+
+Each key dispatches on the input type, the second segment of the path, whatever the `Code`. Older
+code wires the same table as `ComputerComponent: UseInputDelegate<new EvalComponents { … }>`; see
+[wiring](wiring.md#dispatching-on-a-later-parameter).
 
 `MathExpr` selects a context-specific provider that calls the matcher combinator. This wrapper
 breaks the trait-resolution cycle between the matcher and the variant providers it calls. See
