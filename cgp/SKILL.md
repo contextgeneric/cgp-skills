@@ -1011,18 +1011,24 @@ Structural casts convert between data shapes. `CanUpcast` widens a smaller enum 
 
 Namespaces provide reusable wiring tables that can inherit from a parent. Define one with
 `cgp_namespace! { new MyNs: ParentNs { … } }`, omitting the parent when inheritance is unnecessary.
-A context joins it with `namespace MyNs;` inside `delegate_components!`. Lookups without a direct
-context entry forward through the namespace, so direct entries override individual keys.
+A context joins it with `namespace MyNs;` inside `delegate_components!`. The context's direct entries
+supply the paths the namespace leaves unbound; an entry for a key the namespace already binds
+conflicts with it (`E0119`), so a namespace binds only what every joining context shares.
 
 Register a component in a namespace with `#[prefix(@path in MyNs)]` on its `#[cgp_component]`
 trait. A `#[cgp_impl]` provider registers a per-type default through
 `#[default_impl(T in DefaultImpls1<Component>)]`. The context imports those defaults with a
 `for <T, Provider> in Table { … }` loop.
 
+A context can also forward a whole path to an aggregate provider, as in `@app.core: CoreComponents`.
+A bundle keyed by bare component names needs nothing more, but a bundle keyed by paths must join the
+namespace itself, or its entries never match; see [namespaces](references/namespaces.md).
+
 The underlying mechanism is the `RedirectLookup` provider, which re-routes a component lookup along
 a type-level `Path!`. The `open` statement above is a lightweight special case of it.
-`DefaultNamespace` resolves a default provider when a context does not override one. Read
-[namespaces](references/namespaces.md) for the preset and inheritance syntax.
+`DefaultNamespace` is the built-in namespace, where CGP's own components and most applications'
+components register their routes. Read [namespaces](references/namespaces.md) for the preset and
+inheritance syntax.
 
 ---
 

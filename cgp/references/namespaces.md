@@ -138,6 +138,62 @@ the destination path through a `:` entry or `#[default_impl]`, a direct context 
 conflicts with the forwarding impl and Rust reports `E0119`. Keep configurable destinations unbound
 in the namespace; the same restriction applies to a child namespace redefining a parent's key.
 
+### Forwarding a path to an aggregate provider
+
+A context that joins a namespace can forward a whole path to an aggregate provider in one entry, so
+the bundle supplies every component registered under that path. With the user components registered
+under `@app.core.user` and the post components under `@app.core.post`, a bundle keyed by the bare
+component names serves one leaf path:
+
+```rust
+delegate_components! {
+    new UserComponents {
+        UserCreatorComponent: CreateUser,
+        UserGetterComponent: GetUser,
+    }
+}
+
+delegate_components! {
+    App {
+        namespace DefaultNamespace;
+
+        @app.core.user: UserComponents,
+    }
+}
+```
+
+The lookup reaches the bundle keyed by the bare component name: the namespace redirects `App`'s
+lookup of `UserCreatorComponent` to `@app.core.user.UserCreatorComponent`, the `@app.core.user` entry
+matches it, and `UserComponents` is then asked for `UserCreatorComponent` itself. So a bundle keyed by
+bare names needs no `namespace` line.
+
+**A bundle keyed by paths must join the namespace itself.** A bundle that groups several paths under
+a parent, so a context can forward `@app.core` to it, receives the same bare name and matches none of
+its path entries unless its own `namespace` line redirects the name again:
+
+```rust
+delegate_components! {
+    new CoreComponents {
+        namespace DefaultNamespace;   // required: the lookup arrives keyed by the bare name
+
+        @app.core.user: UserComponents,
+        @app.core.post: PostComponents,
+    }
+}
+
+delegate_components! {
+    App {
+        namespace DefaultNamespace;
+
+        @app.core: CoreComponents,
+    }
+}
+```
+
+Without that line, the context's checks fail with the bundle reported as having no entry for the
+bare component name, which `cargo-cgp` tags `[CGP-E110]`. This arrangement suits contexts that
+combine whole groups differently, such as one core with production or test extras.
+
 Check inherited components with a standalone `check_components!`. Joining through
 `delegate_and_check_components!` also checks supported direct entries, but it does not derive checks
 for all components supplied by the namespace. See [checking](checking.md).
