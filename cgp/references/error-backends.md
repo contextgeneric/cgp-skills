@@ -133,9 +133,10 @@ The crates differ in a few facts that affect wiring and output:
 - **`cgp-error-eyre`** needs `std`, because eyre does. It enables eyre's `auto-install` feature, so
   eyre's default handler is installed on the first report; install `color-eyre` or another handler
   with `eyre::set_hook` before raising anything, since `set_hook` returns an error once a handler
-  exists. Reports carry no `Location:` section: the crate leaves `track-caller` off, because the
-  recorded location would always be a line inside the backend. The default handler appends a
-  backtrace to `{:?}` when `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
+  exists. It also enables `track-caller`, so a report's `Location:` section names the line that
+  called `raise_error`: `raise_error` is `#[track_caller]` through every impl, and wrapping keeps
+  the location. The default handler appends a backtrace to `{:?}` when `RUST_BACKTRACE` or
+  `RUST_LIB_BACKTRACE` is set.
 - **`cgp-error-std`** is `no_std` and needs only `alloc`. Its formatting raisers produce a
   `StringError`, and every wrapper produces a `WrapError`, which returns the wrapped error from
   `source()`. `WrapError` prints only its detail with `{}`, so a reporter that walks `source()`
@@ -143,8 +144,9 @@ The crates differ in a few facts that affect wiring and output:
 
 These behaviors describe the `cgp` source on `main`. The 0.8.0-alpha crates on crates.io differ:
 their `cgp-error-eyre` panics on every report unless a hook has been installed with
-`eyre::set_hook`, their `WrapError` prints its source twice when the chain is walked, and their
-`RaiseBoxedStdError` cannot be wired as a wrapper. Check the host's `Cargo.lock`; if it resolves the
+`eyre::set_hook`, their eyre reports record a location inside the backend, their `WrapError`
+prints its source twice when the chain is walked, and their `RaiseBoxedStdError` cannot be wired as
+a wrapper. Check the host's `Cargo.lock`; if it resolves the
 published 0.8.0-alpha backends, install an eyre hook at startup or build against `cgp` `main`
 through `[patch.crates-io]`.
 

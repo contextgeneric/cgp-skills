@@ -82,6 +82,7 @@ type:
 #[derive_delegate(UseDelegate<SourceError>)]
 #[use_type(HasErrorType.Error)]
 pub trait CanRaiseError<SourceError> {
+    #[track_caller]
     fn raise_error(error: SourceError) -> Error;
 }
 
@@ -89,11 +90,17 @@ pub trait CanRaiseError<SourceError> {
 #[derive_delegate(UseDelegate<Detail>)]
 #[use_type(HasErrorType.Error)]
 pub trait CanWrapError<Detail> {
+    #[track_caller]
     fn wrap_error(error: Error, detail: Detail) -> Error;
 }
 ```
 
 Both methods are associated functions, so generic code can call them without a context value.
+Both are also `#[track_caller]`, which Rust applies to every impl of them, including the forwarding
+impls CGP generates. An error library that records `Location::caller()`, such as eyre, therefore
+sees the line that called `raise_error`. The location survives only while every call on the way
+to the library is `#[track_caller]`: `Into::into` and eyre's constructors are, but a helper function
+the provider calls needs the attribute too.
 `Context::raise_error(source)` takes a source error by value and returns the abstract error.
 `Context::wrap_error(err, detail)` takes an existing error and returns it with added detail.
 

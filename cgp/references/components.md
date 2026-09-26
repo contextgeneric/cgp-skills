@@ -106,6 +106,11 @@ The **component marker** is a zero-sized key into those delegation tables:
 pub struct GreeterComponent;
 ```
 
+Attributes on a consumer trait's method are copied onto the provider trait's method declaration.
+This matters for `#[track_caller]`: Rust applies it on a trait method declaration to every impl, so
+it reaches the forwarding impls and every provider, and `Location::caller()` inside a provider
+reports the line that called the consumer method.
+
 These examples use readable names for clarity. The emitted code uses reserved identifiers,
 `__Context__` for the context parameter (overridable) and `__Provider__` for the provider parameter,
 chosen so they never clash with a user's own type names.
