@@ -13,9 +13,9 @@ CGP separates that choice from error construction through cooperating [component
 error into it, and `CanWrapError<Detail>` attaches detail to an existing error. The context selects
 the type and behavior through [wiring](wiring.md).
 
-Import wiring keys and backend providers explicitly when configuring error handling. The prelude
+Import wiring keys and error providers explicitly when configuring error handling. The prelude
 supplies `HasErrorType`, `CanRaiseError`, and `CanWrapError`, but the component markers live under
-`cgp::core::error` and backend providers under `cgp::extra::error`. For example, import
+`cgp::core::error` and the generic error providers under `cgp::extra::error`. For example, import
 `cgp::core::error::ErrorRaiserComponent` and `cgp::extra::error::RaiseFrom` when wiring `RaiseFrom`.
 
 ## `HasErrorType`: the shared abstract error
@@ -67,8 +67,8 @@ delegate_components! {
 
 The example imports the shared `Error` into `CanValidate` and selects `String` for `App`. The
 standalone backends `cgp-error-anyhow`, `cgp-error-eyre`, and `cgp-error-std` provide error-type
-providers for their respective libraries. A context can also choose the type directly with
-`impl HasErrorType for App { type Error = String; }`.
+providers for their respective libraries; see [error backends](error-backends.md). A context can
+also choose the type directly with `impl HasErrorType for App { type Error = String; }`.
 
 ## `CanRaiseError` and `CanWrapError`: producing and enriching the error
 
@@ -129,12 +129,14 @@ impl Loader {
 `CanWrapError<String>` to add detail. These [impl-side dependencies](components.md) are satisfied by
 the context’s providers. Wiring determines the concrete error returned by `load`.
 
-## Wiring the behavior: error-backend providers
+## Wiring the behavior: generic error providers
 
 Wire `ErrorRaiserComponent` and `ErrorWrapperComponent` to select how a context creates and enriches
 errors. The `cgp-error-extra` crate supplies zero-sized providers that work across error types,
 while standalone backends support specific libraries such as `anyhow`. A context can combine a
-backend’s concrete error type with generic raising and wrapping strategies.
+backend’s concrete error type with generic raising and wrapping strategies. The generic providers
+are listed below; the backends' own providers and how to route source types to them are in
+[error backends](error-backends.md).
 
 Choose among these providers according to the operation and required bounds:
 
@@ -201,7 +203,8 @@ represented. Verify the wiring with `check_components!`.
 Error handling combines [abstract types](abstract-types.md), [components](components.md), and
 [wiring](wiring.md). `HasErrorType` selects the shared type through `UseType<E>` or a backend
 provider. `CanRaiseError` and `CanWrapError` require that type and dispatch by source or detail type
-through `open` or legacy `UseDelegate` tables.
+through `open` or legacy `UseDelegate` tables. [Error backends](error-backends.md) covers the
+concrete backends.
 
 Consult the online knowledge base for the component and provider definitions:
 

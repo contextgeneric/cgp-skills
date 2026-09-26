@@ -9,7 +9,9 @@ description: >-
   `check_components!`, or `delegate_and_check_components!` macros, the `Symbol!`,
   `Product!`, `Sum!`, or `Path!` type-level macros, the `HasField`/`HasFields` traits or
   their derives, providers such as `UseContext`/`UseDelegate`/`UseField`/`UseType`, the
-  handler family (`Computer`/`Producer`/`Handler`), or terms like consumer trait,
+  handler family (`Computer`/`Producer`/`Handler`), the error backends
+  (`cgp-error-anyhow`, `cgp-error-eyre`, `cgp-error-std`, such as `UseAnyhowError` and
+  `RaiseAnyhowError`), or terms like consumer trait,
   provider trait, provider, wiring, impl-side dependency, or context-generic. Trigger it
   even when the user does not say "CGP" by name but is clearly working with these
   constructs, when a Rust trait error mentions `IsProviderFor`/`DelegateComponent`, or
@@ -324,7 +326,7 @@ explicit imports:
 | `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsOptional` and `IsOwned` |
 | `cgp::core::base::traits` | `StaticFormat` (and `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, `Symbol`) |
 | `cgp::core::component` | `DefaultImpls1`, `DefaultImpls2` |
-| `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the backend providers |
+| `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the generic error providers |
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
@@ -910,8 +912,8 @@ impl Loader {
 }
 ```
 
-A context wires its error type and the raise/wrap behavior. The backend providers plug in per source
-type, modern-style with `open`. They are `RaiseFrom` (convert via `From`), `ReturnError`,
+A context wires its error type and the raise/wrap behavior. The generic error providers plug in per
+source type, modern-style with `open`. They are `RaiseFrom` (convert via `From`), `ReturnError`,
 `RaiseInfallible`, `PanicOnError`, `DebugError`/`DisplayError` (format into a `String` and forward),
 and `DiscardDetail`:
 
@@ -929,9 +931,10 @@ delegate_components! {
 
 **Imports:** `HasErrorType`, `CanRaiseError`, and `CanWrapError` come from the prelude. The wiring
 keys (`ErrorTypeProviderComponent`, `ErrorRaiserComponent`, `ErrorWrapperComponent`) live under
-`cgp::core::error`, and the backend providers (`RaiseFrom`, `DebugError`, …) under
+`cgp::core::error`, and the generic error providers (`RaiseFrom`, `DebugError`, …) under
 `cgp::extra::error`, so import the specific names you wire. Standalone backends (`cgp-error-anyhow`,
-`cgp-error-eyre`, `cgp-error-std`) provide ready error types.
+`cgp-error-eyre`, `cgp-error-std`) set a concrete error type and supply matching raisers and
+wrappers; load [error backends](references/error-backends.md) before wiring one.
 
 ---
 
@@ -1093,8 +1096,11 @@ Choose the remaining references by task:
   providers. Covers inner-provider bounds, the context parameter, `#[use_provider]`, explicit
   provider calls, `UseContext` defaults, generic components, and cross-context dependencies.
 - **[Error handling](references/error-handling.md):** Load for fallible CGP code. Covers
-  `HasErrorType`, raising and wrapping errors, backend providers, and which imports come from the
-  prelude, `cgp::core::error`, or `cgp::extra::error`.
+  `HasErrorType`, raising and wrapping errors, the generic error providers, and which imports come
+  from the prelude, `cgp::core::error`, or `cgp::extra::error`.
+- **[Error backends](references/error-backends.md):** Load before wiring `cgp-error-anyhow`,
+  `cgp-error-eyre`, or `cgp-error-std`. Covers each backend's four providers, routing each source
+  type, when a backend is unnecessary, per-crate behavior, and the common wiring errors.
 - **[Handlers](references/handlers.md):** Load for computation and I/O pipelines. Covers the
   computation families, function and dispatch macros, combinators, monadic handlers,
   `HasRuntime`/`HasRuntimeType`, and `Send` recovery for async methods.

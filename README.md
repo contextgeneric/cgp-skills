@@ -21,8 +21,8 @@ The references cover these areas:
 
 - **Core constructs:** Components, wiring, checking, functions and getters, abstract types, and
   higher-order providers.
-- **Supporting constructs:** Error handling, handlers, extensible data, namespaces, and type-level
-  primitives.
+- **Supporting constructs:** Error handling, the error backends, handlers, extensible data,
+  namespaces, and type-level primitives.
 - **Syntax and diagnosis:** Modern idioms, macro grammar, and error extraction.
 - **Design choices:** The modularity hierarchy and how much CGP a problem needs.
 
