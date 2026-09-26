@@ -276,7 +276,9 @@ segment, such as `@ComputerComponent.Eval: EvalProvider`, matches that code with
 Every key ends in a wildcard, so a shorter key covers every longer key beneath it. Within one table,
 key a first-parameter value either on its own or per later parameter, never both.
 `@ComputerComponent.Eval` beside `@ComputerComponent.Eval.Plus<MathExpr>` fails with `E0119`, which
-`cargo cgp check` reports as `[CGP-E005]`.
+`cargo cgp check` reports as `[CGP-E005]`. A generic segment matches every value, so
+`@ComputerComponent.<Code> Code.Plus<MathExpr>` also overlaps `@ComputerComponent.Eval`: a table
+that dispatches on the input alone cannot key any code on its own.
 
 Use full namespace paths when the context joins a namespace that registers the component with
 `#[prefix(...)]`. Opening that same component at its bare name conflicts with its namespace route.
