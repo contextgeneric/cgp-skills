@@ -191,6 +191,11 @@ The signature selects these generated forms:
 | Async, plain return | `AsyncComputer` | `PromoteAsyncComputer` |
 | Async, `Result` return | `AsyncComputer` with `Result` output | `PromoteHandler` |
 
+The `Result` check reads the tokens: only a return type written `Result<T, E>` selects a fallible
+bundle. `core::result::Result<T, E>` and `anyhow::Result<T>` are treated as plain values, so
+`try_compute` wraps them in `Ok`, and a one-argument alias written `Result<T>` fails with
+``expected `,` ``. Write the full `Result<T, E>` in a fallible computer's signature.
+
 Generic parameters and `where` bounds are preserved on the provider impl. A `&Value` parameter
 becomes a borrowed entry in the input tuple, and `PromoteRef` entries support the `*Ref` components.
 The generated `Add` provider can therefore serve `compute`, `try_compute`, `compute_async`, and
@@ -281,9 +286,13 @@ let shape = Shape::Rectangle(Rectangle { width: 2.0, height: 2.0 });
 assert_eq!(shape.area(), 4.0);
 ```
 
-Each method generates a per-variant computer named `Compute` plus the method name. The enum impl
-uses `MatchWithValueHandlers` for `&self`, its mutable form for `&mut self`, `MatchFirstWith…` forms
-for extra arguments, and async forms for async methods.
+Each method generates a per-variant computer named `Compute` plus the method name, from a helper
+function that takes the method's own name in the module. The enum impl uses
+`MatchWithValueHandlersRef` for `&self`, `MatchWithValueHandlersMut` for `&mut self`, and
+`MatchWithValueHandlers` for `self`, with the `MatchFirstWith…` forms when the method takes extra
+arguments; an async method keeps the same matcher and bounds it as an `AsyncComputer`. Avoid a
+supertrait on the trait, a method needing two distinct lifetimes, and a module item sharing a
+method's name: each makes the expansion fail to compile.
 
 Methods cannot have non-lifetime generic parameters because the generated impl would need a
 quantified bound Rust cannot express. Use dispatch combinators directly for those methods.

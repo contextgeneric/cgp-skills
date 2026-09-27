@@ -127,7 +127,9 @@ supplies `T` and a `WithProvider` impl adapting the built-in `TypeProvider`. See
 [abstract-types](abstract-types.md).
 
 `#[cgp_getter]` derives its provider name by removing a leading `Has` and appending `Getter`, so
-`HasName` produces `NameGetter`. It always adds a `UseFields` impl. For single-method traits, it
+`HasName` produces `NameGetter`. A trait whose name does not start with `Has` gets no default and
+fails with ``the `provider` key must be given`` unless it names one. It always adds a `UseFields`
+impl. For single-method traits, it
 also adds `UseField<Tag>` and `WithProvider` impls. See
 [functions-and-getters](functions-and-getters.md).
 
