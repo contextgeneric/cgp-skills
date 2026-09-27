@@ -253,7 +253,11 @@ converts between a `Result`-valued `Computer` and `TryComputer` in either direct
 Prefer promotion bundles when wiring several related interfaces. `PromoteComputer`,
 `PromoteTryComputer`, `PromoteProducer`, `PromoteAsyncComputer`, and `PromoteHandler` are delegation
 tables that select the appropriate adapters for a base provider. The function macros use these
-bundles automatically; explicit wiring can use forms such as `PromoteComputer<MyProvider>`.
+bundles automatically, passing `Self`. A bundle expects its parameter to be a provider wired to that
+same bundle, because some entries reach the base through a sibling component: `PromoteComputer<P>`
+answers `Handler` through `PromoteAsync<P>`, which needs `P: TryComputer`. To lift a hand-written
+provider without wiring it to a bundle, chain the single-step adapters, as in
+`PromoteAsync<Promote<MyComputer>>` for a `Handler` from a `Computer`.
 
 ## Dispatching over extensible data
 
