@@ -79,7 +79,11 @@ KeyValueArg      -> `name` `:` ComponentName
                   | `provider` `:` IDENTIFIER
                   | `context` `:` IDENTIFIER
 
-ComponentName    -> IDENTIFIER GenericArgs?
+ComponentName    -> IDENTIFIER ( `<` NameParam ( `,` NameParam )* `,`? `>` )?
+
+NameParam        -> LIFETIME_OR_LABEL
+                  | IDENTIFIER
+                  | `const` IDENTIFIER `:` Type
 ```
 
 A bare provider name is shorthand for setting `provider` alone. In the keyed form, use braces as in
@@ -87,8 +91,12 @@ A bare provider name is shorthand for setting `provider` alone. In the keyed for
 is required.
 
 The component name defaults to the provider name plus `Component`, as in `AreaCalculatorComponent`,
-and the context name defaults to `__Context__`. The component name may carry generic arguments; the
-provider name may not.
+and the context name defaults to `__Context__`. The provider name and the context name take no
+generics. The component name may list bare parameter names, as in `name: ShapeComponent<Shape>`, and
+each must be one of the trait's own parameters: an undeclared one parses and then fails with
+`E0425`. A bound, a default, or a type that is not a single identifier is rejected, and a const
+parameter parses but fails inside the macro. A provider for such a component names it explicitly,
+as in `#[cgp_impl(new SquareArea: AreaCalculatorComponent<Square>)]`.
 
 `#[cgp_component]` preserves the consumer trait and generates the provider trait, component marker,
 and connecting blanket impls. In the provider trait, it moves `Self` to a leading context parameter,
