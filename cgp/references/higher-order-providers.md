@@ -81,7 +81,10 @@ pub struct IterSumArea<InnerCalculator = UseContext>(pub PhantomData<InnerCalcul
 
 `UseContext` implements provider traits by forwarding to the context’s consumer-trait impl. With the
 default above, `IterSumArea` calculates each element through the context’s existing area
-implementation. An explicit `IterSumArea<RectangleArea>` selects the inner provider directly and
+implementation for that element's type. The default works only when that inner call asks for a
+different trait instance from the one the outer provider serves, such as `CanCalculateArea<Element>`
+from a provider of `CanCalculateArea<Vec<Element>>`. Asking the context for the very instance being
+computed is a cycle the trait solver cannot resolve. An explicit `IterSumArea<RectangleArea>` selects the inner provider directly and
 bypasses that wiring.
 
 The default must appear on an explicit provider struct. A provider declared only through

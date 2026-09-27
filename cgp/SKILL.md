@@ -867,7 +867,8 @@ for example `AreaCalculatorComponent: ScaledAreaCalculator<RectangleAreaCalculat
 
 A higher-order provider often defaults its inner parameter to `UseContext`
 (`pub struct IterSumArea<Inner = UseContext>(PhantomData<Inner>);`), so that when an inner provider
-is not named, the inner step falls back to the context's own wiring. Not every provider with a generic
+is not named, the inner step falls back to the context's own wiring for a different trait
+instance, such as an element type; asking for the instance being computed is a cycle. Not every provider with a generic
 parameter is higher-order. A provider like `GetName<Tag>` that uses `Tag` only as a `HasField` key,
 without a provider-trait bound, is not.
 
