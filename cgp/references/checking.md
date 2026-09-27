@@ -150,7 +150,13 @@ check_components! {
 ```
 
 This verifies `MyApp: CanCalculateAreaOfShape<Rectangle>` and
-`MyApp: CanCalculateAreaOfShape<Circle>` in one entry.
+`MyApp: CanCalculateAreaOfShape<Circle>` in one entry. When one fails, the caret lands on the
+failing parameter, since the bracketed value lists more parameters than the key names components.
+
+Always supply the parameters of a generic component. Leaving them off checks the component at `()`:
+a provider generic over every shape passes that vacuously, and a provider for particular shapes
+fails with `Provider: IsProviderFor<Component, MyApp>` unsatisfied, where only a help line mentions
+`()`.
 
 ## Checking providers directly with `#[check_providers(...)]`
 
@@ -176,6 +182,10 @@ The failing lines identify which provider lacks a dependency. A dependency neede
 `ScaledAreaCalculator` produces an error on the wrapper's line. A missing dependency of
 `RectangleAreaCalculator` produces errors on both lines because the wrapper also requires the inner
 provider.
+
+Name a concrete context in a `#[check_providers(...)]` table. The generated trait spells the context
+type out in its supertrait, so on a generic table such as `<T> Gen<T>` it names a `T` it never
+declares and fails with `E0425`; check `Gen<u32>` instead.
 
 ## Wiring and checking together with `delegate_and_check_components!`
 
