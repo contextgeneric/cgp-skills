@@ -331,7 +331,7 @@ TableBody     -> Statement* ( Mapping ( `,` Mapping )* `,`? )?
 
 Statement     -> OpenStmt | NamespaceStmt | ForStmt
 
-OpenStmt      -> `open` ( `{` Type ( `,` Type )* `,`? `}` | Type ) `;`
+OpenStmt      -> `open` ( `{` ( Type ( `,` Type )* `,`? )? `}` | Type ) `;`
 
 Mapping       -> Key `:`  ProviderValue
                | Key `->` ProviderValue
@@ -339,21 +339,23 @@ Mapping       -> Key `:`  ProviderValue
 
 Key           -> SingleKey | MultiKey | PathKey
 SingleKey     -> Generics? Type
-MultiKey      -> `[` SingleKey ( `,` SingleKey )* `,`? `]`
+MultiKey      -> `[` ( SingleKey ( `,` SingleKey )* `,`? )? `]`
 PathKey       -> Generics? `@` PathHead
 
-PathHead      -> PathSegment ( `.` PathHead )?
-               | `[` PathSegment ( `,` PathSegment )* `,`? `]` ( `.` PathHead )?
-               | `{` PathHead ( `,` PathHead )* `,`? `}`
+PathHead      -> KeySegment ( `.` PathHead )?
+               | `[` ( KeySegment ( `,` KeySegment )* `,`? )? `]` ( `.` PathHead )?
+               | `{` ( PathHead ( `,` PathHead )* `,`? )? `}`
 
-PathSegment   -> Generics? Type
+KeySegment    -> Generics? PathSegment
 
 PathValue     -> `@` PathSegment ( `.` PathSegment )*
+
+PathSegment   -> Type
 
 ProviderValue -> Type
                | IDENTIFIER `<` `new` InnerTable `>`
 
-InnerTable    -> IDENTIFIER GenericArgs? `{` TableBody `}`
+InnerTable    -> IDENTIFIER BoundFreeGenerics? `{` TableBody `}`
 ```
 
 Place every `open`, `namespace`, and `for` statement before mappings. The parser reads statements
@@ -376,7 +378,16 @@ combinations with the rest of the path. A `PathValue` on the right of `=>` does 
 
 A nested provider value such as `UseDelegate<new Inner { … }>` declares an inner table. This legacy
 dispatch syntax supports generic table names such as `BarValue<T>` and wrappers other than
-`UseDelegate`.
+`UseDelegate`, provided the wrapper is a bare identifier. The inner table's generic list takes only
+lifetimes and type parameters, without bounds or defaults. A bound, a `const` parameter, or a
+qualified wrapper such as `cgp::prelude::UseDelegate<new …>` fails with ``expected `,` `` at the
+inner table's name. A table struct the macro declares, whether an inner table or a `new` target,
+cannot carry a `const` parameter at all: declare that struct by hand and wire it with its own block.
+
+Every bracketed and braced list may be empty and then produces no entries. A list key takes no
+generic list of its own, so `<T> [A<T>, B]` fails with `expected square brackets`; put the
+generics on the element. Key generics accept bounds but reject defaults
+(`invalid impl generics syntax`).
 
 `open` enables per-value `@Component.Key: Provider` entries directly on the target. Braces are
 optional for one component and required for several. Attributes are rejected on both the table and
@@ -398,7 +409,7 @@ appends the dispatch parameter. `open C;` and `C => @C,` generate the same impl.
 check trait and controlling individual checks:
 
 ```ebnf
-DelegateAndCheck -> TableAttr* Generics? `new`? TargetType `{` TableBody `}`
+DelegateAndCheck -> TableAttr? Generics? `new`? TargetType `{` TableBody `}`
 
 TableAttr        -> `#` `[` `check_trait` `(` IDENTIFIER `)` `]`
 
@@ -406,27 +417,31 @@ TableBody        -> Statement* ( CheckedMapping ( `,` CheckedMapping )* `,`? )?
 
 CheckedMapping   -> EntryAttr? Mapping
 
-EntryAttr        -> `#` `[` `check_params` `(` Type ( `,` Type )* `,`? `)` `]`
+EntryAttr        -> `#` `[` `check_params` `(` ( Type ( `,` Type )* `,`? )? `)` `]`
                   | `#` `[` `skip_check` `]`
 ```
 
-The wiring half accepts the same `Mapping`, `Key`, `ProviderValue`, and `Statement` forms as
-`delegate_components!`. The checking half derives assertions only for component-name keys:
-`SingleKey` or `MultiKey` under `:` or `->`. Path keys, `=>` redirects, and `open`, `namespace`, and
-`for` statements remain silently unchecked. Use separate wiring and check blocks for these forms.
+The table accepts only the one `#[check_trait]` attribute. The wiring half accepts the same
+`Mapping`, `Key`, `ProviderValue`, and `Statement` forms as `delegate_components!`. The checking
+half derives assertions only for component-name keys: `SingleKey` or `MultiKey` under `:` or `->`.
+Path keys, `=>` redirects, and `open`, `namespace`, and `for` statements remain silently unchecked.
+Use separate wiring and check blocks for these forms.
 
 The generated check trait defaults to `__CanUse{Context}`, distinct from `check_components!`’s
 `__Check{Context}`. Both can therefore appear in one module. Each mapping accepts at most one entry
 attribute: `#[check_params(…)]` supplies concrete parameters, while `#[skip_check]` disables its
-check. They are mutually exclusive. See [checking](checking.md).
+check. They are mutually exclusive. An entry for a generic component without `#[check_params(…)]` is
+checked at unit parameters, which a fully generic provider passes vacuously and a provider for
+particular types fails. An empty `#[check_params()]` skips the entry silently. See
+[checking](checking.md).
 
 ### `check_components!`
 
-`check_components!` accepts one or more tables. Each table names a context and entries to check,
-with optional attributes, generics, and a `where` clause:
+`check_components!` accepts any number of tables, including none. Each table names a context and
+entries to check, with optional attributes, generics, and a `where` clause:
 
 ```ebnf
-CheckComponents -> CheckTable+
+CheckComponents -> CheckTable*
 
 CheckTable      -> TableAttr* Generics? ContextType WhereClause? `{` CheckEntries `}`
 
@@ -440,21 +455,26 @@ CheckEntries    -> ( CheckEntry ( `,` CheckEntry )* `,`? )?
 CheckEntry      -> CheckKey ( `:` CheckValue )?
 
 CheckKey        -> Type
-                 | `[` Type ( `,` Type )* `,`? `]`
+                 | `[` ( Type ( `,` Type )* `,`? )? `]`
 
 CheckValue      -> CheckParam
-                 | `[` CheckParam ( `,` CheckParam )* `,`? `]`
+                 | `[` ( CheckParam ( `,` CheckParam )* `,`? )? `]`
 
 CheckParam      -> Generics? Type
 ```
 
 Omit the entry value for a component without parameters; otherwise, supply the parameters to check.
-Arrays of keys or values generate checks for every combination. `#[check_trait(Name)]` overrides the
-default `__Check{Context}` name.
+A generic component listed without a value is checked at unit parameters, which a fully generic
+provider passes vacuously. Arrays of keys or values generate checks for every combination; an empty
+value array falls back to the unit check, and an empty key array checks nothing.
+`#[check_trait(Name)]` overrides the default `__Check{Context}` name, and is required when the
+context is not a path, such as `&'a Person`. Each attribute may appear once.
 
 Use `#[check_providers(…)]` to assert `IsProviderFor` on each listed provider instead of
 `CanUseComponent` on the context. This gives each layer of a higher-order provider its own check
-location. See [checking](checking.md).
+location. It needs a concrete context: on a generic table such as `<T> Gen<T>` the generated trait
+names `T` without declaring it and fails with `E0425`, so check `Gen<u32>` instead. See
+[checking](checking.md).
 
 A check table generates a marker trait for the asserted bound and an empty impl for each entry. The
 impl compiles only if the bound holds. A successful build is the passing assertion; the checks do

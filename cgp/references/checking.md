@@ -212,18 +212,16 @@ convention as `check_components!`:
 delegate_and_check_components! {
     MyApp {
         #[check_params(Rectangle, Circle)]
-        AreaOfShapeCalculatorComponent:
-            UseDelegate<new AreaOfShapeCalculatorComponents {
-                Rectangle: RectangleArea,
-                Circle: CircleArea,
-            }>,
+        AreaOfShapeCalculatorComponent: ShapeAreaCalculator, // generic over the shape
     }
 }
 ```
 
-The example uses legacy `UseDelegate` dispatch. Prefer `open` for new per-type wiring; see
-[wiring](wiring.md). Checks still need concrete parameter sets regardless of how dispatch is wired.
-The limits below explain when those checks must be written separately.
+Without the attribute the entry is still checked, but at unit parameters, as though the component's
+parameter were `()`. A provider generic over every shape passes that vacuously, and a provider
+written for particular shapes fails with an `E0277` that blames the provider; only a help line
+mentions `()`. Per-type dispatch through `open` is wired but not checked by this macro, so the
+limits below explain when those checks must be written separately.
 
 Mark an entry `#[skip_check]` when checking it separately, such as with a dedicated
 `#[check_providers(...)]` block. `#[skip_check]` and `#[check_params(...)]` are mutually exclusive
@@ -232,12 +230,19 @@ on the same entry:
 ```rust
 delegate_and_check_components! {
     ScaledRectangle {
-        AreaCalculatorComponent:
-            ScaledAreaCalculator<RectangleAreaCalculator>,
+        PerimeterCalculatorComponent:
+            RectanglePerimeterCalculator,
 
         #[skip_check]
-        TransformCalculatorComponent:
-            ComplexTransform<RectangleAreaCalculator>, // checked in a dedicated check_components! block
+        AreaCalculatorComponent:
+            ScaledAreaCalculator<RectangleAreaCalculator>,
+    }
+}
+
+check_components! {
+    #[check_providers(RectangleAreaCalculator, ScaledAreaCalculator<RectangleAreaCalculator>)]
+    ScaledRectangle {
+        AreaCalculatorComponent,
     }
 }
 ```
