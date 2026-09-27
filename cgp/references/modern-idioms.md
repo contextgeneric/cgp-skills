@@ -221,7 +221,8 @@ pub trait HasLoggedInUser<App> {
 
 The attribute supplies `App: HasUserIdType`, so the generic parameter needs only the name `App`.
 
-Import abstract types explicitly even when an imported trait's supertrait already supplies the bound. If
+Import abstract types explicitly even when an imported trait's supertrait already reaches the impl.
+`#[uses]` bounds only the impl, so a `#[cgp_fn]` signature cannot name the type through it. If
 `CanCreateFoo` extends `HasFooType`, use `#[uses]` for the trait and `#[use_type]` for its
 type:
 
@@ -232,16 +233,16 @@ type:
 fn bar(&self) -> Foo { self.create_foo(42) }
 ```
 
-The older form relies on the transitive supertrait to resolve `Self::Foo`:
+Relying on the transitive supertrait does not compile, because the generated `Bar` trait has no
+`HasFooType` supertrait for `Self::Foo` to resolve through:
 
 ```rust
 #[cgp_fn]
 #[uses(CanCreateFoo)]
-fn bar(&self) -> Self::Foo { self.create_foo(42) }
+fn bar(&self) -> Self::Foo { self.create_foo(42) } // error[E0220]: associated type `Foo` not found
 ```
 
-The explicit import makes the type dependency visible. It adds an already implied `Self: HasFooType`
-bound and rewrites the bare `Foo`.
+The `#[use_type]` import adds `HasFooType` to the generated trait and rewrites the bare `Foo`.
 
 Use the equality form `#[use_type(Trait.{Assoc = Type})]` to constrain an abstract type to a
 concrete one. It replaces an explicit bound such as `Self: HasErrorType<Error = AppError>` in this
