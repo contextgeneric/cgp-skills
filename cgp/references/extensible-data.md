@@ -248,11 +248,11 @@ primitives](type-level-primitives.md) for both representations.
 
 Import list operations from `cgp::core::field::traits`; they are not in the prelude. `AppendProduct`
 adds a field to the end of a product, `ConcatProduct` joins products, and `MapFields` transforms
-each entry. Building appends, merging concatenates, and creating a partial record maps a marker over
-its fields. These type transformations are evaluated during type checking without runtime cost.
+each entry. These type transformations are evaluated during type checking without runtime cost. The
+derives generate partial records directly, without these traits; in the library, `MapFields` rewrites
+provider lists, as `PipeMonadic` does with `TryPromoteProviders`.
 
-`MapFields` supports both products and sums, allowing it to generate partial records and partial
-enums. Its result is named `Mapped`, while `AppendProduct` and `ConcatProduct` expose `Output`. The
+`MapFields` supports both products and sums. Its result is named `Mapped`, while `AppendProduct` and `ConcatProduct` expose `Output`. The
 library does not provide `AppendSum`.
 
 ## Structural casts between records and variants

@@ -57,7 +57,7 @@ class](macro-grammar.md).
 
 Search the class’s signature to test the suspected cause. Use `help:` for a surfaced dependency,
 `conflicting implementation` for a duplicate key, `overflow evaluating` for a cycle,
-`does not contain any DelegateComponent entry` for absent wiring, or `is not constrained` for an
+`DelegateComponent<` … `is not implemented` for absent wiring, or `is not constrained` for an
 unconstrained generic. A `HasField<Symbol<…>>` line spells out the field name character by
 character. The [debugging guide’s search
 table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log)

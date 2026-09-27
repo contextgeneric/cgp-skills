@@ -151,9 +151,6 @@ An `IsProviderFor` error therefore identifies a dependency preventing the provid
 applying. The macros generate and use the marker; you encounter it in diagnostics:
 
 ```rust
-#[diagnostic::on_unimplemented(
-    note = "You need to add `#[cgp_provider({Component})]` on the impl block for CGP provider traits"
-)]
 pub trait IsProviderFor<Component, Context, Params: ?Sized = ()> {}
 ```
 
