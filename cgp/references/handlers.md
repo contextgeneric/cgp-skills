@@ -194,7 +194,9 @@ The signature selects these generated forms:
 The `Result` check reads the tokens: only a return type written `Result<T, E>` selects a fallible
 bundle. `core::result::Result<T, E>` and `anyhow::Result<T>` are treated as plain values, so
 `try_compute` wraps them in `Ok`, and a one-argument alias written `Result<T>` fails with
-``expected `,` ``. Write the full `Result<T, E>` in a fallible computer's signature.
+``expected `,` ``. Write the full `Result<T, E>` in a fallible computer's signature. The fallible
+bundles pass the `Err` through unconverted, so `E` must be the context's `HasErrorType::Error`, or
+the fallible members fail with `E0271`.
 
 Generic parameters and `where` bounds are preserved on the provider impl. A `&Value` parameter
 becomes a borrowed entry in the input tuple, and `PromoteRef` entries support the `*Ref` components.

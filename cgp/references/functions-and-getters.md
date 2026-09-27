@@ -323,12 +323,20 @@ The return type determines the field type and read operation:
 | `MRef<'_, T>` | `T` | Wrap the borrow as `MRef::Ref(..)` |
 | Owned path, tuple, or array | Matching field type | `.clone()` |
 | `&mut T` | `T` | Borrow mutably |
+| `&mut str` | `String` | `.as_mut_str()` |
 | `&mut [T]` | `AsMut<[T]>` | `.as_mut()` |
 | `Option<&mut T>` | `Option<T>` | `.as_mut()` |
 | `Option<&mut str>` | `Option<String>` | `.as_deref_mut()` |
 
 [`MRef`](type-level-primitives.md) lets an accessor return an owned or borrowed value; the generated
 getter supplies the borrowed form.
+
+A getter takes its access mode from the receiver, not the return type, which differs from an
+implicit argument. Two consequences follow. A `&mut self` getter returning a shared `Option<&T>` or
+`Option<&str>` fails with `E0308`, because the body converts with `.as_mut()`; return
+`Option<&mut T>` or take `&self`. And `Option<&[T]>` has no rule, so it asks for an unsized
+`Option<[T]>` field and fails with `E0277`; return `Option<&Vec<T>>` or `&Option<Vec<T>>`
+instead.
 
 A trait can declare several getter methods. Each method selects its own field and generates a
 corresponding bound and body. For example, `fn width(&self) -> &f64; fn height(&self) -> &f64;`
@@ -399,7 +407,8 @@ as `#[cgp_auto_getter]`. Prefer implicit arguments or auto-getters for routine a
 
 The provider name defaults to the trait name with a leading `Has` removed and `Getter` appended.
 `HasName` therefore produces `NameGetter` and `NameGetterComponent`. Override the provider name with
-an argument such as `#[cgp_getter(GetName)]`.
+an argument such as `#[cgp_getter(GetName)]`. A trait whose name does not start with `Has` has no
+default and must pass one, or it fails with ``the `provider` key must be given``.
 
 The generated `UseField<Tag>` impl lets wiring select a field independently of the method name.
 `UseField` is a zero-sized provider containing only `PhantomData`; it is named in wiring and never
@@ -428,8 +437,10 @@ The entry `NameGetterComponent: UseField<Symbol!("first_name")>` selects the fie
 generated provider impl leaves the field tag generic, while an auto-getter fixes it to the method
 name.
 
-`#[cgp_getter]` also generates a `UseFields` provider that reads fields by method name.
-Single-method getters additionally receive a `WithProvider` adapter.
+`#[cgp_getter]` also generates a `UseFields` provider that reads fields by method name. Only a
+single-method getter receives the `UseField<Tag>` impl and the `WithProvider` adapter, since both
+presuppose one field; a multi-method getter wired to `UseField` fails with an unmet `IsProviderFor`
+bound that never mentions the method count, so wire `UseFields` or split the trait.
 
 Use `UseFieldRef<Tag, Value>` when `AsRef` or `AsMut` converts the stored field to the exposed type.
 For example, `UseFieldRef<Symbol!("name"), str>` reads a `String` field and exposes `&str` through
