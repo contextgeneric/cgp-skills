@@ -174,7 +174,10 @@ delegate_components! {
 
 Wire a string handler alongside `DebugError` or `DisplayError`. These providers format a source
 error or detail as a `String`, then forward it through the context’s `CanRaiseError<String>` or
-`CanWrapError<String>` implementation. They do not choose the concrete error type.
+`CanWrapError<String>` implementation. They do not choose the concrete error type. Never wire the
+`String` key itself to either of them: the provider would forward the formatted string to itself,
+and the check fails with `E0275` (overflow evaluating `DebugError: ErrorRaiser<App, String>`). Give
+`String` a provider that finishes the job, such as `RaiseFrom`.
 
 Use `open` to select a provider per source type. This example sends strings directly to `RaiseFrom`
 and parse errors through `DebugError` first:
