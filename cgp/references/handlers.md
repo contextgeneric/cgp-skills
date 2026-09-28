@@ -298,13 +298,14 @@ let shape = Shape::Rectangle(Rectangle { width: 2.0, height: 2.0 });
 assert_eq!(shape.area(), 4.0);
 ```
 
-Each method generates a per-variant computer named `Compute` plus the method name, from a helper
-function that takes the method's own name in the module. The enum impl uses
+Each method generates a per-variant computer named `Compute` plus the method name, from a private
+helper function named `__compute_` plus the method name plus `__`. The enum impl uses
 `MatchWithValueHandlersRef` for `&self`, `MatchWithValueHandlersMut` for `&mut self`, and
 `MatchWithValueHandlers` for `self`, with the `MatchFirstWith…` forms when the method takes extra
 arguments; an async method keeps the same matcher and bounds it as an `AsyncComputer`. Avoid a
-supertrait on the trait, a method needing two distinct lifetimes, and a module item sharing a
-method's name: each makes the expansion fail to compile.
+supertrait on the trait, a method needing two distinct lifetimes, and two dispatch traits in one
+module sharing a method name, whose generated helpers and computers collide: each makes the
+expansion fail to compile.
 
 Methods cannot have non-lifetime generic parameters because the generated impl would need a
 quantified bound Rust cannot express. Use dispatch combinators directly for those methods.

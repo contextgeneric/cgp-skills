@@ -93,10 +93,11 @@ is required.
 The component name defaults to the provider name plus `Component`, as in `AreaCalculatorComponent`,
 and the context name defaults to `__Context__`. The provider name and the context name take no
 generics. The component name may list bare parameter names, as in `name: ShapeComponent<Shape>`, and
-each must be one of the trait's own parameters: an undeclared one parses and then fails with
-`E0425`. A bound, a default, or a type that is not a single identifier is rejected, and a const
-parameter parses but fails inside the macro. A provider for such a component names it explicitly,
-as in `#[cgp_impl(new SquareArea: AreaCalculatorComponent<Square>)]`.
+each must be one of the trait's own parameters: the macro rejects an undeclared one with
+``the component name's parameter `T` is not a generic parameter of the trait `CanShape` ``. A bound,
+a default, or a type that is not a single identifier is rejected, and a const parameter parses but
+is always rejected, since a component trait cannot declare one. A provider for such a component
+names it explicitly, as in `#[cgp_impl(new SquareArea: AreaCalculatorComponent<Square>)]`.
 
 `#[cgp_component]` preserves the consumer trait and generates the provider trait, component marker,
 and connecting blanket impls. In the provider trait, it moves `Self` to a leading context parameter,
@@ -379,11 +380,13 @@ combinations with the rest of the path. A `PathValue` on the right of `=>` does 
 
 A nested provider value such as `UseDelegate<new Inner { … }>` declares an inner table. This legacy
 dispatch syntax supports generic table names such as `BarValue<T>` and wrappers other than
-`UseDelegate`, provided the wrapper is a bare identifier. The inner table's generic list takes only
-lifetimes and type parameters, without bounds or defaults. A bound, a `const` parameter, or a
-qualified wrapper such as `cgp::prelude::UseDelegate<new …>` fails with ``expected `,` `` at the
-inner table's name. A table struct the macro declares, whether an inner table or a `new` target,
-cannot carry a `const` parameter at all: declare that struct by hand and wire it with its own block.
+`UseDelegate`, provided the wrapper is a bare identifier. The inner table's generic list declares
+the struct, so it takes lifetimes, type parameters, and `const` parameters written with their kind,
+as in `new ArrayTable<const N: usize>`, without bounds or defaults; a bare `N` there declares a type
+parameter. A bound, a default, or a qualified wrapper such as `cgp::prelude::UseDelegate<new …>`
+fails with ``expected `,` `` at the inner table's name. A `new` target takes its parameters' kinds
+from the leading generic list instead, so `<const N: usize> new ArrayTable<N>` declares
+`ArrayTable<const N: usize>`.
 
 Every bracketed and braced list may be empty and then produces no entries. A list key takes no
 generic list of its own, so `<T> [A<T>, B]` fails with `expected square brackets`; put the
@@ -473,9 +476,8 @@ context is not a path, such as `&'a Person`. Each attribute may appear once.
 
 Use `#[check_providers(…)]` to assert `IsProviderFor` on each listed provider instead of
 `CanUseComponent` on the context. This gives each layer of a higher-order provider its own check
-location. It needs a concrete context: on a generic table such as `<T> Gen<T>` the generated trait
-names `T` without declaring it and fails with `E0425`, so check `Gen<u32>` instead. See
-[checking](checking.md).
+location. A generic table such as `<T> Gen<T>` checks the providers at every instantiation, since
+the generated trait takes the context as a parameter. See [checking](checking.md).
 
 A check table generates a marker trait for the asserted bound and an empty impl for each entry. The
 impl compiles only if the bound holds. A successful build is the passing assertion; the checks do

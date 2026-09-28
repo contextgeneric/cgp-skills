@@ -183,9 +183,9 @@ The failing lines identify which provider lacks a dependency. A dependency neede
 `RectangleAreaCalculator` produces errors on both lines because the wrapper also requires the inner
 provider.
 
-Name a concrete context in a `#[check_providers(...)]` table. The generated trait spells the context
-type out in its supertrait, so on a generic table such as `<T> Gen<T>` it names a `T` it never
-declares and fails with `E0425`; check `Gen<u32>` instead.
+A `#[check_providers(...)]` table may be generic. The generated trait takes the context as a
+parameter, so `#[check_providers(RectangleArea)] <T> Gen<T> { AreaCalculatorComponent }` checks the
+provider at every `Gen<T>`.
 
 ## Wiring and checking together with `delegate_and_check_components!`
 
@@ -300,13 +300,6 @@ Satisfy ordinary trait dependencies through ordinary Rust mechanisms. `check_com
 components through `CanUseComponent`; a trait without a component marker or delegation entry cannot
 be checked as a wiring entry. Supply its impl, derive, or required `where` bound so the provider's
 component check can pass.
-
-A passing check can still leave a call failing in one case. `CanUseComponent` asks the delegate's
-`IsProviderFor` impl, while a call goes through the context's own, which the table's forwarding impl
-supplies only for a sized params tuple. So a component declared over `T: ?Sized` and used at `str`
-checks cleanly as `ReferenceGetterComponent: (Life<'a>, str)` and fails at the call with `E0599`,
-noting `` `str: Sized` which is required by … ``. Give it a sized argument or implement the consumer
-trait directly on the context.
 
 ## Further reference
 
