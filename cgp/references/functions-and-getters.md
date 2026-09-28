@@ -464,24 +464,31 @@ supplies the getter from that named field.
 ## Reaching a nested field with `ChainGetters`
 
 Use `ChainGetters<Getters>` to reach a field through nested values. It applies a `Product!` list of
-getters in order, passing each returned reference to the next. This chain reads a timeout through
-the context’s configuration and connection:
+field getters in order, passing each returned reference to the next, and wires inside
+`WithProvider`, since it implements the foundational `FieldGetter` rather than the getter's own
+provider trait. This chain reads a timeout through the context's configuration and connection:
 
 ```rust
+use cgp::core::field::impls::ChainGetters;
+
 delegate_components! {
     App {
-        TimeoutGetterComponent: ChainGetters<Product![
-            GetConfig,      // App    -> Config
-            GetConnection,  // Config -> Connection
-            GetTimeout,     // Connection -> Duration
-        ]>,
+        TimeoutGetterComponent: WithProvider<
+            ChainGetters<Product![
+                UseField<Symbol!("config")>,     // App    -> Config
+                UseField<Symbol!("connection")>, // Config -> Connection
+                UseField<Symbol!("timeout")>,    // Connection -> Duration
+            ]>,
+        >,
     }
 }
 ```
 
-Each getter operates on the value returned by the preceding step. `ChainGetters` is a zero-sized
-provider selected through wiring, so the chain replaces a custom provider that would traverse the
-nested fields manually.
+Each step is a `FieldGetter` provider, usually `UseField`, applied to the value the preceding step
+returned. Wired without `WithProvider`, the chain fails the check with an unsatisfied
+`IsProviderFor<TimeoutGetterComponent, App>`. `ChainGetters` is a zero-sized provider selected
+through wiring, so the chain replaces a custom provider that would traverse the nested fields
+manually.
 
 ## Getters are just traits: explicit implementation
 
