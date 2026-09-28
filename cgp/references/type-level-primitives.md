@@ -221,8 +221,8 @@ dependency marker. The macros insert `Life` automatically, so it usually appears
 `Sync`, so neither is a provider struct declared over a lifetime.
 
 A component whose type parameter is `?Sized` must not be used at an unsized argument such as `str`:
-the check passes, but every call through `delegate_components!` wiring fails with `E0599`
-(`` `str: Sized` which is required by … ``), because the table's forwarding `IsProviderFor` impl
+the check passes, but every call through `delegate_components!` wiring fails (`E0599` on a method
+call, noting `` `str: Sized` which is required by … ``, or `E0277` through a generic bound), because the table's forwarding `IsProviderFor` impl
 requires a sized params tuple. Use a sized argument or a direct consumer impl.
 
 ## `MRef<'a, T>`: owned-or-borrowed
