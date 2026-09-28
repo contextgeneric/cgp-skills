@@ -294,14 +294,15 @@ ContextPath  -> TypePath
 TraitPath    -> TypePath
 
 TypeItems    -> UseTypeIdent
-              | `{` UseTypeIdent ( `,` UseTypeIdent )* `,`? `}`
+              | `{` ( UseTypeIdent ( `,` UseTypeIdent )* `,`? )? `}`
 
 UseTypeIdent -> IDENTIFIER ( `as` IDENTIFIER )? ( `=` Type )?
 ```
 
 Separate the trait path from its associated-type list with `.`. The trait path retains its own `::`
 segments and generic arguments. Each imported name can have an `as` alias and an `= Type` equality
-constraint. Bare uses of the imported name or alias become `<Target as Trait>::Type`.
+constraint. Bare uses of the imported name or alias become `<Target as Trait>::Type`. An empty group,
+`Trait.{}`, imports no name and adds only the trait's bound.
 
 The target defaults to `Self`. An `in Types` suffix selects a named type and adds `Types: Trait` as
 a `where` bound instead of a supertrait. The reserved keyword `in` separates the target
