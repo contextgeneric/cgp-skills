@@ -312,7 +312,9 @@ pub trait CanGreet {
 ```
 
 Use `#[extend]` for method supertraits and `#[use_type]` for abstract types named in the signature. The
-latter also rewrites the type aliases. In `#[cgp_fn]`, ordinary `where` clauses describe impl-side
+latter also rewrites the type aliases. Either way, each provider of the component repeats the import
+(`#[uses(HasName)]` or the same `#[use_type]`), because the provider trait carries the supertrait as a
+`where` bound that an impl must prove. In `#[cgp_fn]`, ordinary `where` clauses describe impl-side
 dependencies, so use `#[extend]` to add a supertrait.
 
 ## Per-type dispatch: `open` and namespaces over `UseDelegate`
