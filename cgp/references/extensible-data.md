@@ -182,6 +182,9 @@ fn wrap_circle(circle: Circle) -> Shape {
 }
 ```
 
+Write the tag whenever the enum has two or more variants; a bare `PhantomData` fails with `E0283`,
+since the payload type does not select the impl. Only a one-variant enum infers it.
+
 `#[derive(ExtractField)]` generates a partial-variant companion enum named `__Partial{Name}`. Each
 variant carries a `MapType` marker. A present variant uses `IsPresent`; an excluded variant uses
 `IsVoid`, which maps its payload to the uninhabited `Void` type.
@@ -215,7 +218,10 @@ directly.
 Adding an unhandled variant makes the final remainder inhabited and prevents compilation until the
 new case is covered. This preserves the exhaustiveness guarantee of a concrete `match` without a
 wildcard arm. `HasExtractorRef` and `HasExtractorMut` provide equivalent operations on borrowed
-values.
+values, over a second companion `__PartialRef{Name}` that the same `ExtractField` and
+`FinalizeExtract` impls cover, so a borrowed chain finalizes too. Extracting a variant twice fails
+with a confusing `E0308` (`expected 9, found 6`, the lengths of the two tags) rather than a message
+about the variant.
 
 ## Variants: the extensible visitor pattern
 
@@ -276,12 +282,16 @@ by name without a handwritten `From` or `TryFrom` impl. Import `CanUpcast`, `Can
 prelude.
 
 `CanUpcast` converts a smaller enum into one containing all its variants. It always succeeds by
-extracting the source variant and rebuilding it through `FromVariant`. `CanDowncast` narrows an enum
-when its current variant exists in the target, returning a remainder otherwise. Use
-`CanDowncastFields` on that remainder to try another target.
+extracting the source variant and rebuilding it through `FromVariant`, so the source needs
+`HasFields` and `ExtractField` while the target needs only `FromVariant`. `CanDowncast` narrows an
+enum when its current variant exists in the target, returning a remainder otherwise; every target
+variant must exist in the source, or the downcast fails to compile. Use `CanDowncastFields`, not a
+second `downcast`, on that remainder to try another target, and close a chain whose candidates cover
+every variant with `finalize_extract_result`.
 
-`CanBuildFrom` performs the corresponding record operation by inserting source fields into a target
-builder. The enum casts behave as follows:
+`CanBuildFrom` performs the corresponding record operation by moving every source field into a
+target builder; a source field the target lacks, or one already set, is a compile error at
+`build_from`. The enum casts behave as follows:
 
 ```rust
 use cgp::core::field::impls::{CanDowncast, CanUpcast};               // not in the prelude
