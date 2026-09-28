@@ -266,7 +266,9 @@ assert_eq!(s.to_string(), "hello");
 
 `StaticString::VALUE` recovers a symbol as a compile-time `&'static str`. Its implementation
 UTF-8-encodes the character list into a `[u8; LEN]`, then validates the bytes as a string. This is
-why `Symbol` records its byte length. Both recovery forms preserve multibyte Unicode:
+why `Symbol` records its byte length, and why a bare `Chars` list, lacking that length, does not
+implement `StaticString`; only `Symbol` and `Nil` (whose value is `""`) do. Both recovery forms
+preserve multibyte Unicode:
 
 ```rust
 use cgp::core::field::traits::StaticString;
@@ -274,7 +276,8 @@ assert_eq!(<Symbol!("世界你好") as StaticString>::VALUE, "世界你好");
 ```
 
 `ConcatPath` joins two type-level paths. It retains the first path's segments and replaces its
-terminating `Nil` with the second path:
+terminating `Nil` with the second path. Its one use in CGP is the `RedirectLookup` impl every
+component generates, which appends the component's type parameters to the lookup path:
 
 ```rust
 type Joined = <Path!(@a.b) as ConcatPath<Path!(@c.d)>>::Output; // the path @a.b.c.d

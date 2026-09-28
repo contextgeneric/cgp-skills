@@ -395,7 +395,8 @@ They can also appear directly in a `PipeHandlers` list. `BindErr` runs `Cont` on
 stops on `Err`; `BindOk` does the reverse.
 
 Monadic pipelines also support fallible and async-fallible components. They convert each provider
-through `TryPromote`, apply `ErrMonadic` as a transformer over `M`, and wrap the result again. Calls
+through `TryPromote`, apply `M` as a transformer over `ErrMonadic` (`M: MonadicTrans<ErrMonadic>`,
+so the outer error layer is `ErrMonadic`'s), and wrap the result again. Calls
 through `try_compute` or `handle` therefore stop on the context’s error type as well.
 
 ## Recovering `Send` bounds
