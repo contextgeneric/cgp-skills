@@ -118,8 +118,10 @@ is present, so incomplete construction fails at compile time. Fields can be supp
 
 `IntoBuilder` converts a complete struct to an all-present partial record, and `TakeField` removes
 fields individually. Both `BuildField` and `TakeField` use `UpdateField<Tag, M>`, which changes one
-marker and returns the old value with the rebuilt partial record. Import `TakeField` from
-`cgp::core::field::traits` to call `take_field`; it is not in the prelude.
+marker and returns the old value with the rebuilt partial record. The target marker `M` is not
+inferred from the value, so a direct call names it, as `UpdateField::<Tag, IsPresent>::update_field`;
+otherwise it fails with `E0284`. Import `TakeField` from `cgp::core::field::traits` to call
+`take_field`; it is not in the prelude.
 
 Generated `__Partial…` companions do not inherit the original struct or enum’s attributes. A
 `#[derive(Debug, Clone)]` therefore does not make a partial record or extraction remainder printable
@@ -130,13 +132,17 @@ per-field `HasField` impls.
 Use the `cgp-field-extra` optional-field extension when fields may be absent or have defaults. It
 reuses `UpdateField` to fill unset fields with `Default::default()` during finalization or represent
 them as `Option` through `IsOptional`. Absence can then be a runtime value. The strict builder that
-requires every field remains the default.
+requires every field remains the default. On an all-optional builder, `finalize_with_default` needs
+`Default` on every field's type, set or not, because a set field is still `IsOptional`;
+`finalize_optional` needs none.
 
 ## Records: the extensible builder pattern
 
 `CanBuildFrom` merges a source struct’s fields into a target builder with one `build_from` call. It
 walks the source’s field product, taking each field with `TakeField` and inserting it with
-`BuildField`. Source and target share field names without needing to name each other.
+`BuildField`. Source and target share field names without needing to name each other. Every source
+field must exist on the target; an extra one fails on an unsatisfied `UpdateField` bound rather than
+being dropped.
 
 The source must derive `HasFields` as well as `BuildField`. The recursion reads `HasFields::Fields`,
 so deriving only `BuildField` produces a missing `HasFields` bound. The target needs only
