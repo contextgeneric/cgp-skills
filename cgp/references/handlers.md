@@ -316,8 +316,16 @@ wrapper before invoking a computer, and `DowncastAndHandle` routes a group of va
 matcher.
 
 Matching stops at the first successful extraction. Each miss excludes a variant from the remainder,
-and an uninhabited final remainder proves exhaustiveness without a wildcard.
-`MatchWithValueHandlers<Provider>` builds the adapter list automatically from the enum’s field list.
+and an uninhabited final remainder proves exhaustiveness without a wildcard: a list that misses a
+variant fails on `__PartialShape<IsVoid, IsPresent>: FinalizeExtract`.
+`MatchWithValueHandlers<Provider>` builds the adapter list automatically from the enum’s field list,
+and `MatchWithFieldHandlers<Provider>` does the same but passes each payload as a
+`Field<Tag, Value>`, whose tag names the variant. Both apply to enums only, not structs.
+
+The matchers implement only `Computer` and `AsyncComputer`. To fill a fallible slot, lift the
+matcher: `TryComputerComponent: Promote<M>` and `HandlerComponent: PromoteAsync<Promote<M>>`, or
+`TryPromote<M>` when the per-variant handlers return `Result`. The borrowed value matchers also
+route the fallible components, but those entries do not resolve.
 
 Dispatch by input type with `open` and a two-segment path key. The `open` redirect appends both
 `Code` and `Input` to the lookup path, and a per-key generic `<Code> Code` first segment matches
@@ -353,8 +361,13 @@ ComputerComponent:
 
 `BuildWithHandlers<Output, Handlers>` constructs a record by passing an empty builder through field
 adapters, then finalizing it. `BuildAndSetField<Tag, Provider>` computes one field, and
-`BuildAndMerge<Provider>` merges a source record’s fields. Finalization requires every field to be
+`BuildAndMerge<Provider>` merges a source record’s fields. Each step's provider receives a reference
+to the partial record, which implements `HasField` for the fields already set, so a later step can
+read an earlier one's field; order the list accordingly. Finalization requires every field to be
 present, so an omitted field handler causes a compile error.
+`BuildAndMergeOutputs<Output, Providers>` takes a list of providers that each build a sub-record and
+wraps each in `BuildAndMerge`, the form the extensible builder pattern uses. The builders implement
+`Computer`, `TryComputer`, and `Handler`, and ignore their input, so call them with `()`.
 
 ## Composing through a monad
 
