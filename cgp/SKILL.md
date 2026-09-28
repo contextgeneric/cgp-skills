@@ -327,10 +327,12 @@ explicit imports:
 | `cgp::core::base::traits` | `StaticFormat` (and `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, `Symbol`) |
 | `cgp::core::component` | `DefaultImpls1`, `DefaultImpls2` |
 | `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the generic error providers |
+| `cgp::extra::handler` | the handler consumer traits (`CanCompute`, `CanTryCompute`, `CanHandle`, `CanProduce`, and their `Ref` and async forms), the provider traits `ComputerRef`, `TryComputerRef`, and `HandlerRef`, and the providers `Promote`, `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`, and `UseInputDelegate` |
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
-Check imports for casts and optional-field traits because neither group is in the prelude.
+Check imports for casts, optional-field traits, and handler consumer traits because none of those
+groups is in the prelude.
 Related names can also differ: `ConcatPath` and `DefaultNamespace` are in the prelude, while
 `StaticString`, `StaticFormat`, `DefaultImpls1`, and `DefaultImpls2` are not. Among the builder
 traits, `TakeField` requires an explicit import.

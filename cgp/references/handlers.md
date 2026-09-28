@@ -7,7 +7,13 @@ composition, dispatch, and `Send` bounds.
 
 The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`. Each handler is an ordinary
 [component](components.md): a consumer trait for callers, a provider trait for implementations, and
-a marker selected through [wiring](wiring.md).
+a marker selected through [wiring](wiring.md). The prelude carries every handler marker, the
+promotion bundles, and the provider traits except `ComputerRef`, `TryComputerRef`, and `HandlerRef`.
+The consumer traits, those three provider traits, and the one-step combinators (`Promote`,
+`PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`) come
+from `cgp::extra::handler`. A concrete context that delegates a handler also implements its provider
+trait, so calling `App::compute(&app, …)` by bare name is ambiguous (`E0034`) when that provider
+trait is in scope; use method syntax or name the consumer trait.
 
 ## The shared shape and the axes
 
