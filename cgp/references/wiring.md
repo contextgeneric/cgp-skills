@@ -110,8 +110,10 @@ impl DelegateComponent<AreaCalculatorComponent> for Rectangle {
 
 The provider blanket impl reads `DelegateComponent` to find the chosen provider. The companion
 `IsProviderFor` impl propagates that provider's requirements, allowing checks to identify missing
-transitive [impl-side dependencies](components.md). Defining the wiring alone does not prove those
-dependencies are satisfied; verify the context with [checking](checking.md).
+transitive [impl-side dependencies](components.md). The blanket impl requires both impls on the
+table, so a hand-written `DelegateComponent` impl alone does not wire the component: a call then
+fails with `E0599`. Write wiring with `delegate_components!`. Defining the wiring alone does not
+prove those dependencies are satisfied; verify the context with [checking](checking.md).
 
 ## Explicit delegation: what wiring effectively does
 
