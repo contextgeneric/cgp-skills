@@ -36,6 +36,9 @@ pub type ErrorOf<Context> = <Context as HasErrorType>::Error;
 The concrete error type must implement `Debug`. This supports `.unwrap()` and debug logging without
 an additional bound. `ErrorOf<Context>` abbreviates the associated-type path, so generic code can
 return `Result<T, Self::Error>` or `Result<T, ErrorOf<Context>>` without naming the concrete error.
+`cgp::core::error::ErrorOnly<E>` is a zero-sized, `Default` context whose only trait is
+`HasErrorType` with `Error = E`; use `ErrorOnly::<String>::default()` where a test needs a context
+with an error type and nothing else.
 
 A shared error type lets fallible operations compose within a context. Each fallible trait depends on
 `HasErrorType` instead of declaring an independent associated error type that callers would have to
