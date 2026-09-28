@@ -301,6 +301,13 @@ components through `CanUseComponent`; a trait without a component marker or dele
 be checked as a wiring entry. Supply its impl, derive, or required `where` bound so the provider's
 component check can pass.
 
+A passing check can still leave a call failing in one case. `CanUseComponent` asks the delegate's
+`IsProviderFor` impl, while a call goes through the context's own, which the table's forwarding impl
+supplies only for a sized params tuple. So a component declared over `T: ?Sized` and used at `str`
+checks cleanly as `ReferenceGetterComponent: (Life<'a>, str)` and fails at the call with `E0599`,
+noting `` `str: Sized` which is required by … ``. Give it a sized argument or implement the consumer
+trait directly on the context.
+
 ## Further reference
 
 Consult the online knowledge base for complete macro syntax and the reasoning behind check traits:

@@ -66,9 +66,12 @@ type Token = Sum![u32, String, bool];
 let t: Token = Either::Right(Either::Left("hi".to_string())); // the String branch
 ```
 
-`Void` makes exhausted variant handling statically complete. Once an extractor has handled every
-branch, the remaining type is an empty enum, which can be eliminated with `match self {}`. A product
-instead ends in constructible `Nil` because an empty record is a valid value.
+`Void` makes exhausted variant handling statically complete. An extractor marks each variant it
+rules out `IsVoid`, whose payload type is `Void`, so once every variant is ruled out the extractor is
+an uninhabited enum, eliminated with `match self {}`. A product instead ends in constructible `Nil`
+because an empty record is a valid value. A `match` on a sum by value may omit its final `Void` arm;
+behind a reference it needs `Either::Right(Either::Right(void)) => match *void {}` (`E0004`
+otherwise).
 
 `HasFields` exposes an enum's variants as a `Sum!` of `Field` entries. This parallels a struct's
 `Product!` representation while retaining the distinction between choosing one variant and holding
@@ -213,7 +216,14 @@ pub struct Life<'a>(pub PhantomData<*mut &'a ()>);
 The `*mut` phantom makes `Life<'a>` invariant in `'a`: a mutable raw pointer is invariant in its
 pointee type, which contains the lifetime. This preserves the lifetime as an exact parameter of the
 dependency marker. The macros insert `Life` automatically, so it usually appears only in generated
-`IsProviderFor` bounds.
+`IsProviderFor` bounds and in checks: a lifetime component is checked as
+`<'a> App<'a> { ReferenceGetterComponent: (Life<'a>, Config) }`. `Life` is neither `Send` nor
+`Sync`, so neither is a provider struct declared over a lifetime.
+
+A component whose type parameter is `?Sized` must not be used at an unsized argument such as `str`:
+the check passes, but every call through `delegate_components!` wiring fails with `E0599`
+(`` `str: Sized` which is required by … ``), because the table's forwarding `IsProviderFor` impl
+requires a sized params tuple. Use a sized argument or a direct consumer impl.
 
 ## `MRef<'a, T>`: owned-or-borrowed
 
@@ -237,7 +247,9 @@ assert_eq!(&*borrowed, "hello");
 let owned: String = borrowed.get_or_clone();              // clones the borrowed case
 ```
 
-Field macros recognize `MRef` alongside return modes such as `&T`, `Option<&T>`, and `&str`. See
+Field macros recognize `MRef` alongside return modes such as `&T`, `Option<&T>`, and `&str`, by
+shape: write it bare, since a qualified `cgp::prelude::MRef<'_, T>` falls through to the owned form
+and fails with `E0637`. See
 [functions and getters](functions-and-getters.md). Its lifetime constrains an ordinary borrow and
 does not use the `Life<'a>` encoding.
 
