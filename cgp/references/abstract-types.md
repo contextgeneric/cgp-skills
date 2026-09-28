@@ -98,7 +98,7 @@ and rewrites bare uses of its name.
 
 ## The built-in `HasType` / `TypeProvider` component
 
-`HasType<Tag>` is CGP's built-in abstract-type component. Its provider trait is `TypeProvider`, and
+`HasType<Tag>` is CGP's tag-indexed abstract-type component. Its provider trait is `TypeProvider`, and
 each tag identifies a separate type choice. A context can therefore select several abstract types
 through wiring:
 

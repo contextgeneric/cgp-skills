@@ -837,8 +837,8 @@ traits.
 The `#[use_type(HasScalarType.Scalar)]` attribute is the recommended way to *use* an abstract type
 inside `#[cgp_fn]`, `#[cgp_impl]`, or `#[cgp_component]`. It rewrites bare `Scalar` to the fully
 qualified `<Self as HasScalarType>::Scalar` everywhere and adds the supertrait or `where` bound,
-removing `Self::` boilerplate and ambiguity. CGP's built-in abstract-type component is `HasType`
-(provider `TypeProvider`).
+removing `Self::` boilerplate and ambiguity. CGP's tag-indexed abstract-type component is `HasType`
+(provider `TypeProvider`); the named ones, such as `HasErrorType`, are defined with `#[cgp_type]`.
 
 ---
 
