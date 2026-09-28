@@ -119,8 +119,10 @@ alias in the [WithProvider family](wiring.md).
 
 ## Choosing the concrete type from a table with `UseDelegatedType`
 
-Use `UseDelegatedType<Components>` when a group of related types must be selected together. It looks
-up each concrete type in an inner `DelegateComponent` table keyed by the type tag. One provider can
+Use `UseDelegatedType<Components>` when a group of related types must be selected together. It looks up each concrete type in an inner `DelegateComponent` table. Wired directly as
+`TypeProviderComponent: UseDelegatedType<Table>`, the key is the `Tag` of `HasType<Tag>`; wired to a
+`#[cgp_type]` component through `WithDelegatedType<Table>`, the key is the component's marker, such
+as `ScalarTypeProviderComponent`. One provider can
 then supply several abstract-type components or use choices recorded elsewhere. For a single
 concrete type per component, prefer `UseType<T>`.
 

@@ -197,10 +197,14 @@ Common aliases avoid spelling out the adapter:
 
 - **`WithField` and `WithFieldRef`:** Adapt a field getter to a getter component.
 - **`WithType` and `WithDelegatedType`:** Adapt a type provider to an abstract-type component.
-- **`WithContext`:** Adapt the context's own implementation.
+- **`WithContext`:** Answer the component from the context's own generic `HasType` or `HasField`
+  entry, keyed by the component's marker. It is not `UseContext`: wiring a component to `UseContext`
+  calls that same component back through the context and overflows.
 
 An entry such as `NameGetterComponent: WithField<…>` selects the field getter named inside the
-adapter.
+adapter. `WithType` and `WithField` match the bare `UseType` and `UseField` on the components that
+have both impls, but a `#[cgp_type]` component takes a field's type only as `WithField<Tag>`, since
+the macro generates no `UseField` impl.
 
 `UseDefault` supplies a provider name for a component whose methods all have default bodies. The
 author writes an empty `#[cgp_impl(UseDefault)]` impl to accept those defaults, then wires the

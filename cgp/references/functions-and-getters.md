@@ -449,9 +449,13 @@ single-method getter receives the `UseField<Tag>` impl and the `WithProvider` ad
 presuppose one field; a multi-method getter wired to `UseField` fails with an unmet `IsProviderFor`
 bound that never mentions the method count, so wire `UseFields` or split the trait.
 
-Use `UseFieldRef<Tag, Value>` when `AsRef` or `AsMut` converts the stored field to the exposed type.
-For example, `UseFieldRef<Symbol!("name"), str>` reads a `String` field and exposes `&str` through
-`as_ref()`. Import this provider from `cgp::core::field::impls`; it is not in the prelude.
+Use `UseFieldRef<Tag, Value>` when `AsRef` or `AsMut` converts the stored field to the exposed type,
+for a getter returning `&Value` with `Value` sized. For example, a `fn config(&self) -> &Config`
+getter wired to `WithFieldRef<Symbol!("config"), Config>` reads a field holding a wrapper that
+implements `AsRef<Config>`. It cannot serve a `-> &str` getter, since `str` is unsized and the getter
+macros already read a `String` field for that return type; plain `UseField` covers `&str`, `&[T]`,
+and `Option<&T>` returns. Import this provider from `cgp::core::field::impls`; it is not in the
+prelude, and it is wired only through its `WithFieldRef` alias.
 
 `WithField` and `WithFieldRef` are the `WithProvider` aliases for `UseField` and `UseFieldRef`; see
 [wiring](wiring.md). An entry such as `NameGetterComponent: WithField<Symbol!("first_name")>`
