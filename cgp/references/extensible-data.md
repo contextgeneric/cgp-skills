@@ -43,6 +43,13 @@ Variant construction and extraction require exactly one unnamed payload per vari
 values in a dedicated struct to give the variant one payload type. Unit, multi-field tuple, and
 struct-style variants are rejected, and individual variants cannot opt out of the derive.
 
+The builder and extractor companions (`__Partial{Name}`) copy each field's or variant's attributes
+but none of the type's derives. A helper attribute of another derive, such as
+`#[serde(rename = "x")]` beside `Serialize`, therefore fails with
+``cannot find attribute `serde` in this scope`` on a type that also derives `BuildField`,
+`ExtractField`, `CgpRecord`, `CgpVariant`, or `CgpData`. Keep such types on the narrower derives
+that emit no companion (`HasField`, `HasFields`, `FromVariant`).
+
 `#[derive(HasFields)]` accepts all variant shapes because it describes their structure without
 generating variant construction or extraction. A unit variant contributes `Nil`, a newtype variant
 contributes its payload, a multi-field tuple variant contributes an `Index<N>`-keyed product, and a
