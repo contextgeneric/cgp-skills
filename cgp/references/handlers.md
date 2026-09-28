@@ -261,7 +261,8 @@ to handler. It supplies the missing behavior by ignoring input or wrapping succe
 
 `PromoteAsync<Provider>` adapts synchronous execution to an async interface. `PromoteRef<Provider>`
 adapts value and reference interfaces through dereferencing or reborrowing. `TryPromote<Provider>`
-converts between a `Result`-valued `Computer` and `TryComputer` in either direction.
+converts between a `Result`-valued `Computer` and `TryComputer` in either direction, and likewise
+between a `Result`-valued `AsyncComputer` and `Handler`.
 
 Prefer promotion bundles when wiring several related interfaces. `PromoteComputer`,
 `PromoteTryComputer`, `PromoteProducer`, `PromoteAsyncComputer`, and `PromoteHandler` are delegation
@@ -270,7 +271,10 @@ bundles automatically, passing `Self`. A bundle expects its parameter to be a pr
 same bundle, because some entries reach the base through a sibling component: `PromoteComputer<P>`
 answers `Handler` through `PromoteAsync<P>`, which needs `P: TryComputer`. To lift a hand-written
 provider without wiring it to a bundle, chain the single-step adapters, as in
-`PromoteAsync<Promote<MyComputer>>` for a `Handler` from a `Computer`.
+`PromoteAsync<Promote<MyComputer>>` for a `Handler` from a `Computer`, or
+`PromoteAsync<TryPromote<MyCheckedComputer>>` from a `Computer` returning `Result`. The `*Ref`
+entries also need a base that accepts a borrow as its input; a base over an owned `u64` answers none
+of them.
 
 ## Dispatching over extensible data
 
