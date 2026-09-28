@@ -12,8 +12,8 @@ promotion bundles, and the provider traits except `ComputerRef`, `TryComputerRef
 The consumer traits, those three provider traits, and the one-step combinators (`Promote`,
 `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`) come
 from `cgp::extra::handler`. A concrete context that delegates a handler also implements its provider
-trait, so calling `App::compute(&app, …)` by bare name is ambiguous (`E0034`) when that provider
-trait is in scope; use method syntax or name the consumer trait.
+trait, so calling `App::compute(&app, …)` by bare name is ambiguous (`E0034`) when the consumer
+trait and that provider trait are both in scope; use method syntax or name the consumer trait.
 
 ## The shared shape and the axes
 
