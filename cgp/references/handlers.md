@@ -164,8 +164,10 @@ fn add(a: u64, b: u64) -> u64 {
 }
 ```
 
-The provider name defaults to the function’s PascalCase name. Override it with an argument such as
-`#[cgp_computer(MyAdder)]`. Parameters become one input tuple, and the return type becomes `Output`.
+The provider name defaults to the function’s PascalCase name, with a raw identifier's `r#` dropped
+(`r#type` names `Type`). Override it with an argument such as `#[cgp_computer(MyAdder)]`. Parameters
+become one input tuple, and the return type becomes `Output`. `impl Trait` cannot appear in either,
+since a provider impl cannot name it; declare a generic parameter instead.
 
 The macro preserves the function and generates a base provider impl that destructures the input
 tuple. It also generates a delegation table that selects promotion providers for the remaining
@@ -183,6 +185,10 @@ impl<__Context__, __Code__> Computer<__Context__, __Code__, (u64, u64)> for Add 
 // delegate_components! routes the rest of the family to PromoteComputer<Self>
 ```
 
+That is the input the macro builds for `#[cgp_new_provider]` and `delegate_components!`. It lowers
+the input itself rather than emitting those attributes, so its output names every CGP item by full
+path and compiles without `cgp::prelude::*` in scope.
+
 The function signature determines the base provider and promotion bundle. A synchronous function
 uses `Computer`; an async function uses `AsyncComputer`. A `Result` return remains the base
 provider’s `Output`, while its promotion bundle exposes success and failure through fallible
@@ -199,8 +205,9 @@ The signature selects these generated forms:
 
 The `Result` check reads the tokens: only a return type written `Result<T, E>` selects a fallible
 bundle. `core::result::Result<T, E>` and `anyhow::Result<T>` are treated as plain values, so
-`try_compute` wraps them in `Ok`, and a one-argument alias written `Result<T>` fails with
-``expected `,` ``. Write the full `Result<T, E>` in a fallible computer's signature. The fallible
+`try_compute` wraps them in `Ok`, and a one-argument alias written `Result<T>` is rejected with an
+error asking for the `Result<T, E>` form. Write the full `Result<T, E>` in a fallible computer's
+signature. The fallible
 bundles pass the `Err` through unconverted, so `E` must be the context's `HasErrorType::Error`, or
 the fallible members fail with `E0271`.
 
@@ -219,7 +226,8 @@ fn magic_number() -> u64 {
 }
 ```
 
-Producer functions must be synchronous and have neither parameters nor generics. The generated
+Producer functions must be synchronous and have neither parameters, generics, nor an `impl Trait`
+return type. The generated
 `MagicNumber` provider returns `42` through `produce` and the promoted computation interfaces.
 `PromoteProducer` ignores the supplied input for `compute`, `try_compute`, `handle`, and their
 borrowed forms.
@@ -302,10 +310,14 @@ Each method generates a per-variant computer named `Compute` plus the method nam
 helper function named `__compute_` plus the method name plus `__`. The enum impl uses
 `MatchWithValueHandlersRef` for `&self`, `MatchWithValueHandlersMut` for `&mut self`, and
 `MatchWithValueHandlers` for `self`, with the `MatchFirstWith…` forms when the method takes extra
-arguments; an async method keeps the same matcher and bounds it as an `AsyncComputer`. Avoid a
-supertrait on the trait, a method needing two distinct lifetimes, and two dispatch traits in one
-module sharing a method name, whose generated helpers and computers collide: each makes the
-expansion fail to compile.
+arguments; an async method keeps the same matcher and bounds it as an `AsyncComputer`. Elided
+lifetimes in a method follow Rust's elision rules, and a supertrait is required of the enum, which
+must provide it, for instance by dispatching it too. The receiver must be `self`, `&self`, or
+`&mut self`, and the attribute takes no arguments.
+
+Two shapes still fail to compile. Two dispatch traits in one module must not share a method name,
+because their generated helpers and computers collide. A lifetime hidden in a path, as in
+`Cow<str>`, must be written out as `Cow<'_, str>` so the macro can name it.
 
 Methods cannot have non-lifetime generic parameters because the generated impl would need a
 quantified bound Rust cannot express. Use dispatch combinators directly for those methods.

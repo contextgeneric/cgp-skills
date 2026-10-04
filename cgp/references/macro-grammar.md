@@ -634,6 +634,12 @@ locate the syntax to change:
   that form is unsupported.
 - **Generic `#[cgp_auto_dispatch]` method:** Non-lifetime method parameters require a quantified
   bound that Rust cannot express, so the macro rejects them.
+- **Typed `#[cgp_auto_dispatch]` receiver:** A receiver such as `self: Box<Self>` is rejected; use
+  `self`, `&self`, or `&mut self`. The attribute itself takes no arguments.
+- **`impl Trait` in `#[cgp_computer]` or `#[cgp_producer]`:** A provider impl cannot name it, so
+  declare a generic parameter for an argument and a concrete return type.
+- **One-argument `Result<T>` in `#[cgp_computer]`:** Only `Result<T, E>` selects the fallible
+  promotion, so write the error type.
 
 ---
 
