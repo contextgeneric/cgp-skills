@@ -130,7 +130,12 @@ compiles on any **stable Rust ≥ 1.89**, so plain `cargo check` works on a CGP 
 `rust-analyzer.check.overrideCommand` set to
 `["cargo","cgp","check","--workspace","--all-targets","--message-format=json"]`. But **never modify
 the user's Rust Analyzer settings implicitly.** Mention this option and let them opt in. Edit their
-editor configuration only when they ask you to.
+editor configuration only when they ask you to, and then put the setting in the project's workspace
+settings (`.vscode/settings.json` in VS Code) rather than their user settings, so the tool runs only on
+CGP projects. The override replaces Rust Analyzer's own check options, so write any `--features` flag
+into the array. The
+[editor integration page](https://contextgeneric.dev/docs/cargo-cgp/editor-integration) covers the
+setup and its failure messages.
 
 When cargo-cgp is not available, or leaves an error largely unrewritten, read the raw compiler
 output by hand. Only then load the [error-extraction sub-skill](references/error-extraction.md), the
