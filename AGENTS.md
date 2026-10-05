@@ -51,6 +51,17 @@ Link to files with `https://github.com/contextgeneric/cgp-knowledge-base/blob/ma
 directories with `https://github.com/contextgeneric/cgp-knowledge-base/tree/main/<path>`. Instruct the
 agent to fetch those details when needed without assuming a local checkout exists.
 
+## Name official versions only
+
+A skill names official release versions only: `cgp` v0.8.0 and `cargo-cgp` v0.1.0, never a
+pre-release such as `0.8.0-alpha` or `0.1.0-alpha`, which exists only as a test run before the
+official version ships. When the source is at a pre-release, write the skill as though the official
+version it leads to has been published: name that version, pin install commands and flake tags to
+it, and leave out any note on what a pre-release on crates.io lacks or how it differs. This follows
+the knowledge base's
+[rule on versions](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/AGENTS.md#document-official-versions-never-pre-releases),
+and yields only to an explicit instruction from the user.
+
 ## Verify against the source
 
 Verify each skill's claims and snippets against the current CGP code. When syntax is uncertain,

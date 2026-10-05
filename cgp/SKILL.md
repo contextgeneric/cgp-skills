@@ -57,9 +57,9 @@ rustup to provision the pinned nightly and build its matching driver.
 Use Nix only when the host has a `nix` command on `PATH`, the project has a `flake.nix`, or the user
 requests it. Otherwise, omit Nix from the recommendation. When Nix is present and `cargo-cgp` is
 absent, prefer running it from the project directory without installing it:
-`nix run github:contextgeneric/cargo-cgp/v0.1.0-alpha -- check`. Arguments after `--` go to
+`nix run github:contextgeneric/cargo-cgp/v0.1.0 -- check`. Arguments after `--` go to
 `cargo check`. To install into a Nix profile, use
-`nix profile install github:contextgeneric/cargo-cgp/v0.1.0-alpha`.
+`nix profile install github:contextgeneric/cargo-cgp/v0.1.0`.
 
 The pinned nightly applies only to cargo-cgp's own check, so the project retains its toolchain.
 `cargo cgp setup` installs that nightly, or the Nix flake builds it. See the
@@ -121,11 +121,6 @@ Read the expansion as diagnostic output. It is not intended for compilation: the
 `cgp::macro_prelude::` qualifier, and an `open` statement's per-key entry retains its raw
 `PathCons<…>` key.
 
-`expand` is newer than cargo-cgp v0.1.0-alpha, so a crates.io install does not carry it yet. Until
-the next release it comes from the Nix flake without a tag
-(`nix run github:contextgeneric/cargo-cgp -- expand --lib`) or from a source checkout. See
-<https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/reference/installation.md>.
-
 **Scope:** cargo-cgp is optional and adds only `check` and `expand`. It does not provide
 `cargo cgp build`, `run`, or `test`, so build, run, and test the project with plain cargo. CGP itself
 compiles on any **stable Rust ≥ 1.89**, so plain `cargo check` works on a CGP project too. Reach for
@@ -145,7 +140,7 @@ produce, so you do not need it.
 
 ### Versions and keeping this skill current
 
-This skill is written for **CGP v0.8.0** and **cargo-cgp v0.1.0-alpha**. Check both on the host and
+This skill is written for **CGP v0.8.0** and **cargo-cgp v0.1.0**. Check both on the host and
 act on a mismatch:
 
 - Read the user's `cgp` version from its `Cargo.toml` or `Cargo.lock` entry, and run
@@ -337,7 +332,7 @@ Related names can also differ: `ConcatPath` and `DefaultNamespace` are in the pr
 `StaticString`, `StaticFormat`, `DefaultImpls1`, and `DefaultImpls2` are not. Among the builder
 traits, `TakeField` requires an explicit import.
 
-This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0-alpha**. See
+This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0**. See
 [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on
 the host and reconciling a mismatch. Inside documentation code blocks you may omit the prelude
 import for brevity.

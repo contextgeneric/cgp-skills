@@ -142,14 +142,6 @@ The crates differ in a few facts that affect wiring and output:
   `source()`. `WrapError` prints only its detail with `{}`, so a reporter that walks `source()`
   prints each message once, and prints the whole chain joined by `": "` with `{:#}` or `{:?}`.
 
-These behaviors describe the `cgp` source on `main`. The 0.8.0-alpha crates on crates.io differ:
-their `cgp-error-eyre` panics on every report unless a hook has been installed with
-`eyre::set_hook`, their eyre reports record a location inside the backend, their `WrapError`
-prints its source twice when the chain is walked, and their `RaiseBoxedStdError` cannot be wired as
-a wrapper. Check the host's `Cargo.lock`; if it resolves the
-published 0.8.0-alpha backends, install an eyre hook at startup or build against `cgp` `main`
-through `[patch.crates-io]`.
-
 ## Diagnosing backend wiring
 
 Most backend errors come from a source routed to a provider whose bounds it does not meet. List the
