@@ -89,6 +89,10 @@ impl HasFields for Person {
 }
 ```
 
+Write this shape as `Struct! { first_name: String, last_name: String }` wherever code names it;
+the macro expands to exactly the derived `Fields`. See
+[type-level primitives](type-level-primitives.md#shapes-struct-and-enum).
+
 The derive generates conversions between the struct and its field representation. `ToFields`
 consumes a value to produce its field product, `FromFields` rebuilds the value, and `ToFieldsRef`
 returns a product of references. Generic algorithms can use `HasFields`, `ToFields`, or `FromFields`
@@ -173,7 +177,8 @@ replace a subsystem, or use code-based dispatch to select among target structs. 
 ## Variants: constructing and deconstructing an enum
 
 `#[derive(HasFields)]` represents an enum’s variants as a [`Sum!`](type-level-primitives.md) of
-`Field<Symbol!("Variant"), Type>` entries using `Either` and `Void`. `#[derive(FromVariant)]`
+`Field<Symbol!("Variant"), Type>` entries using `Either` and `Void`, written as an enum body with
+`Enum! { Circle(Circle), Rectangle(Rectangle) }`. `#[derive(FromVariant)]`
 supplies a constructor for each variant, selected by its type-level tag:
 
 ```rust

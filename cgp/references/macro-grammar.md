@@ -530,7 +530,8 @@ rejected. See [namespaces](namespaces.md).
 
 ## Type-level construction macros
 
-Type-level construction macros encode strings, lists, and paths for CGP lookups. Their inputs are:
+Type-level construction macros encode strings, lists, shapes, and paths for CGP lookups. Their
+inputs are:
 
 ```ebnf
 SymbolInput  -> STRING_LITERAL
@@ -542,6 +543,13 @@ SumInput     -> ( Type ( `,` Type )* `,`? )?
 
 PathInput    -> `@` PathSegment ( `.` PathSegment )*
 PathSegment  -> Type
+
+StructInput  -> NamedFields | TupleFields               // Struct!, any delimiter
+NamedFields  -> ( IDENTIFIER `:` Type ( `,` IDENTIFIER `:` Type )* `,`? )?
+TupleFields  -> ( Type ( `,` Type )* `,`? )?
+
+EnumInput    -> ( Variant ( `,` Variant )* `,`? )?
+Variant      -> IDENTIFIER ( `(` TupleFields `)` | `{` NamedFields `}` )?
 ```
 
 `Symbol!("abc")` expands to `Symbol<3, Chars<'a', Chars<'b', Chars<'c', Nil>>>>`. The leading const
@@ -551,6 +559,12 @@ Rust version cannot compute from `Chars` in const position.
 `Product![A, B]` expands to `Cons<A, Cons<B, Nil>>`, and `product![…]` constructs the corresponding
 value. Empty products use `Nil`. `Sum![A, B]` expands to `Either<A, Either<B, Void>>`, ending in the
 uninhabited `Void`.
+
+`Struct!` and `Enum!` expand to the `Fields` that `#[derive(HasFields)]` gives the same body:
+named fields become `Field<Symbol!("name"), T>` entries, positional fields `Field<Index<N>, T>`
+entries, and variants `Field<Symbol!("Variant"), Payload>` entries of a `Sum!`. A `Struct!` body is
+named when its entries start with `name:`, whatever the delimiter. A single positional field is its
+bare type, as in the derive. Attributes, visibility, `_`, duplicates, and discriminants are rejected.
 
 `Path!(@app.error.FooComponent)` expands to a `PathCons` chain. Lowercase non-primitive segments
 become `Symbol!` tags; capitalized or primitive segments remain types. See

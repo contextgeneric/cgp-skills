@@ -11,7 +11,8 @@ uses a field tag, a [wiring](wiring.md) table uses a [component](components.md) 
 [namespace](namespaces.md) uses a path. Strings become character-list types, positions become
 const-generic markers, and lists become recursive types.
 
-Prefer `Symbol!`, `Product!`, `Sum!`, and `Path!` to their nested expansions. Derives also generate
+Prefer `Symbol!`, `Product!`, `Sum!`, `Path!`, and the shape macros `Struct!` and `Enum!` to their
+nested expansions. Derives also generate
 these encodings. Compiler errors and plain `cargo expand` can expose the full types;
 `cargo cgp expand` restores recognized encodings to macro notation. The definitions below explain
 the nested forms that remain visible.
@@ -172,6 +173,45 @@ pub struct Person { pub name: String, pub age: u8 }
 // ];
 ```
 
+## Shapes: `Struct!` and `Enum!`
+
+`Struct!` and `Enum!` write a `HasFields` shape as the body of a declaration. Each expands to exactly
+the `Fields` that `#[derive(HasFields)]` gives the same body, because it runs the derive's encoder:
+
+```rust
+Struct! { name: String, age: u8 }
+// Product![Field<Symbol!("name"), String>, Field<Symbol!("age"), u8>]
+
+Struct!(u64, String)
+// Product![Field<Index<0>, u64>, Field<Index<1>, String>]
+
+Enum! { Empty, Circle(f64), Rect { width: f64, height: f64 } }
+// Sum![
+//     Field<Symbol!("Empty"), Nil>,
+//     Field<Symbol!("Circle"), f64>,
+//     Field<Symbol!("Rect"), Struct! { width: f64, height: f64 }>,
+// ]
+```
+
+Use them wherever code names a shape: a bound such as `T: HasFields<Fields = Struct! { … }>`, an impl
+over a shape, a wiring entry, or an `open` key. `cargo-cgp` prints shapes in this form too.
+
+Follow these rules when reading or writing a shape:
+
+- **Delimiter:** the `Struct!` invocation delimiter does not matter. The macro reads the form from
+  the entries, so `Struct!(a: u8)` is the named form. Write braces for named fields and parentheses
+  for a tuple body by convention.
+- **Newtype rule:** a body with one positional field is that field's type, so `Struct!(u64)` is
+  `u64`. A one-element positional list has no `Struct!` spelling; write
+  `Product![Field<Index<0>, T>]`.
+- **Empty bodies:** `Struct! {}` is `Nil` and `Enum! {}` is `Void`. A unit variant carries `Nil`.
+- **Types only:** each macro builds a type. Build a value with `product!` and `.into()`, or with
+  `ToFields`.
+- **Rejected input:** attributes, visibility, the `_` field name, duplicate names, discriminants, and
+  a mix of named and positional entries.
+- **`#[use_type]`:** an alias inside the body is not rewritten. Write `<Self as HasErrorType>::Error`
+  there instead of the bare `Error`.
+
 ## `Path!` and `PathCons`: type-level routes
 
 `Path!` identifies a lookup destination through a sequence of type-level segments.
@@ -302,5 +342,6 @@ Consult these knowledge-base references for the complete definitions:
 - [Types](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp/reference/types): `Cons`, `Either`, `Chars`, `Index`, `Field`, `Life`, `MRef`, and `PathCons`.
 - [`Symbol!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/symbol.md): String encoding.
 - [`Product!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/product.md) and [`Sum!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/sum.md): Product and sum construction.
+- [`Struct!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/struct.md) and [`Enum!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/enum.md): Shape construction.
 - [`Path!`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/macros/path.md): Path construction.
 - [`StaticFormat`](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/reference/traits/static_format.md): Formatting type-level strings.

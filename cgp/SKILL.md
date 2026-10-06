@@ -7,7 +7,7 @@ description: >-
   `#[cgp_fn]`, `#[cgp_type]`, `#[cgp_getter]`, `#[cgp_auto_getter]`, `#[cgp_computer]`,
   `#[cgp_producer]`, or `cgp_namespace!` macros, the `delegate_components!`,
   `check_components!`, or `delegate_and_check_components!` macros, the `Symbol!`,
-  `Product!`, `Sum!`, or `Path!` type-level macros, the `HasField`/`HasFields` traits or
+  `Product!`, `Sum!`, `Path!`, `Struct!`, or `Enum!` type-level macros, the `HasField`/`HasFields` traits or
   their derives, providers such as `UseContext`/`UseDelegate`/`UseField`/`UseType`, the
   handler family (`Computer`/`Producer`/`Handler`), the error backends
   (`cgp-error-anyhow`, `cgp-error-eyre`, `cgp-error-std`, such as `UseAnyhowError` and
@@ -300,6 +300,7 @@ generated code and legacy implementations, and some advanced cases still require
 | dispatch a component per type, on any of its parameters | the `open` statement (or a namespace), one path segment per parameter | `#[derive_delegate]` + `UseDelegate<new …>` or `UseInputDelegate<new …>` tables |
 | verify a context is fully wired | separate `check_components!` (or `delegate_and_check_components!` for a basic starter context) | leaving a context's wiring unchecked |
 | build a field/list/string/path type | `Symbol!` / `Product!` / `Sum!` / `Path!` sugar | hand-written `Cons`/`Nil`/`Chars`/`Either`/`PathCons` |
+| name a struct or enum shape | `Struct! { a: A }` / `Struct!(A, B)` / `Enum! { V(A) }` | `Product![Field<Symbol!("a"), A>]` and the like |
 
 Some names are gone entirely, not merely dated. Never write `#[cgp_context]`, which was removed
 (assemble a context with `delegate_components!` and the derives instead), or `ProvideType`, which
@@ -1047,6 +1048,7 @@ recognize their expanded forms when reading errors:
 - **`Symbol!("name")`** is a type-level string (field-name tag). It expands to `Symbol<4, Chars<'n', Chars<'a', Chars<'m', Chars<'e', Nil>>>>`. The leading length works around missing const-generics.
 - **`Product![A, B, C]`** is a type-level list. It expands to `Cons<A, Cons<B, Cons<C, Nil>>>`. `product![…]` is the value-level form. Used for field lists and handler pipelines.
 - **`Sum![A, B]`** is a type-level sum (the dual of `Product!`), over the `Either`/`Void` list. Used for enum variant lists.
+- **`Struct! { name: T }`** / **`Struct!(A, B)`** and **`Enum! { V(T) }`** write a struct or enum shape as a declaration body. Each expands to exactly the `Fields` that `#[derive(HasFields)]` gives the same body.
 - **`Index<N>`** is a type-level natural number, and tags tuple-struct fields.
 - **`Field`** is a value paired with its type-level name tag.
 - **`Path!`** / `PathCons` is a type-level path, used by namespaces and `RedirectLookup`.
