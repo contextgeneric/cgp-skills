@@ -564,7 +564,8 @@ uninhabited `Void`.
 named fields become `Field<Symbol!("name"), T>` entries, positional fields `Field<Index<N>, T>`
 entries, and variants `Field<Symbol!("Variant"), Payload>` entries of a `Sum!`. A `Struct!` body is
 named when its entries start with `name:`, whatever the delimiter. A single positional field is its
-bare type, as in the derive. Attributes, visibility, `_`, duplicates, and discriminants are rejected.
+bare type, as in the derive. Attributes, visibility, `_`, duplicates, and discriminants are rejected,
+and a keyword field name must be written raw, as in `Struct! { r#type: u8 }`.
 
 `Path!(@app.error.FooComponent)` expands to a `PathCons` chain. Lowercase non-primitive segments
 become `Symbol!` tags; capitalized or primitive segments remain types. See
