@@ -39,9 +39,23 @@ Generated operations identify fields and variants by type-level tags. Named fiel
 `Symbol!("name")`, while tuple-struct fields use positional tags such as `Index<0>`. The same tag
 identifies an entry across its generated impls.
 
-Variant construction and extraction require exactly one unnamed payload per variant. Wrap multiple
-values in a dedicated struct to give the variant one payload type. Unit, multi-field tuple, and
-struct-style variants are rejected, and individual variants cannot opt out of the derive.
+Variant construction and extraction require each variant to carry one unnamed payload or no fields.
+Wrap multiple values in a dedicated struct to give the variant one payload type. A variant with no
+fields, written `Closed`, `Closed()`, or `Closed {}`, carries the payload `Nil`: build it with
+`from_variant(PhantomData::<Symbol!("Closed")>, Nil)`, and extract it as `Nil`, `&Nil`, or
+`&mut Nil`. Multi-field tuple variants and struct-style variants with fields are rejected, and
+individual variants cannot opt out of the derive.
+
+Variants with no fields have three practical consequences:
+
+- **Value dispatch merges them:** a value matcher hands every such variant the same `Nil`, so use a
+  field matcher (`MatchWithFieldHandlers`), whose provider receives `Field<Tag, Nil>`, to tell them
+  apart.
+- **`#[cgp_auto_dispatch]` cannot serve the enum:** the dispatched trait would need an impl for the
+  foreign `Nil`, which conflicts with the macro's blanket impl. Use the dispatch combinators with a
+  provider instead.
+- **A `no_std` crate needs `Box` in scope:** the mutable extractor builds the `&mut Nil` with
+  `Box::leak(Box::new(Nil))`, resolving `Box` where the derive is used.
 
 The builder and extractor companions (`__Partial{Name}`) copy each field's or variant's attributes
 but none of the type's derives. A helper attribute of another derive, such as
@@ -53,9 +67,10 @@ that emit no companion (`HasField`, `HasFields`, `FromVariant`).
 `#[derive(HasFields)]` accepts all variant shapes because it describes their structure without
 generating variant construction or extraction. A unit variant contributes `Nil`, a newtype variant
 contributes its payload, a multi-field tuple variant contributes an `Index<N>`-keyed product, and a
-named-field variant contributes a `Symbol!`-keyed product inside its `Field` entry. An enum with
-mixed shapes can therefore have a structural description even though the constructor and extractor
-derives reject it.
+named-field variant contributes a `Symbol!`-keyed product inside its `Field` entry. The variant
+derives agree with it for a variant with no fields, which is `Nil` in both. An enum with multi-field
+or named-field variants can therefore have a structural description even though the constructor and
+extractor derives reject it.
 
 Avoid enum variant names that conflict with associated types in generated impls. The restrictions
 for each derive are:

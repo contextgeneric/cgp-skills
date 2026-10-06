@@ -579,10 +579,12 @@ Data derives do not accept custom arguments. `HasField`, `HasFields`, `CgpData`,
 `CgpVariant`, `BuildField`, `ExtractField`, and `FromVariant` generate code from the annotated
 item’s structure. Named struct fields use `Symbol!` tags, and tuple fields use `Index<N>`.
 
-`CgpVariant`, enum `CgpData`, `ExtractField`, and `FromVariant` require one unnamed payload per
-variant, as in `Circle(Circle)`. Unit, multi-field tuple, and struct-style variants fail with
-“Expected variant to contain exactly one unnamed field”. Wrap a richer payload in a dedicated
-struct. See [extensible-data](extensible-data.md) for the derives and their restrictions.
+`CgpVariant`, enum `CgpData`, `ExtractField`, and `FromVariant` require each variant to carry one
+unnamed payload, as in `Circle(Circle)`, or no fields at all. A variant with no fields (`Closed`,
+`Closed()`, or `Closed {}`) carries the payload `Nil`. Multi-field tuple variants and struct-style
+variants with fields fail with “Expected variant to contain exactly one unnamed field, or no
+fields”. Wrap a richer payload in a dedicated struct. See [extensible-data](extensible-data.md)
+for the derives and their restrictions.
 
 ---
 
@@ -643,8 +645,11 @@ locate the syntax to change:
   entries. Remove the attribute or use the macro that supports it.
 - **Rejected const generic:** Component-trait parameters and provider-trait arguments must fit the
   type-based dispatch representation. An associated `const` item on a trait is allowed.
-- **“Expected variant to contain exactly one unnamed field”:** Wrap the variant's payload in one
-  unnamed field, using a separate struct for richer data.
+- **“Expected variant to contain exactly one unnamed field, or no fields”:** Wrap the variant's
+  fields in a separate struct and make it the variant's one unnamed field.
+- **``cannot find type `Box` in this scope`` on an enum variant:** A `no_std` crate is deriving
+  `CgpVariant`, `CgpData`, or `ExtractField` over a variant with no fields, whose mutable extractor
+  uses `Box`. Add `extern crate alloc; use alloc::boxed::Box;`.
 - **Default-bodied async method:** `#[async_trait]` does not wrap a default body in `async {}`, so
   that form is unsupported.
 - **Generic `#[cgp_auto_dispatch]` method:** Non-lifetime method parameters require a quantified

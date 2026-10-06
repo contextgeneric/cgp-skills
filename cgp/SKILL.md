@@ -1112,8 +1112,8 @@ Choose the remaining references by task:
   `HasRuntime`/`HasRuntimeType`, and `Send` recovery for async methods.
 - **[Extensible data](references/extensible-data.md):** Load for generic struct and enum operations.
   Covers data derives, builders, extractors, optional and defaulted fields, product and sum lists,
-  `AppendProduct`/`ConcatProduct`/`MapFields`, structural casts, exhaustiveness, and the single-payload
-  variant rule.
+  `AppendProduct`/`ConcatProduct`/`MapFields`, structural casts, exhaustiveness, and the
+  one-payload-or-none variant rule.
 - **[Namespaces](references/namespaces.md):** Load for grouped or inherited wiring. Covers
   `cgp_namespace!`, joining and iterating namespaces, `#[prefix]`, `#[default_impl]`,
   `RedirectLookup`, `Path!`, and `DefaultNamespace`.
