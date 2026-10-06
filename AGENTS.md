@@ -78,9 +78,10 @@ Use the knowledge base's terms consistently: consumer trait, provider trait, pro
 impl-side dependency, component, and context. Consistent vocabulary lets agents move between a
 skill and the knowledge base without reconciling different terms for the same concept.
 
-Apply the `/point-first-writing` skill. Open each section with a self-contained topic sentence,
-introduce each list, and make the prose around a code block explain its meaning without requiring
-the reader to inspect the code.
+Apply the `/point-first-writing` skill, published in the knowledge base's
+[`skills/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/skills/point-first-writing)
+directory. Open each section with a self-contained topic sentence, introduce each list, and make the
+prose around a code block explain its meaning without requiring the reader to inspect the code.
 
 Check Markdown syntax after every edit because agents read skill files verbatim. Open and close
 each inline code span on the same line, and delimit fenced blocks with triple backticks on their

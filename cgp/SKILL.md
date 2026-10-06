@@ -1127,12 +1127,17 @@ For the exact macro expansion of any construct, every accepted syntax form, corn
 implementing source, consult the online knowledge base at
 **https://github.com/contextgeneric/cgp-knowledge-base**. CGP's own section is
 [`cgp/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cgp), whose `reference/`,
-`concepts/`, `guides/`, and `errors/` directories are the authoritative, exhaustive record, and the
-worked [`examples/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/examples) sit at
-the base's top level beside it. The base also documents `cargo-cgp`, under
+`concepts/`, `guides/`, and `errors/` directories are the most complete record, and the worked
+[`examples/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/examples) sit at the
+base's top level beside it. The base also documents `cargo-cgp`, under
 [`cargo-cgp/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/cargo-cgp). Fetch the
 relevant page when a detail is not covered here. Do not assume a local copy exists, because this
 skill is deployed on its own.
+
+The base is in an early phase and under active development, so some of its documents still need
+review and may be wrong. The CGP source outranks it, as it outranks this skill: when a document and
+the code disagree, trust the code, and tell the user so they can report the document on the
+[issue tracker](https://github.com/contextgeneric/cgp-knowledge-base/issues).
 
 ---
 
