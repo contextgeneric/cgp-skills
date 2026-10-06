@@ -76,7 +76,8 @@ explains the `[CGP-Exxx]` tags.
 Read the macro expansion when a diagnostic leaves the generated impls unclear. `cargo cgp expand`
 prints the expanded crate with CGP's type-level constructs restored to readable macro notation.
 For example, it displays a field tag as `Symbol!("width")`, a pipeline as
-`Product![StepOne, StepTwo]`, and a namespace key as `Path!(@app.GreeterComponent)`.
+`Product![StepOne, StepTwo]`, a derived field list as `Struct! { width: f64 }`, and a namespace key
+as `Path!(@app.GreeterComponent)`.
 
 Use expansion to investigate these questions:
 
