@@ -339,10 +339,13 @@ The return type determines the field type and read operation:
 getter supplies the borrowed form.
 
 A getter takes its access mode from the receiver, not the return type, which differs from an
-implicit argument. Two consequences follow. A `&mut self` getter returning a shared `Option<&T>` or
-`Option<&str>` fails with `E0308`, because the body converts with `.as_mut()`; return
-`Option<&mut T>` or take `&self`. And `Option<&[T]>` has no rule, so it asks for an unsized
-`Option<[T]>` field and fails with `E0277`; return `Option<&Vec<T>>` or `&Option<Vec<T>>`
+implicit argument. So a `&mut self` getter returning a shared `Option<&T>` or `Option<&str>` fails
+with `E0308`, because the body converts with `.as_mut()`; return `Option<&mut T>` or take `&self`.
+
+The `Option<&T>` form needs a sized `T`, in a getter and an implicit argument alike. The macro
+rejects `Option<&[T]>` and `Option<&dyn Trait>` with a message naming the sized container to read,
+such as `Option<&Vec<T>>` from an `Option<Vec<T>>` field. An unsized type named by a path, such as
+`Option<&Path>`, reaches the compiler as an `E0277` on the attribute; return `Option<&PathBuf>`
 instead.
 
 A trait can declare several getter methods. Each method selects its own field and generates a
