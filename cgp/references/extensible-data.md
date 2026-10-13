@@ -72,23 +72,6 @@ derives agree with it for a variant with no fields, which is `Nil` in both. An e
 or named-field variants can therefore have a structural description even though the constructor and
 extractor derives reject it.
 
-Avoid enum variant names that conflict with associated types in generated impls. The restrictions
-for each derive are:
-
-| Derive | Reserved variant names |
-| --- | --- |
-| `HasFields` | `Fields`, `FieldsRef` |
-| `FromVariant` | `Value` |
-| `ExtractField` | `Value`, `Remainder`, `Extractor`, `ExtractorRef`, `ExtractorMut` |
-| `CgpVariant`, `CgpData` | All names listed above |
-
-Struct field names are unaffected because they occupy a different namespace.
-
-Rename the conflicting variant when the compiler reports `ambiguous associated item` at a derive.
-Notes for `HasFields` and `FromVariant` identify the variant. Notes for `ExtractField` point only to
-the derive because its generated companion variants carry that source location, so check the
-reserved names manually.
-
 ## Records: the whole-struct field view
 
 `#[derive(HasFields)]` describes a struct through its `Fields` associated type. The type is a
