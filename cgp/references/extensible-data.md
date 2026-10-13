@@ -57,12 +57,10 @@ Variants with no fields have three practical consequences:
 - **A `no_std` crate needs `Box` in scope:** the mutable extractor builds the `&mut Nil` with
   `Box::leak(Box::new(Nil))`, resolving `Box` where the derive is used.
 
-The builder and extractor companions (`__Partial{Name}`) copy each field's or variant's attributes
-but none of the type's derives. A helper attribute of another derive, such as
-`#[serde(rename = "x")]` beside `Serialize`, therefore fails with
-``cannot find attribute `serde` in this scope`` on a type that also derives `BuildField`,
-`ExtractField`, `CgpRecord`, `CgpVariant`, or `CgpData`. Keep such types on the narrower derives
-that emit no companion (`HasField`, `HasFields`, `FromVariant`).
+The builder and extractor companions (`__Partial{Name}`) carry none of the type's derives, and from
+each field or variant they keep only `#[cfg]` and documentation. A helper attribute of another
+derive, such as `#[serde(rename = "x")]` beside `Serialize`, stays on the input type, so the two
+derives combine freely.
 
 `#[derive(HasFields)]` accepts all variant shapes because it describes their structure without
 generating variant construction or extraction. A unit variant contributes `Nil`, a newtype variant
