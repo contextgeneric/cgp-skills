@@ -656,6 +656,9 @@ locate the syntax to change:
   `self`, `&self`, or `&mut self`. The attribute itself takes no arguments.
 - **`impl Trait` in `#[cgp_computer]` or `#[cgp_producer]`:** A provider impl cannot name it, so
   declare a generic parameter for an argument and a concrete return type.
+- **A `#[cgp_computer]` parameter only the return type uses:** The generated impl cannot determine
+  it, so the macro rejects it. Take an argument whose type names it, or write a `Computer` provider
+  by hand on a provider generic over it.
 - **One-argument `Result<T>` in `#[cgp_computer]`:** Only `Result<T, E>` selects the fallible
   promotion, so write the error type.
 
