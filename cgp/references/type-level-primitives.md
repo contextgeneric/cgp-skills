@@ -225,10 +225,9 @@ pub struct PathCons<Head: ?Sized, Tail: ?Sized>(pub PhantomData<Head>, pub Phant
 ```
 
 `Path!` builds a path from dotted segments following `@`. A single identifier starting with a
-lowercase ASCII letter becomes a `Symbol!` unless it looks like a primitive type; a capitalized name,
-a primitive, and any type with a path or generic arguments remain the type they name. The primitive
-check over-matches: any `i`, `u`, or `f` followed only by digits counts, so `@app.f` keeps `f` as a
-type and fails with `E0425` unless one is in scope. Avoid such segments:
+lowercase ASCII letter becomes a `Symbol!` unless it is a primitive type name; a capitalized name, a
+primitive, and any type with a path or generic arguments remain the type they name. Only real
+primitive names count, so `@app.f` makes `f` a symbol. For example:
 
 ```rust
 type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
