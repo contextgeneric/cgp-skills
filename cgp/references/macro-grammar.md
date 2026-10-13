@@ -650,8 +650,6 @@ locate the syntax to change:
 - **``cannot find type `Box` in this scope`` on an enum variant:** A `no_std` crate is deriving
   `CgpVariant`, `CgpData`, or `ExtractField` over a variant with no fields, whose mutable extractor
   uses `Box`. Add `extern crate alloc; use alloc::boxed::Box;`.
-- **Default-bodied async method:** `#[async_trait]` does not wrap a default body in `async {}`, so
-  that form is unsupported.
 - **Generic `#[cgp_auto_dispatch]` method:** Non-lifetime method parameters require a quantified
   bound that Rust cannot express, so the macro rejects them.
 - **Typed `#[cgp_auto_dispatch]` receiver:** A receiver such as `self: Box<Self>` is rejected; use
