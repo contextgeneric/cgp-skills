@@ -213,8 +213,9 @@ where
 
 Inside `#[cgp_impl]`, `self` and `Self` refer to the context. The macro rewrites them to the context
 value and type. The exception is an associated type or const the block declares itself:
-`Self::Output` and `Self::LIMIT` name the provider's own item. The provider struct remains a
-type-level name without a runtime instance.
+`Self::Output` and `Self::LIMIT` name the provider's own item, even when a `#[uses]` trait gives the
+context an item of the same name (`<Self as HasLimit>::LIMIT` reads the context's). The provider
+struct remains a type-level name without a runtime instance.
 
 `#[cgp_impl]` desugars to `#[cgp_provider]`, or to `#[cgp_new_provider]` when `new` is given. The
 block above is equivalent to writing the context out by hand and lowering it:
