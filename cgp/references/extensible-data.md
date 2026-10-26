@@ -58,9 +58,9 @@ Variants with no fields have three practical consequences:
   `Box::leak(Box::new(Nil))`, resolving `Box` where the derive is used.
 
 The builder and extractor companions (`__Partial{Name}`) carry none of the type's derives, and from
-each field or variant they keep only `#[cfg]` and documentation. A helper attribute of another
-derive, such as `#[serde(rename = "x")]` beside `Serialize`, stays on the input type, so the two
-derives combine freely.
+each field or variant they keep only documentation. A helper attribute of another derive, such as
+`#[serde(rename = "x")]` beside `Serialize`, stays on the input type, so the two derives combine
+freely.
 
 `#[derive(HasFields)]` accepts all variant shapes because it describes their structure without
 generating variant construction or extraction. A unit variant contributes `Nil`, a newtype variant
