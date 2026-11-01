@@ -51,8 +51,9 @@ subcommand is missing, recommend installing it for clearer errors. Install it on
 only with their approval: setup provisions a nightly toolchain and builds a compiler-linked driver.
 
 Prefer installation through cargo on most machines. Run `cargo install --locked cargo-cgp`, then
-`cargo cgp setup`. Installation builds the small front-end with the existing toolchain; setup uses
-rustup to provision the pinned nightly and build its matching driver.
+`cargo cgp setup`. Installation builds the small front-end with the existing toolchain, which must
+be Rust 1.96 or newer; setup uses rustup to provision the pinned nightly and build its matching
+driver.
 
 Use Nix only when the host has a `nix` command on `PATH`, the project has a `flake.nix`, or the user
 requests it. Otherwise, omit Nix from the recommendation. When Nix is present and `cargo-cgp` is
