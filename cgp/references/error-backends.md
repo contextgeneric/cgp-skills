@@ -155,9 +155,9 @@ at the check entry:
   entry fails with `[CGP-E001]`, whose root cause `[CGP-E113]` names the missing
   `ErrorTypeProviderComponent`. Add `UseAnyhowError`.
 - **Two backends on one context.** `UseBoxedStdError` with `RaiseAnyhowError` fails with `E0271`
-  tagged `[CGP-E005]`: the abstract `Error` is `Box<dyn Error + Send + Sync>` where `Error` is
-  expected. The expected `Error` is `anyhow::Error` with its path removed. Use the raiser from the
-  crate that sets the type.
+  tagged `[CGP-E005]`: the abstract `Error` is `Box<dyn std::error::Error + Send + Sync>`, but
+  `cgp_error_anyhow::Error`, the crate's re-export of `anyhow::Error`, is required. Use the raiser
+  from the crate that sets the type.
 - **A `String` routed back to itself.** `@ErrorRaiserComponent.String: DebugError`, using the generic
   `DebugError`, fails with `E0275` tagged `[CGP-E020]`, because `DebugError` for `String` needs
   `CanRaiseError<String>` again. Route `String` to a backend's `Display…` or `Debug…` provider.
