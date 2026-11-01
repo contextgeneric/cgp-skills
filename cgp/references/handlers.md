@@ -316,7 +316,8 @@ must provide it, for instance by dispatching it too. The receiver must be `self`
 `&mut self`, and the attribute takes no arguments.
 
 Two shapes still fail to compile. Two dispatch traits in one module must not share a method name,
-because their generated helpers and computers collide. A lifetime hidden in a path, as in
+because their generated helpers and computers collide, which `cargo cgp check` reports as one
+`[CGP-E061]`. A lifetime hidden in a path, as in
 `Cow<str>`, must be written out as `Cow<'_, str>` so the macro can name it.
 
 Methods cannot have non-lifetime generic parameters because the generated impl would need a

@@ -230,7 +230,7 @@ delegate_and_check_components! {
 Without the attribute the entry is still checked, but at unit parameters, as though the component's
 parameter were `()`. A provider generic over every shape passes that vacuously, and a provider
 written for particular shapes fails with an `E0277` that blames the provider; only a help line
-mentions `()`. Per-type dispatch through `open` is wired but not checked by this macro, so the
+mentions `()`, and `cargo cgp check` reports it as `[CGP-E060]`. Per-type dispatch through `open` is wired but not checked by this macro, so the
 limits below explain when those checks must be written separately.
 
 Mark an entry `#[skip_check]` when checking it separately, such as with a dedicated

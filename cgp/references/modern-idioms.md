@@ -242,7 +242,8 @@ Relying on the transitive supertrait does not compile, because the generated `Ba
 fn bar(&self) -> Self::Foo { self.create_foo(42) } // error[E0220]: associated type `Foo` not found
 ```
 
-The `#[use_type]` import adds `HasFooType` to the generated trait and rewrites the bare `Foo`.
+`cargo cgp check` reports this as `[CGP-E035]` and names the import. The `#[use_type]` import adds
+`HasFooType` to the generated trait and rewrites the bare `Foo`.
 
 Use the equality form `#[use_type(Trait.{Assoc = Type})]` to constrain an abstract type to a
 concrete one. It replaces an explicit bound such as `Self: HasErrorType<Error = AppError>` in this

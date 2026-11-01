@@ -191,7 +191,7 @@ delegate_components! {
 ```
 
 Without that line, the context's checks fail with the bundle reported as having no entry for the
-bare component name, which `cargo-cgp` tags `[CGP-E110]`. This arrangement suits contexts that
+bare component name, which `cargo-cgp` tags `[CGP-E114]`. This arrangement suits contexts that
 combine whole groups differently, such as one core with production or test extras.
 
 Check inherited components with a standalone `check_components!`. Joining through

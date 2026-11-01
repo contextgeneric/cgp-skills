@@ -115,6 +115,12 @@ table, so a hand-written `DelegateComponent` impl alone does not wire the compon
 fails with `E0599`. Write wiring with `delegate_components!`. Defining the wiring alone does not
 prove those dependencies are satisfied; verify the context with [checking](checking.md).
 
+`cargo cgp check` names the common mistakes in a table. A consumer trait as a key is `[CGP-E040]`, a
+component not in scope `[CGP-E041]`, a key that names no component `[CGP-E042]`, and a provider nothing
+declares `[CGP-E043]`. A provider that does not fit its entry gets a `help` naming the right one, such
+as `UseFields` in place of `UseField` on a getter with several methods, or `open` in place of a
+`UseDelegate` whose component lacks `#[derive_delegate]`.
+
 ## Explicit delegation: what wiring effectively does
 
 A direct consumer impl can perform the same forwarding as a wiring entry. The following
@@ -282,7 +288,7 @@ segment, such as `@ComputerComponent.Eval: EvalProvider`, matches that code with
 Every key ends in a wildcard, so a shorter key covers every longer key beneath it. Within one table,
 key a first-parameter value either on its own or per later parameter, never both.
 `@ComputerComponent.Eval` beside `@ComputerComponent.Eval.Plus<MathExpr>` fails with `E0119`, which
-`cargo cgp check` reports as `[CGP-E005]`. A generic segment matches every value, so
+`cargo cgp check` reports as `[CGP-E011]`. A generic segment matches every value, so
 `@ComputerComponent.<Code> Code.Plus<MathExpr>` also overlaps `@ComputerComponent.Eval`: a table
 that dispatches on the input alone cannot key any code on its own.
 

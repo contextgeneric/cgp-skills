@@ -152,14 +152,14 @@ at the check entry:
   `String` fails with `E0277`, "the trait bound `String: Error` is not satisfied". Route `String` to
   `DisplayAnyhowError`.
 - **A raiser without its error type.** Wiring `RaiseAnyhowError` with no `ErrorTypeProviderComponent`
-  entry fails with `[CGP-E001]`, whose root cause `[CGP-E107]` names the missing
+  entry fails with `[CGP-E001]`, whose root cause `[CGP-E113]` names the missing
   `ErrorTypeProviderComponent`. Add `UseAnyhowError`.
 - **Two backends on one context.** `UseBoxedStdError` with `RaiseAnyhowError` fails with `E0271`
-  tagged `[CGP-E017]`: the abstract `Error` is `Box<dyn Error + Send + Sync>` where `Error` is
+  tagged `[CGP-E005]`: the abstract `Error` is `Box<dyn Error + Send + Sync>` where `Error` is
   expected. The expected `Error` is `anyhow::Error` with its path removed. Use the raiser from the
   crate that sets the type.
 - **A `String` routed back to itself.** `@ErrorRaiserComponent.String: DebugError`, using the generic
-  `DebugError`, fails with `E0275` tagged `[CGP-E010]`, because `DebugError` for `String` needs
+  `DebugError`, fails with `E0275` tagged `[CGP-E020]`, because `DebugError` for `String` needs
   `CanRaiseError<String>` again. Route `String` to a backend's `Display…` or `Debug…` provider.
 - **A borrowed detail.** A provider that uses `for<'a> CanWrapError<&'a str>` on a context wired to
   `ErrorWrapperComponent: RaiseAnyhowError` fails with a plain `E0477`, "the type `&'a str` does not

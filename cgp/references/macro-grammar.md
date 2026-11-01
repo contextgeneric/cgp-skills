@@ -568,7 +568,8 @@ bare type, as in the derive. Attributes, visibility, `_`, duplicates, and discri
 and a keyword field name must be written raw, as in `Struct! { r#type: u8 }`.
 
 `Path!(@app.error.FooComponent)` expands to a `PathCons` chain. Lowercase non-primitive segments
-become `Symbol!` tags; capitalized or primitive segments remain types. See
+become `Symbol!` tags; capitalized or primitive segments remain types, so in a wiring path a capitalized
+name nothing declares is `[CGP-E044]` under `cargo cgp check`. See
 [type-level-primitives](type-level-primitives.md).
 
 ---

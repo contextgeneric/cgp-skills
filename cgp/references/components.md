@@ -161,7 +161,8 @@ explicit provider forms described below. Use those lower-level forms directly on
 native provider-trait structure.
 
 `#[cgp_provider]` preserves an explicit provider-trait impl and generates an `IsProviderFor` impl
-with the same `where` bounds. The provider struct must already exist, as it does here:
+with the same `where` bounds, and `cargo cgp check` reports an impl written without it as `[CGP-E039]`.
+The provider struct must already exist, as it does here:
 
 ```rust
 pub struct RectangleArea;
