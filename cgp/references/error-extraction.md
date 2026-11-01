@@ -1,14 +1,15 @@
 # Extracting CGP compile errors
 
-Use manual error extraction when `cargo-cgp` is unavailable or leaves a CGP error largely
-unrewritten. The goal is a compact summary that identifies the error class, whether its cause is
+Use manual error extraction when `cargo-cgp` is unavailable or leaves a CGP error unrewritten: a
+block with no `[CGP-` code. The goal is a compact summary that identifies the error class, whether its cause is
 visible, and what to do next. Read [the error shapes](#the-two-shapes-to-recognize), then follow the
 instructions for [extracting](#extracting-an-error-yourself) or
 [delegating](#delegating-the-extraction-to-a-sub-agent) the analysis.
 
 Prefer [`cargo-cgp`](https://github.com/contextgeneric/cargo-cgp) for diagnosis. It rewrites
-recognized errors into a `[CGP-Exxx]` headline and a dependency tree that already provide the
-summary described here. See the [main skill’s tooling section](../SKILL.md) for installation and
+recognized errors into a `[CGP-Exxx]` headline that states the cause, over a `root cause:` note and
+a dependency tree, which already provide the summary described here. Search its output for
+`\[CGP-` and `root cause:`. See the [main skill’s tooling section](../SKILL.md) for installation and
 usage. The remaining instructions apply to raw compiler output.
 
 ## Why extraction is a skill of its own
@@ -55,7 +56,7 @@ Search error headlines to classify the failure. `rg -n '^error' /tmp/cgp-error.t
 error code and named trait, helping identify the [shape](#the-two-shapes-to-recognize) and [error
 class](macro-grammar.md).
 
-Search the class’s signature to test the suspected cause. Use `help:` for a surfaced dependency,
+Search the class’s signature to test the suspected cause. These match raw output only. Use `help:` for a surfaced dependency,
 `conflicting implementation` for a duplicate key, `overflow evaluating` for a cycle,
 `DelegateComponent<` … `is not implemented` for absent wiring, or `is not constrained` for an
 unconstrained generic. A `HasField<Symbol<…>>` line spells out the field name character by

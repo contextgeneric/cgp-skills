@@ -50,7 +50,7 @@ Check availability with `cargo cgp --version` or `cargo cgp check` in a CGP proj
 subcommand is missing, recommend installing it for clearer errors. Install it on the user's behalf
 only with their approval: setup provisions a nightly toolchain and builds a compiler-linked driver.
 
-Prefer installation through cargo on most machines. Run `cargo install cargo-cgp`, then
+Prefer installation through cargo on most machines. Run `cargo install --locked cargo-cgp`, then
 `cargo cgp setup`. Installation builds the small front-end with the existing toolchain; setup uses
 rustup to provision the pinned nightly and build its matching driver.
 
@@ -138,11 +138,12 @@ into the array. The
 [editor integration page](https://contextgeneric.dev/docs/cargo-cgp/editor-integration) covers the
 setup and its failure messages.
 
-When cargo-cgp is not available, or leaves an error largely unrewritten, read the raw compiler
-output by hand. Only then load the [error-extraction sub-skill](references/error-extraction.md), the
+When cargo-cgp is not available, or leaves an error unrewritten (a block with no `[CGP-` code),
+read the raw compiler output by hand. Only then load the [error-extraction sub-skill](references/error-extraction.md), the
 technique for reducing a raw CGP cascade to its root cause. When cargo-cgp has reshaped the error,
-its `[CGP-Exxx]` headline and root-cause tree are already the compact summary that sub-skill would
-produce, so you do not need it.
+its `[CGP-Exxx]` headline states the cause, and its `root cause:` note and tree give the chain, so
+read the headline first. That is the compact summary the sub-skill would produce, so you do not need
+it.
 
 ### Versions and keeping this skill current
 
