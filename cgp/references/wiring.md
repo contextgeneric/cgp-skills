@@ -115,11 +115,13 @@ table, so a hand-written `DelegateComponent` impl alone does not wire the compon
 fails with `E0599`. Write wiring with `delegate_components!`. Defining the wiring alone does not
 prove those dependencies are satisfied; verify the context with [checking](checking.md).
 
-`cargo cgp check` names the common mistakes in a table. A consumer trait as a key is `[CGP-E040]`, a
-component not in scope `[CGP-E041]`, a key that names no component `[CGP-E042]`, and a provider nothing
-declares `[CGP-E043]`. A provider that does not fit its entry gets a `help` naming the right one, such
-as `UseFields` in place of `UseField` on a getter with several methods, or `open` in place of a
-`UseDelegate` whose component lacks `#[derive_delegate]`.
+`cargo cgp check` names the common mistakes in a table. A consumer trait written as a key is
+`[CGP-E040]`, a component that exists but is not imported `[CGP-E041]`, a key built by appending
+`Component` to a consumer trait's name where the marker follows the provider trait `[CGP-E042]`, and
+a provider nothing declares `[CGP-E043]`. A key the tool cannot settle, such as a misspelled
+component name, keeps rustc's own message. A provider that does not fit its entry gets a `help`
+naming the right one, such as `UseFields` in place of `UseField` on a getter with several methods,
+or `open` in place of a `UseDelegate` whose component lacks `#[derive_delegate]`.
 
 ## Explicit delegation: what wiring effectively does
 
