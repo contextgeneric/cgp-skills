@@ -1,95 +1,68 @@
 # AGENTS.md: the CGP agent skills
 
-Follow this file when writing or maintaining skills in this repository. Read
-[README.md](README.md) for the purpose and structure of a skill, then
-[sibling-projects.md](sibling-projects.md) for the related repositories and their locations.
+Read [README.md](README.md) and [sibling-projects.md](sibling-projects.md) before editing.
 
-Each skill summarizes the [CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base)
-in a form that teaches an agent to read and write CGP. Its `SKILL.md` explains the core concepts
-and directs the agent to topic sub-skills under `references/`. Each sub-skill provides enough detail
-and worked examples for routine work without further lookup. The knowledge base supplies the
-exhaustive details and corner cases.
+## Universal rules
 
-## One `#` per file
+The [knowledge base's AGENTS.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/AGENTS.md)
+is the canonical wording. Read it first; change a universal rule there first, then update this
+block to match. These are the actionable rules here:
 
-Use exactly one top-level heading for the file's title, with `##` or deeper headings for sections.
-These files are published on <https://contextgeneric.dev>, whose renderer generates heading anchors
-only for `h2` and `h3`. A section written as `#` lacks both an anchor and a table-of-contents entry,
-so readers cannot link to it.
+- Prefer the local sibling checkout when reading another project.
+- Write a cross-project link as a GitHub URL on `main`.
+- Name official release versions only, never a pre-release.
+- Commit only when the user explicitly asks, on the current branch.
+- Verify a claim against the source before writing it.
+- Keep every view of the same truth in sync in the same change.
+- Ask the user when a decision is ambiguous.
+- Apply point-first writing to internal prose.
 
-Count headings with a check that ignores fenced code blocks. A plain `grep -c '^# '` also counts
-shell comments inside those blocks and can incorrectly report extra headings.
+## Versions
 
-## Keep skills aligned with the source and knowledge base
+- The skill describes `cgp` v0.8.0 and `cargo-cgp` v0.1.0.
+- Write as though the official versions shipped, and pin install commands and flake tags to them.
 
-The CGP source is authoritative when code, knowledge-base documents, and skills disagree. The
-knowledge base records what the source means, and skills summarize that record. Correct a skill
-when it teaches syntax the code no longer supports.
+## Headings
 
-Update the skill in the same change as the code and knowledge base whenever a construct's syntax,
-expansion, defaults, or recommended form changes. Review these locations:
+- Use exactly one `#` per file, with `##` or deeper headings for sections.
+- Count headings with a check that ignores fenced code blocks.
 
-- **Topic reference:** Update the affected sub-skill under `cgp/references/`.
-- **Primer and index:** Update the routing guidance and reading cheat sheet in `cgp/SKILL.md` when a
-  core construct changes.
-- **Trigger description:** Update the front matter's `description` when adding or renaming a
-  construct an agent should recognize.
+## Alignment
 
-Lead with the current syntax and retain legacy forms only in clearly labeled notes for reading
-existing code. For example, `UseDelegate` and `#[derive_delegate]` became legacy forms when `open`
-became the preferred dispatch syntax. Follow the knowledge base's treatment of such forms. If its
-checkout is absent, state what needs updating there.
+- Treat the CGP source as authoritative when the code, the knowledge base, and the skills disagree.
+- Update the affected sub-skill under `cgp/references/`, the routing guidance and reading cheat sheet
+  in `cgp/SKILL.md`, and the front matter's `description` in the same change as the code and knowledge
+  base.
+- Lead with the current syntax and keep a legacy form only in a clearly labeled note for reading
+  existing code.
+- Follow the knowledge base's treatment of a legacy form.
+- State what needs updating in the knowledge base when its checkout is absent.
 
-## A skill must be self-contained
+## Self-containment
 
-Keep every relative link within the skill's own directory because skills are copied and run
-independently. Link between sub-skills with plain relative filenames, such as
-`[wiring](wiring.md)`.
+- Keep every relative link inside the skill's own directory.
+- Link between sub-skills with plain relative filenames.
+- Use absolute knowledge-base URLs for details, with `blob/main` for a file and `tree/main` for a
+  directory, and instruct the agent to fetch them when needed.
 
-Use absolute URLs for details in the online knowledge base, including `cargo-cgp` documentation.
-Link to files with `https://github.com/contextgeneric/cgp-knowledge-base/blob/main/<path>` and to
-directories with `https://github.com/contextgeneric/cgp-knowledge-base/tree/main/<path>`. Instruct the
-agent to fetch those details when needed without assuming a local checkout exists.
+## Verification
 
-## Name official versions only
+- Verify each skill's claims and snippets against the current CGP code.
+- Compile a representative snippet when syntax is uncertain.
+- Record the CGP version the skill describes, and update the statement when the library advances.
 
-A skill names official release versions only: `cgp` v0.8.0 and `cargo-cgp` v0.1.0, never a
-pre-release such as `0.8.0-alpha` or `0.1.0-alpha`, which exists only as a test run before the
-official version ships. When the source is at a pre-release, write the skill as though the official
-version it leads to has been published: name that version, pin install commands and flake tags to
-it, and leave out any note on what a pre-release on crates.io lacks or how it differs. This follows
-the knowledge base's
-[rule on versions](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/AGENTS.md#document-official-versions-never-pre-releases),
-and yields only to an explicit instruction from the user.
+## Prose
 
-## Verify against the source
+- Use the knowledge base's vocabulary: consumer trait, provider trait, provider, wiring, impl-side
+  dependency, component, and context.
+- Apply the `/point-first-writing` skill.
+- Open each section with a self-contained topic sentence, introduce each list, and explain the code
+  around a block.
+- Check Markdown after every edit: keep inline code spans on one line and delimit fenced blocks with
+  triple backticks on their own lines.
 
-Verify each skill's claims and snippets against the current CGP code. When syntax is uncertain,
-compile a representative snippet against the crates. A scratch test under
-[crates/tests/cgp-tests](https://github.com/contextgeneric/cgp/tree/main/crates/tests/cgp-tests)
-provides a quick check.
+## Committing
 
-Record the CGP version the skill describes. When the library advances, update that statement and
-verify the claims that depend on the version.
-
-## Vocabulary and prose
-
-Use the knowledge base's terms consistently: consumer trait, provider trait, provider, wiring,
-impl-side dependency, component, and context. Consistent vocabulary lets agents move between a
-skill and the knowledge base without reconciling different terms for the same concept.
-
-Apply the `/point-first-writing` skill, published in the knowledge base's
-[`skills/`](https://github.com/contextgeneric/cgp-knowledge-base/tree/main/skills/point-first-writing)
-directory. Open each section with a self-contained topic sentence, introduce each list, and make the
-prose around a code block explain its meaning without requiring the reader to inspect the code.
-
-Check Markdown syntax after every edit because agents read skill files verbatim. Open and close
-each inline code span on the same line, and delimit fenced blocks with triple backticks on their
-own lines.
-
-## Committing changes
-
-Commit only when the user explicitly requests it. Each request authorizes exactly one commit of
-the changes then in the working tree, on the currently checked-out branch. Do not commit as a side
-effect of completing a task, suggest a commit unprompted, or treat a previous request as continuing
-authorization.
+- Treat a commit request as one commit of the changes then in the working tree.
+- Do not commit as a side effect, suggest a commit unprompted, or treat a request as standing
+  authorization.
