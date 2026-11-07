@@ -97,7 +97,9 @@ The generated `RectangleArea` method takes only `&self`. Each implicit argument 
 bound and a binding at the start of the blanket impl’s body:
 
 ```rust
+/// The trait for the `rectangle_area` operation.
 pub trait RectangleArea {
+    /// The `rectangle_area` operation.
     fn rectangle_area(&self) -> f64;
 }
 

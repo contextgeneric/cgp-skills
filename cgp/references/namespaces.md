@@ -71,9 +71,12 @@ With `new`, the macro generates a backing struct and a lookup trait parameterize
 table:
 
 ```rust
+/// Wiring table for the `MyNamespace` namespace.
 pub struct __MyNamespaceComponents;
 
+/// The `MyNamespace` namespace's wiring table.
 pub trait MyNamespace<__Table__> {
+    /// The provider table the `MyNamespace` namespace delegates to.
     type Delegate;
 }
 ```

@@ -103,6 +103,7 @@ where
 The **component marker** is a zero-sized key into those delegation tables:
 
 ```rust
+/// Component marker for [`CanGreet`].
 pub struct GreeterComponent;
 ```
 
@@ -165,6 +166,7 @@ with the same `where` bounds, and `cargo cgp check` reports an impl written with
 The provider struct must already exist, as it does here:
 
 ```rust
+/// Provider `RectangleArea` for [`AreaCalculator`].
 pub struct RectangleArea;
 
 #[cgp_provider]
