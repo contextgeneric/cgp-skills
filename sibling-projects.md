@@ -15,6 +15,9 @@ construct lands there first, and the matching sub-skill is revised in the same c
 | `cargo-cgp` | <https://github.com/contextgeneric/cargo-cgp> | `main` | CGP's first-class toolchain: the cargo subcommand that makes CGP compile errors readable and expands CGP macros. |
 | `cgp-knowledge-base` | <https://github.com/contextgeneric/cgp-knowledge-base> | `main` | The consolidated documentation for every CGP project, written by and for AI agents. |
 
+The knowledge base's [sibling-projects.md](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/sibling-projects.md) is the authoritative list of the whole ecosystem,
+including the projects that are not part of the core.
+
 ## Finding a sibling
 
 Look for a sibling in the parent directory first, at `../<project>`. Every project in this list,
