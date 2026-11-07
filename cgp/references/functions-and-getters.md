@@ -158,16 +158,21 @@ field named `width` of type `f64`.
 
 Owned implicit arguments clone the field value, leaving the context unchanged. An argument such as
 `f64` or `String` reads the field by reference and calls `.clone()`. The `&str` shorthand instead
-borrows a `String` field through `.as_str()`:
+borrows any `AsRef<str>` field through `.as_ref()`, so a `String`, a `Cow<str>`, or a `Box<str>` field
+all work and none of them needs an allocator:
 
 ```rust
 #[cgp_fn]
 pub fn greet(&self, #[implicit] name: &str) {
     println!("Hello, {}!", name);
 }
-// bound: HasField<Symbol!("name"), Value = String>
-// binding: let name: &str = self.get_field(PhantomData::<Symbol!("name")>).as_str();
+// bound: HasField<Symbol!("name"), Value: AsRef<str> + 'static>
+// binding: let name: &str = self.get_field(PhantomData::<Symbol!("name")>).as_ref();
 ```
+
+`Option<&str>` works the same way through the `OptionAsRef` helper trait: the bound is
+`Value: OptionAsRef<str> + 'static` and the binding appends `.option_as_ref()`, so an
+`Option<String>`, an `Option<Cow<str>>`, or an `Option<Box<str>>` field all work.
 
 An implicit argument requires `self` as the function’s first argument and a bare identifier as its
 pattern. Destructuring and `mut` patterns are rejected; create a mutable local inside the body when
@@ -311,28 +316,29 @@ where
     __Context__: HasField<Symbol!("name"), Value = String>,
 {
     fn name(&self) -> &str {
-        self.get_field(PhantomData::<Symbol!("name")>).as_str()
+        self.get_field(PhantomData::<Symbol!("name")>).as_ref()
     }
 }
 ```
 
-Auto-getters use the same access rules as implicit arguments. Shared getters borrow or clone
-according to the return type, while mutable getters require a `&mut self` receiver and use
-`get_field_mut`.
+Auto-getters use the same access rules as implicit arguments, except that a `&str` getter keeps the
+`String` field, because its `HasField` bound is also used by the `WithProvider` adapter. Shared
+getters borrow or clone according to the return type, while mutable getters require a `&mut self`
+receiver and use `get_field_mut`.
 
 The return type determines the field type and read operation:
 
 | Return type | Field type or bound | Operation |
 | --- | --- | --- |
 | `&T` | `T` | Borrow directly |
-| `&str` | `String` | `.as_str()` |
+| `&str` | `String` | `.as_ref()` |
 | `Option<&T>` | `Option<T>` | `.as_ref()` |
 | `Option<&str>` | `Option<String>` | `.as_deref()` |
 | `&[T]` | `AsRef<[T]>` | `.as_ref()` |
 | `MRef<'_, T>` | `T` | Wrap the borrow as `MRef::Ref(..)` |
 | Owned path, tuple, or array | Matching field type | `.clone()` |
 | `&mut T` | `T` | Borrow mutably |
-| `&mut str` | `String` | `.as_mut_str()` |
+| `&mut str` | `String` | `.as_mut()` |
 | `&mut [T]` | `AsMut<[T]>` | `.as_mut()` |
 | `Option<&mut T>` | `Option<T>` | `.as_mut()` |
 | `Option<&mut str>` | `Option<String>` | `.as_deref_mut()` |
