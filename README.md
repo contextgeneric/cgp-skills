@@ -1,4 +1,5 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Tests](https://github.com/contextgeneric/cgp-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/contextgeneric/cgp-skills/actions/workflows/tests.yml)
 
 # cgp-skills: agent skills for CGP
 
@@ -62,6 +63,11 @@ A person learning CGP should start at the [website](https://contextgeneric.dev/)
 [tutorials](https://contextgeneric.dev/docs/tutorials/hello), and the
 [reference](https://contextgeneric.dev/docs/reference/) are written for readers, where these skills
 are written for agents.
+
+## Checks
+
+CI runs `python3 scripts/check.py`, which checks that each file has exactly one `#` heading and that
+the relative links inside `cgp/` resolve.
 
 ## Related repositories
 
