@@ -1,0 +1,26 @@
+name: Checks
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+# Cancel in-progress runs when a new commit is pushed to the same PR, branch, or tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The repository holds Markdown only, so the check is a small script that needs
+# nothing but the runner's Python.
+jobs:
+  markdown:
+    name: Markdown checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the headings and relative links
+        run: python3 scripts/check.py
