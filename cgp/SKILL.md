@@ -313,8 +313,8 @@ via `#[use_type]`.
 
 ## The prelude and version
 
-Almost everything CGP exports comes through one import, which belongs at the top of every module
-that uses CGP:
+The names CGP code writes come through one import, which belongs at the top of every module that
+uses CGP:
 
 ```rust
 use cgp::prelude::*;
@@ -326,20 +326,24 @@ explicit imports:
 
 | Import from | What lives there |
 |---|---|
-| `cgp::core::field::traits` | `TakeField`, `FinalizeExtractResult`, `StaticString`, `AppendProduct`, `ConcatProduct`, `MapFields`, `TransformMap`, `TransformMapFields`, `MapField`, `FieldMapper` |
-| `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsOptional` and `IsOwned` |
-| `cgp::core::base::traits` | `StaticFormat` (and `cgp::core::base::types` for `Chars`, `Cons`, `Nil`, `PathCons`, `Symbol`) |
-| `cgp::core::component` | `DefaultImpls1`, `DefaultImpls2` |
+| `cgp::core::field::traits` | the extractor traits `HasExtractor`, `HasExtractorRef`, `HasExtractorMut`, `ExtractField`, `FinalizeExtract`, `FinalizeExtractResult`; `FromVariant`; the shape traits `ToFields`, `ToFieldsRef`, `FromFields`, `HasFieldsRef`; `IntoBuilder`, `TakeField`, `UpdateField`, `PartialData`; `HasFieldMut`, `FieldGetter`, `MutFieldGetter`, `MapField`, `FieldMapper`, `OptionAsRef`; `MapType`, `MapTypeRef`, `StaticString`, `AppendProduct`, `ConcatProduct`, `MapFields`, `TransformMap`, `TransformMapFields` |
+| `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsPresent`, `IsNothing`, `IsVoid`, `IsOptional`, `IsRef`, `IsMut`, and `IsOwned` |
+| `cgp::core::field::types` | `MRef`, and the `Chars` and `Symbol` types behind `Symbol!` |
+| `cgp::core::base::traits` | `StaticFormat`, `ConcatPath` (and `cgp::core::base::types` for `PathCons`) |
+| `cgp::core::component` | `DelegateComponent`, `IsProviderFor`, `CanUseComponent`, `RedirectLookup`, `WithProvider`, `WithContext`, `UseFields`, `DefaultImpls1`, `DefaultImpls2` |
+| `cgp::core::types` | `HasType`, `TypeProvider` |
 | `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the generic error providers |
-| `cgp::extra::handler` | the handler consumer traits (`CanCompute`, `CanTryCompute`, `CanHandle`, `CanProduce`, and their `Ref` and async forms), the provider traits `ComputerRef`, `TryComputerRef`, and `HandlerRef`, and the providers `Promote`, `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`, and `UseInputDelegate` |
+| `cgp::extra::handler` | the handler consumer traits (`CanCompute`, `CanTryCompute`, `CanHandle`, `CanProduce`, and their `Ref` and async forms), the provider traits `ComputerRef`, `TryComputerRef`, `HandlerRef`, and `AsyncComputerRef` with their markers except `ComputerRefComponent`, the promotion bundles `PromoteComputer`, `PromoteTryComputer`, `PromoteAsyncComputer`, `PromoteHandler`, and `PromoteProducer`, and the providers `Promote`, `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`, and `UseInputDelegate` |
+| `cgp::extra::dispatch` | every dispatch combinator, the value matchers `MatchWithValueHandlers` and `MatchFirstWithValueHandlers` with their `Ref` and `Mut` forms included |
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
-Check imports for casts, optional-field traits, and handler consumer traits because none of those
-groups is in the prelude.
-Related names can also differ: `ConcatPath` and `DefaultNamespace` are in the prelude, while
-`StaticString`, `StaticFormat`, `DefaultImpls1`, and `DefaultImpls2` are not. Among the builder
-traits, `TakeField` requires an explicit import.
+Check imports whenever code names the wiring machinery, the extractor or shape traits, the field-state
+markers, the casts, the optional-field traits, or the handler consumer traits, because none of those
+groups is in the prelude. A derive stays in the prelude when its trait does not:
+`#[derive(ExtractField)]` needs no import, but calling `.extract_field()` needs `ExtractField` from
+`cgp::core::field::traits`. Among the builder traits, `HasBuilder`, `BuildField`, and
+`FinalizeBuild` are in the prelude, while `IntoBuilder` and `TakeField` require an explicit import.
 
 This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0**. See
 [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on

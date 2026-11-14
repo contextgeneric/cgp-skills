@@ -287,7 +287,7 @@ let owned: String = borrowed.get_or_clone();              // clones the borrowed
 ```
 
 Field macros recognize `MRef` alongside return modes such as `&T`, `Option<&T>`, and `&str`, by
-shape: write it bare, since a qualified `cgp::prelude::MRef<'_, T>` falls through to the owned form
+shape: write it bare, since a qualified `cgp::core::field::types::MRef<'_, T>` falls through to the owned form
 and fails with `E0637`. See
 [functions and getters](functions-and-getters.md). Its lifetime constrains an ordinary borrow and
 does not use the `Life<'a>` encoding.
@@ -302,10 +302,11 @@ imports:
 | --- | --- |
 | `StaticFormat` | `cgp::core::base::traits` |
 | `StaticString` | `cgp::core::field::traits` |
-| `ConcatPath` | `cgp::prelude::*` |
+| `ConcatPath` | `cgp::core::base::traits` |
 
-The underlying `Chars`, `Cons`, `Nil`, `PathCons`, and `Symbol` types are also available through
-`cgp::core::base::types`.
+`Cons` and `Nil` are in the prelude. The underlying `Chars`, `PathCons`, and `Symbol` types are not,
+since the `Symbol!` and `Path!` macros write them for you; import them from
+`cgp::core::base::types` when you name one.
 
 `StaticFormat` writes characters into a formatter and supports the `Display` impls on `Symbol` and
 `Chars`. A symbol value can therefore use ordinary string formatting:
