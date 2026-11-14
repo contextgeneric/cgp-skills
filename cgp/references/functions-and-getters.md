@@ -12,7 +12,8 @@ the `HasField` operations they generate.
 This is an [impl-side dependency](components.md): the implementation requires it, but the consumer
 interface does not expose it.
 
-The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`.
+The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`, with `HasField` from
+`cgp::core::field::traits` and `UseField` from `cgp::core::field::impls`.
 
 `HasField` declares the field’s type as `Value` and returns a reference to it. The
 `PhantomData<Tag>` argument identifies which field to read when several impls are available:

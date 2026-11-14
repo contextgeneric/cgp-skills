@@ -7,7 +7,8 @@ presets resolved entirely at compile time.
 Use a namespace when contexts would otherwise repeat the same wiring. A context joins the shared
 table, then supplies entries at paths left unbound by that namespace. A namespace does not support
 arbitrary overrides: directly binding a key it already resolves creates overlapping impls. The
-examples describe CGP v0.8.0 and assume `use cgp::prelude::*;`.
+examples describe CGP v0.8.0 and assume `use cgp::prelude::*;`, with `Nil` from
+`cgp::core::field::types`.
 
 ## What a namespace is
 

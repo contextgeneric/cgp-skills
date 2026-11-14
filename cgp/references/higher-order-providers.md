@@ -7,7 +7,7 @@ transformation, and the inner provider supplies the calculation.
 
 Providers are zero-sized markers, so nesting them selects implementations at the type level without
 adding runtime storage. The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`, with
-`UseContext` from `cgp::core::component`.
+`UseContext` from `cgp::core::component` and `HasField` from `cgp::core::field::traits`.
 
 ## The shape, and the stray `<Self>`
 

@@ -17,7 +17,8 @@ these encodings. Compiler errors and plain `cargo expand` can expose the full ty
 `cargo cgp expand` restores recognized encodings to macro notation. The definitions below explain
 the nested forms that remain visible.
 
-Assume `use cgp::prelude::*;` throughout.
+Assume `use cgp::prelude::*;` throughout, with the types this reference names imported from
+`cgp::core::field::types` and `HasField` from `cgp::core::field::traits`.
 
 ## Type-level lists: `Product!`, `Cons`, `Nil`
 
@@ -304,8 +305,9 @@ imports:
 | `StaticString` | `cgp::core::field::traits` |
 | `ConcatPath` | `cgp::core::base::traits` |
 
-`Cons` and `Nil` are in the prelude. The underlying `Chars`, `PathCons`, and `Symbol` types are not,
-since the `Symbol!` and `Path!` macros write them for you; import them from
+None of these types is in the prelude. Import `Cons`, `Nil`, `Either`, `Void`, `Field`, `Index`,
+and `Life` from `cgp::core::field::types` when you name one. The `Symbol!` and `Path!` macros write
+the underlying `Chars`, `PathCons`, and `Symbol` types for you; import those from
 `cgp::core::base::types` when you name one.
 
 `StaticFormat` writes characters into a formatter and supports the `Display` impls on `Symbol` and

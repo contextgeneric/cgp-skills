@@ -326,9 +326,9 @@ explicit imports:
 
 | Import from | What lives there |
 |---|---|
-| `cgp::core::field::traits` | the extractor traits `HasExtractor`, `HasExtractorRef`, `HasExtractorMut`, `ExtractField`, `FinalizeExtract`, `FinalizeExtractResult`; `FromVariant`; the shape traits `ToFields`, `ToFieldsRef`, `FromFields`, `HasFieldsRef`; `IntoBuilder`, `TakeField`, `UpdateField`, `PartialData`; `HasFieldMut`, `FieldGetter`, `MutFieldGetter`, `MapField`, `FieldMapper`, `OptionAsRef`; `MapType`, `MapTypeRef`, `StaticString`, `AppendProduct`, `ConcatProduct`, `MapFields`, `TransformMap`, `TransformMapFields` |
-| `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsPresent`, `IsNothing`, `IsVoid`, `IsOptional`, `IsRef`, `IsMut`, and `IsOwned` |
-| `cgp::core::field::types` | `MRef`, and the `Chars` and `Symbol` types behind `Symbol!` |
+| `cgp::core::field::traits` | the field-access traits `HasField` and `HasFields`; the builder traits `HasBuilder`, `BuildField`, and `FinalizeBuild`; the extractor traits `HasExtractor`, `HasExtractorRef`, `HasExtractorMut`, `ExtractField`, `FinalizeExtract`, `FinalizeExtractResult`; `FromVariant`; the shape traits `ToFields`, `ToFieldsRef`, `FromFields`, `HasFieldsRef`; `IntoBuilder`, `TakeField`, `UpdateField`, `PartialData`; `HasFieldMut`, `FieldGetter`, `MutFieldGetter`, `MapField`, `FieldMapper`, `OptionAsRef`; `MapType`, `MapTypeRef`, `StaticString`, `AppendProduct`, `ConcatProduct`, `MapFields`, `TransformMap`, `TransformMapFields` |
+| `cgp::core::field::impls` | the getter provider `UseField`, the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsPresent`, `IsNothing`, `IsVoid`, `IsOptional`, `IsRef`, `IsMut`, and `IsOwned` |
+| `cgp::core::field::types` | the list types `Cons`, `Nil`, `Either`, and `Void` behind `Product!` and `Sum!`, `Field`, `Index`, `Life`, `MRef`, and the `Chars` and `Symbol` types behind `Symbol!` |
 | `cgp::core::base::traits` | `StaticFormat`, `ConcatPath` (and `cgp::core::base::types` for `PathCons`) |
 | `cgp::core::component` | `DelegateComponent`, `IsProviderFor`, `CanUseComponent`, `RedirectLookup`, `UseContext`, `WithProvider`, `WithContext`, `UseFields`, `DefaultImpls1`, `DefaultImpls2` |
 | `cgp::core::types` | `HasType`, `TypeProvider` |
@@ -338,14 +338,15 @@ explicit imports:
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
-Check imports whenever code names the wiring machinery, the extractor or shape traits, the field-state
-markers, the casts, the optional-field traits, or any handler trait or marker, because none of those
-groups is in the prelude. A provider written with `#[cgp_impl]` on `Computer` needs
-`ComputerComponent` in scope as well, because the macro names the marker as `{Trait}Component`. A
-derive stays in the prelude when its trait does not:
-`#[derive(ExtractField)]` needs no import, but calling `.extract_field()` needs `ExtractField` from
-`cgp::core::field::traits`. Among the builder traits, `HasBuilder`, `BuildField`, and
-`FinalizeBuild` are in the prelude, while `IntoBuilder` and `TakeField` require an explicit import.
+Check imports whenever code names the wiring machinery, a field-access, builder, extractor, or shape
+trait, a type-level list type such as `Cons` or `Nil`, the field-state markers, the casts, the
+optional-field traits, or any handler trait or marker, because none of those groups is in the
+prelude. A provider written with `#[cgp_impl]` on `Computer` needs `ComputerComponent` in scope as
+well, because the macro names the marker as `{Trait}Component`. A derive stays in the prelude when
+its trait does not: `#[derive(ExtractField)]` needs no import, but calling `.extract_field()` needs
+`ExtractField` from `cgp::core::field::traits`. Likewise `#[derive(HasField)]` and
+`#[derive(BuildField)]` need no import, while a `HasField` bound, a `.get_field()` call, or a
+builder call needs its trait from `cgp::core::field::traits`.
 
 This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0**. See
 [Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on
@@ -715,7 +716,8 @@ pub struct Rectangle {
 ```
 
 Field values are read with `self.get_field(PhantomData::<Symbol!("width")>)`. The `PhantomData`
-carries the tag so type inference knows which field is meant.
+carries the tag so type inference knows which field is meant, and the call needs `HasField` from
+`cgp::core::field::traits` in scope.
 
 ### `#[cgp_fn]` and `#[implicit]` arguments
 
