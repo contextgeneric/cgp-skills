@@ -6,7 +6,8 @@ part of its behavior. For example, `ScaledArea<InnerCalculator>` scales an inner
 transformation, and the inner provider supplies the calculation.
 
 Providers are zero-sized markers, so nesting them selects implementations at the type level without
-adding runtime storage. The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`.
+adding runtime storage. The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`, with
+`UseContext` from `cgp::core::component`.
 
 ## The shape, and the stray `<Self>`
 

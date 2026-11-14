@@ -2,8 +2,8 @@
 
 Prefer modern CGP syntax in new code, and keep explicit forms for cases the shorthand cannot
 express. This reference pairs older forms with their modern equivalents so you can read generated
-code and revise existing implementations. The examples assume `use cgp::prelude::*;` and describe
-CGP v0.8.0.
+code and revise existing implementations. The examples assume `use cgp::prelude::*;`, with handler
+names such as `ComputerComponent` from `cgp::extra::handler`, and describe CGP v0.8.0.
 
 Modern syntax makes providers resemble ordinary trait impls and expresses dependencies through
 attributes. The macros still expand to explicit traits, bounds, and provider calls, so those forms
