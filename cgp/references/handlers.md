@@ -5,15 +5,17 @@ synchronous or async, can fail, and consume or borrow their input. Producers sup
 input, while runners execute tasks. This reference covers those components, function macros,
 composition, dispatch, and `Send` bounds.
 
-The examples use CGP v0.8.0 and assume `use cgp::prelude::*;`. Each handler is an ordinary
-[component](components.md): a consumer trait for callers, a provider trait for implementations, and
-a marker selected through [wiring](wiring.md). The prelude carries the provider traits
-`Computer`, `TryComputer`, `AsyncComputer`, `Handler`, and `Producer`, their markers, and
-`ComputerRefComponent`. The consumer traits, the other by-reference provider traits and markers, the
-promotion bundles, and the one-step combinators (`Promote`, `PromoteAsync`, `PromoteRef`,
-`TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`) come from `cgp::extra::handler`. A concrete context that delegates a handler also implements its provider
-trait, so calling `App::compute(&app, …)` by bare name is ambiguous (`E0034`) when the consumer
-trait and that provider trait are both in scope; use method syntax or name the consumer trait.
+The examples use CGP v0.8.0 and assume `use cgp::prelude::*;` and `use cgp::extra::handler::*;`.
+Each handler is an ordinary [component](components.md): a consumer trait for callers, a provider
+trait for implementations, and a marker selected through [wiring](wiring.md). The prelude carries
+only the macros `#[cgp_computer]`, `#[cgp_producer]`, and `#[cgp_auto_dispatch]`. Every handler
+trait and marker, the promotion bundles, and the one-step combinators (`Promote`, `PromoteAsync`,
+`PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`) come from
+`cgp::extra::handler`. A provider written with `#[cgp_impl]` on `Computer` needs `ComputerComponent`
+in scope as well, because the macro names the marker as `{Trait}Component`. A concrete context that
+delegates a handler also implements its provider trait, so calling `App::compute(&app, …)` by bare
+name is ambiguous (`E0034`) when the consumer trait and that provider trait are both in scope; use
+method syntax or name the consumer trait.
 
 ## The shared shape and the axes
 

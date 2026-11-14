@@ -330,17 +330,19 @@ explicit imports:
 | `cgp::core::field::impls` | the casts `CanUpcast`, `CanDowncast`, `CanDowncastFields`, `CanBuildFrom`, and the markers `IsPresent`, `IsNothing`, `IsVoid`, `IsOptional`, `IsRef`, `IsMut`, and `IsOwned` |
 | `cgp::core::field::types` | `MRef`, and the `Chars` and `Symbol` types behind `Symbol!` |
 | `cgp::core::base::traits` | `StaticFormat`, `ConcatPath` (and `cgp::core::base::types` for `PathCons`) |
-| `cgp::core::component` | `DelegateComponent`, `IsProviderFor`, `CanUseComponent`, `RedirectLookup`, `WithProvider`, `WithContext`, `UseFields`, `DefaultImpls1`, `DefaultImpls2` |
+| `cgp::core::component` | `DelegateComponent`, `IsProviderFor`, `CanUseComponent`, `RedirectLookup`, `UseContext`, `WithProvider`, `WithContext`, `UseFields`, `DefaultImpls1`, `DefaultImpls2` |
 | `cgp::core::types` | `HasType`, `TypeProvider` |
 | `cgp::core::error` / `cgp::extra::error` | the error wiring keys, and the generic error providers |
-| `cgp::extra::handler` | the handler consumer traits (`CanCompute`, `CanTryCompute`, `CanHandle`, `CanProduce`, and their `Ref` and async forms), the provider traits `ComputerRef`, `TryComputerRef`, `HandlerRef`, and `AsyncComputerRef` with their markers except `ComputerRefComponent`, the promotion bundles `PromoteComputer`, `PromoteTryComputer`, `PromoteAsyncComputer`, `PromoteHandler`, and `PromoteProducer`, and the providers `Promote`, `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`, and `UseInputDelegate` |
+| `cgp::extra::handler` | the whole handler family: the consumer traits (`CanCompute`, `CanTryCompute`, `CanHandle`, `CanProduce`, and their `Ref` and async forms), the provider traits (`Computer`, `TryComputer`, `AsyncComputer`, `Handler`, `Producer`, and their `Ref` forms) with every marker, the promotion bundles `PromoteComputer`, `PromoteTryComputer`, `PromoteAsyncComputer`, `PromoteHandler`, and `PromoteProducer`, and the providers `Promote`, `PromoteAsync`, `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`, and `UseInputDelegate` |
 | `cgp::extra::dispatch` | every dispatch combinator, the value matchers `MatchWithValueHandlers` and `MatchFirstWithValueHandlers` with their `Ref` and `Mut` forms included |
 | `cgp::extra::monad::traits` | `MonadicBind`, `ContainsValue`, `LiftValue`, `MonadicTrans` |
 | `cgp::extra::field::impls` | the whole optional-field layer: `HasOptionalBuilder`, `ToOptional`, `SetOptional`, `FinalizeOptional`, `CanFinalizeWithDefault`, `CanBuildWithDefault` |
 
 Check imports whenever code names the wiring machinery, the extractor or shape traits, the field-state
-markers, the casts, the optional-field traits, or the handler consumer traits, because none of those
-groups is in the prelude. A derive stays in the prelude when its trait does not:
+markers, the casts, the optional-field traits, or any handler trait or marker, because none of those
+groups is in the prelude. A provider written with `#[cgp_impl]` on `Computer` needs
+`ComputerComponent` in scope as well, because the macro names the marker as `{Trait}Component`. A
+derive stays in the prelude when its trait does not:
 `#[derive(ExtractField)]` needs no import, but calling `.extract_field()` needs `ExtractField` from
 `cgp::core::field::traits`. Among the builder traits, `HasBuilder`, `BuildField`, and
 `FinalizeBuild` are in the prelude, while `IntoBuilder` and `TakeField` require an explicit import.
