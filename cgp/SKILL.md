@@ -341,8 +341,9 @@ explicit imports:
 Check imports whenever code names the wiring machinery, a field-access, builder, extractor, or shape
 trait, a type-level list type such as `Cons` or `Nil`, the field-state markers, the casts, the
 optional-field traits, or any handler trait or marker, because none of those groups is in the
-prelude. A provider written with `#[cgp_impl]` on `Computer` needs `ComputerComponent` in scope as
-well, because the macro names the marker as `{Trait}Component`. A derive stays in the prelude when
+prelude. A provider also needs its component's key in scope unless it names its provider trait by
+path, as [Writing providers](#writing-providers) describes, so a provider on `Computer` imports
+`ComputerComponent` beside it. A derive stays in the prelude when
 its trait does not: `#[derive(ExtractField)]` needs no import, but calling `.extract_field()` needs
 `ExtractField` from `cgp::core::field::traits`. Likewise `#[derive(HasField)]` and
 `#[derive(BuildField)]` need no import, while a `HasField` bound, a `.get_field()` call, or a
@@ -453,6 +454,22 @@ Prefer `impl Greeter` and let the macro insert the context parameter. Use the ex
 a lifetime or higher-ranked trait bound the shorthand cannot express. Declare that context in the
 impl generics. In either form, `self` and `Self` mean the context.
 
+The header also names the component's key. The macro derives it from the provider trait's path as
+the header writes it, appending `Component` to the last segment: `impl Greeter` names
+`GreeterComponent`, and `impl crate::components::Greeter` names `crate::components::GreeterComponent`.
+A provider in another module than its component therefore imports the key beside the trait, as
+`use crate::components::{Greeter, GreeterComponent};`, or names the trait by its path. A module that
+re-exports the trait re-exports the key in the same line. A key that the component's `name:` renames
+or gives parameters differs from the derived name, so the provider names it after a colon, as
+`#[cgp_impl(new UnitArea: AreaComponent)]`. The provider trait's generated doc names its key,
+so an editor's hover on the trait shows which key to import.
+
+A key that does not resolve fails with `E0425`, ``cannot find type `GreeterComponent` ``, on the
+trait's name in the header. `cargo cgp check` reports it as `[CGP-E041]`, with a fix that inserts
+the `use` line, or as `[CGP-E070]` when the derived name is not the component's, with a fix that
+names the key in the attribute. An editor running `cargo cgp check` offers either fix on the trait's
+name. See [components](references/components.md#importing-the-component-key) for an example.
+
 The example expands to a provider-trait impl with an explicit context parameter:
 
 ```rust
@@ -471,7 +488,8 @@ The lower-level provider macros accept explicit provider-trait impls. `#[cgp_pro
 an impl on an existing provider struct and generates `IsProviderFor` with the same `where` bounds.
 `#[cgp_new_provider]` also declares the provider struct. Generic providers receive a `PhantomData`
 field over their parameters, as in `pub struct Multiply<Field>(PhantomData<Field>);`. The attribute
-can override the component name, which defaults to the provider trait's name plus `Component`.
+can override the component name, which defaults to the provider trait's path with `Component`
+appended, as for `#[cgp_impl]`.
 
 `#[cgp_impl(Self)]` emits a direct consumer-trait impl on a concrete context. This form requires
 `for Context` and bypasses the provider rewrite while still applying companion attributes such as
@@ -734,7 +752,8 @@ fn rectangle_area(&self, #[implicit] width: f64, #[implicit] height: f64) -> f64
 
 This generates a `RectangleArea` trait (named from the function in PascalCase, or `#[cgp_fn(MyName)]`
 to override) with a blanket impl for any context that has `width: f64` and `height: f64` fields.
-Implicit arguments get `.clone()` added for owned values and `.as_str()` for `&str`. Generic
+An owned implicit argument clones its field, and a `&str` argument borrows any field that implements
+`AsRef<str>`, such as `String` or `Box<str>`. Generic
 parameters on the function move to the trait and impl, and the `where` clause becomes impl-side
 dependencies on the impl only. Generic *method* parameters are intentionally unsupported. Prefer
 implicit arguments for basic code, because they make CGP look like ordinary functions.
@@ -1147,10 +1166,10 @@ base's top level beside it. The base also documents `cargo-cgp`, under
 relevant page when a detail is not covered here. Do not assume a local copy exists, because this
 skill is deployed on its own.
 
-The base is in an early phase and under active development, so some of its documents still need
-review and may be wrong. The CGP source outranks it, as it outranks this skill: when a document and
-the code disagree, trust the code, and tell the user so they can report the document on the
-[issue tracker](https://github.com/contextgeneric/cgp-knowledge-base/issues).
+The base's checks can miss a stale sentence or an inconsistency, so some of its documents contain
+errors that no review has found yet. The CGP source outranks it, as it outranks this skill: when a
+document and the code disagree, trust the code, and tell the user so they can report the document
+on the [issue tracker](https://github.com/contextgeneric/cgp-knowledge-base/issues).
 
 ---
 

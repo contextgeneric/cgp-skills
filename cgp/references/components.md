@@ -48,12 +48,16 @@ supertrait that captures the component, the context, and a `Params` tuple of any
 parameters, which is `()` when there are none:
 
 ```rust
+/// Provider trait for [`CanGreet`]. A provider imports this trait's component key, [`GreeterComponent`], beside it.
 pub trait Greeter<Context>:
     IsProviderFor<GreeterComponent, Context, ()>
 {
     fn greet(context: &Context);
 }
 ```
+
+The macro adds that doc line to every provider trait, after the consumer trait's own doc when it
+has one, so an editor's hover on the trait names the key to import.
 
 Implement a provider trait on a dedicated zero-sized provider struct. The struct serves only as a
 type-level marker and is never instantiated. Each provider owns a distinct `Self` type while
@@ -137,8 +141,9 @@ delegate_components! {
 }
 ```
 
-The full table grammar, including per-value dispatch and presets, lives in [wiring](wiring.md). This
-file shows only the single-entry form needed to make the resolution concrete.
+The full table grammar, including per-value dispatch, lives in [wiring](wiring.md), and shared
+tables in [namespaces](namespaces.md). This file shows only the single-entry form needed to make the
+resolution concrete.
 
 ## Why `IsProviderFor` exists
 
@@ -191,8 +196,9 @@ where
 ```
 
 The optional attribute argument overrides the component type, which otherwise defaults to the
-provider trait's name plus a `Component` suffix. Pass it explicitly only when the trait name does
-not follow that convention.
+provider trait's path with `Component` appended to its last segment. Pass it explicitly only when
+that name is not the component's, as [Importing the component key](#importing-the-component-key)
+describes.
 
 `#[cgp_new_provider]` also declares the provider struct. It otherwise behaves like
 `#[cgp_provider]`, letting an explicit provider impl introduce its struct in the same block. A
@@ -239,6 +245,56 @@ The receiver `&self` became `__context__: &__Context__`, where the receiver iden
 snake-cased context name wrapped in double underscores, and `Self` in the `where` clause became the
 context type. When you write `for Context` explicitly, that name is used instead of `__Context__`.
 Do so when you need to bound or refer to the context readably.
+
+## Importing the component key
+
+A provider header names its component's key without writing it. `#[cgp_impl]`, `#[cgp_provider]`,
+and `#[cgp_new_provider]` derive the key from the provider trait's path as the header writes it,
+appending `Component` to the last segment and dropping the trait's generic arguments. `impl Greeter`
+therefore names `GreeterComponent`, which must be in scope beside the trait, while
+`impl crate::components::Greeter` names `crate::components::GreeterComponent`, which the module need
+not import. A provider in another module than its component imports both names in one line:
+
+```rust
+mod components {
+    use cgp::prelude::*;
+
+    #[cgp_component(Greeter)]
+    pub trait CanGreet {
+        fn greet(&self);
+    }
+}
+
+mod providers {
+    use cgp::prelude::*;
+
+    use crate::components::{Greeter, GreeterComponent};
+
+    #[cgp_impl(new GreetHello)]
+    impl Greeter {
+        fn greet(&self) {
+            println!("Hello!");
+        }
+    }
+}
+```
+
+A module that re-exports a provider trait re-exports its key in the same line, so a provider can
+import both from it or name the trait through it. A key from a dependency follows the same rule: a
+provider on CGP's `Computer` imports `ComputerComponent` beside it from `cgp::extra::handler`.
+
+A component whose `name:` renames its key, or gives the key parameters, has no key under the derived
+name. Its provider names the key after the provider in the attribute, as
+`#[cgp_impl(new UnitArea: AreaComponent)]` or
+`#[cgp_impl(new SquareArea: AreaCalculatorComponent<Square>)]`. A trait imported under another name
+needs the same form, because the macro derives the key from the name the header writes.
+
+A key that does not resolve fails with `E0425`, ``cannot find type `GreeterComponent` in this
+scope``, on the trait's name in the header. `cargo cgp check` reports it as `[CGP-E041]` with the
+key's import path, and a derived name that is not the component's as `[CGP-E070]`, naming the key
+in the attribute form. Each comes with a fix, `help: import the component` or
+`help: name the component in the attribute`, which an editor running `cargo cgp check` offers on the
+trait's name.
 
 ## Impl-side dependencies
 

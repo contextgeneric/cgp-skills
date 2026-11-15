@@ -231,6 +231,8 @@ primitive, and any type with a path or generic arguments remain the type they na
 primitive names count, so `@app.f` makes `f` a symbol. For example:
 
 ```rust
+use cgp::core::error::ErrorRaiserComponent;
+
 type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
 // PathCons<Symbol!("app"),
 //     PathCons<Symbol!("error"),

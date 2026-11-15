@@ -61,7 +61,17 @@ Search the class’s signature to test the suspected cause. These match raw outp
 `DelegateComponent<` … `is not implemented` for absent wiring, `is not constrained` for an
 unconstrained generic, `__Context__` in a headline for a dependency a definition did not declare, or
 `E0107` on a trait name for the wrong half of a component in a `#[cgp_impl]` header. A `HasField<Symbol<…>>` line spells out the field name character by
-character. The [debugging guide’s search
+character.
+
+An `E0425`, ``cannot find type `GreeterComponent` in this scope``, whose caret sits on the trait's
+name in a `#[cgp_impl]`, `#[cgp_provider]`, or `#[cgp_new_provider]` header is a component key the
+module lacks. The macro derives the key from the trait's path, so import it beside the trait or name
+the trait by its path; a key that `name:` renames or gives parameters, or a trait imported under
+another name, goes in the attribute, as `#[cgp_impl(new UnitArea: AreaComponent)]`. A header that
+names its trait through a module re-exporting the trait alone fails as
+``cannot find type `GreeterComponent` in module `crate::facade` ``. `cargo cgp check` reports these
+as `[CGP-E041]` and `[CGP-E070]`, each with a fix an editor applies; see
+[components](components.md#importing-the-component-key). The [debugging guide’s search
 table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log)
 lists signatures for the full set of classes.
 

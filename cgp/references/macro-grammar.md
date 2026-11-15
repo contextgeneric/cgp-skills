@@ -157,7 +157,13 @@ generic type such as `ScaledArea<Inner>`, or the literal `Self`. Adding `new` al
 public provider struct.
 
 The optional `: ComponentType` overrides the component used in `IsProviderFor`. Without it, the
-component name is the provider trait’s name plus `Component`.
+component is the provider trait’s path as the header writes it, with `Component` appended to the
+last segment and the trait's generic arguments dropped: `impl AreaCalculator` names
+`AreaCalculatorComponent`, which must be in scope, and `impl crate::shapes::AreaCalculator` names
+`crate::shapes::AreaCalculatorComponent`. The key carries the span of the trait's name, so a key
+that does not resolve fails with `E0425` there. Use the override when the derived name is not the
+component's: a key that `name:` renames or gives parameters, or a trait imported under another name.
+See [components](components.md#importing-the-component-key).
 
 Prefer an impl header that omits `for Context`; the macro inserts `__Context__`. Use
 `impl<Context> Trait for Context` only when the context must be named or bounded explicitly, such as
@@ -187,6 +193,7 @@ CgpNewProviderArgs -> ComponentType?
 ComponentType      -> Type
 ```
 
+Without an argument, the component is derived from the provider trait's path, as for `#[cgp_impl]`.
 These macros preserve the provider-trait impl and generate `IsProviderFor` with the same `where`
 bounds. The marker impl omits method bodies and associated types. Its arguments are the selected
 component, the provider trait’s leading context argument, and a tuple of trailing parameters, using

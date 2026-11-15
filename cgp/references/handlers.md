@@ -11,8 +11,11 @@ trait for implementations, and a marker selected through [wiring](wiring.md). Th
 only the macros `#[cgp_computer]`, `#[cgp_producer]`, and `#[cgp_auto_dispatch]`. Every handler
 trait and marker, the promotion bundles, and the one-step combinators (`Promote`, `PromoteAsync`,
 `PromoteRef`, `TryPromote`, `ReturnInput`, `ComposeHandlers`, `PipeHandlers`) come from
-`cgp::extra::handler`. A provider written with `#[cgp_impl]` on `Computer` needs `ComputerComponent`
-in scope as well, because the macro names the marker as `{Trait}Component`. A concrete context that
+`cgp::extra::handler`, and the dispatch combinators, such as `MatchWithValueHandlers`, from
+`cgp::extra::dispatch`. A provider written with `#[cgp_impl]` on `Computer` imports
+`ComputerComponent` beside it, because the macro derives the key from the trait's path, or names
+the trait by its path, as `impl<Code> cgp::extra::handler::Computer<Code, u64>`; see
+[components](components.md#importing-the-component-key). A concrete context that
 delegates a handler also implements its provider trait, so calling `App::compute(&app, …)` by bare
 name is ambiguous (`E0034`) when the consumer trait and that provider trait are both in scope; use
 method syntax or name the consumer trait.

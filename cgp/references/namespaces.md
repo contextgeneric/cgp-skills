@@ -208,6 +208,8 @@ Use `Path!` to turn a dotted, `@`-prefixed address into a type-level path. Names
 same syntax to identify lookup destinations:
 
 ```rust
+use cgp::core::error::ErrorRaiserComponent;
+
 type ErrorRoute = Path!(@app.error.ErrorRaiserComponent);
 // PathCons<Symbol!("app"),
 //     PathCons<Symbol!("error"),

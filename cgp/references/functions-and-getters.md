@@ -481,6 +481,7 @@ field getters in order, passing each returned reference to the next, and wires i
 provider trait. This chain reads a timeout through the context's configuration and connection:
 
 ```rust
+use cgp::core::component::WithProvider;
 use cgp::core::field::impls::ChainGetters;
 
 delegate_components! {

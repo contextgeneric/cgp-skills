@@ -17,6 +17,13 @@ Records and variants use related representations. A record contains every field 
 enum contains one variant at a time. Their operations share marker, casting, and dispatch
 mechanisms, with different rules for representing absent fields and excluded variants.
 
+The examples describe CGP v0.8.0 and assume `use cgp::prelude::*;`. The prelude carries the derives
+but not the traits whose methods they generate, so the examples also import the builder, extractor,
+and variant traits (`HasBuilder`, `BuildField`, `FinalizeBuild`, `HasExtractor`, `ExtractField`,
+`FinalizeExtractResult`, and `FromVariant`) from `cgp::core::field::traits`, `CanBuildFrom` from
+`cgp::core::field::impls`, and the handler names they wire from `cgp::extra::handler` and
+`cgp::extra::dispatch`.
+
 ## The umbrella derive and its shape-specific faces
 
 Use `#[derive(CgpData)]` to generate the full extensible-data support for a struct or enum.

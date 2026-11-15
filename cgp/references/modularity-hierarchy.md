@@ -6,7 +6,7 @@ reference compares those forms using serialization as a running example.
 
 Each tier separates the implementation from the type it serves more fully, at the cost of additional
 declarations or wiring. Stop at the tier that solves the problem. The examples assume
-`use cgp::prelude::*;` and describe CGP v0.8.0.
+`use cgp::prelude::*;` and `use serde::Serializer;`, and describe CGP v0.8.0.
 
 ## The questions that decide the tier
 

@@ -271,6 +271,8 @@ skips lifetimes and consts. For `CanCompute<Code, Input>` the path is
 `@ComputerComponent.Code.Input`, so a key has one segment per parameter:
 
 ```rust
+use cgp::extra::handler::ComputerComponent;
+
 delegate_components! {
     Interpreter {
         open ComputerComponent;

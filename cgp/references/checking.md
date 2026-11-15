@@ -194,6 +194,8 @@ entries as `delegate_components!` would and derives checks for supported keys, h
 avoid omitted checks. Keep wiring and checking separate for advanced mappings, as explained below:
 
 ```rust
+use cgp::core::field::impls::UseField;
+
 #[derive(HasField)]
 pub struct MyContext {
     pub name: String,
