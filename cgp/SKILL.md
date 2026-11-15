@@ -17,6 +17,13 @@ license: Apache-2.0
 
 # Context-Generic Programming (CGP) in Rust
 
+**First, check the project's CGP version.** Before you write, change, or debug CGP code in a
+project, read the `cgp` entry in its `Cargo.lock`, or its `Cargo.toml` without one, and compare it
+with the releases in [Versions and keeping this skill current](#versions-and-keeping-this-skill-current).
+If it differs from the newest release described there, load [versions](references/versions.md),
+follow the case that matches, and open your answer by telling the user what you found. Do this even
+when the task does not mention versions.
+
 CGP lets Rust contexts choose among interchangeable trait implementations through **wiring**.
 It works around coherence restrictions by separating the trait callers use from the trait providers
 implement. This primer introduces the vocabulary, core constructs, and macro expansions needed to
@@ -147,17 +154,22 @@ it.
 
 This skill supports `cgp` **v0.8.0** and later, and does not support an older `cgp`. The newest
 releases it describes are `cgp` **v0.8.0** and `cargo-cgp` **v0.1.0**. Read the project's `cgp`
-version from `Cargo.lock` and the tool's from `cargo cgp --version`, and load
-[versions](references/versions.md) when either differs from these:
+version from `Cargo.lock`, or `Cargo.toml` without one, and the tool's from `cargo cgp --version`,
+then act on the case that matches:
 
-- **Older than v0.8.0:** the skill does not cover it; read the CGP source and the knowledge base.
-- **Older than the newest release:** mention the newer release once, and write code for the
-  project's version.
-- **Newer than the newest release:** the skill may be behind; check `main` for a newer skill and
-  tell the user how to update it, as the reference describes.
+- **Older than v0.8.0:** tell the user the skill does not support it, and read the CGP source at
+  that version and the knowledge base instead of trusting the skill's syntax.
+- **Older than the newest release described:** tell the user once that `cgp` has a newer release,
+  naming it, and write code for the project's version.
+- **Newer than the newest release described,** or an unreleased `cgp` such as a Git dependency:
+  fetch `https://raw.githubusercontent.com/contextgeneric/cgp-skills/main/cgp/references/versions.md`
+  and read its version table. If it describes the project's version, tell the user a newer skill is
+  available and give the update command for their install route, which
+  [versions](references/versions.md#updating-the-skill) lists. Otherwise tell the user the skill has
+  not caught up yet, and trust the code. If the fetch fails, say the check could not run.
 
-Change the project, the tool, or this skill only with the user's approval. Where the skill and a
-newer `cgp` disagree, trust the code.
+[Versions](references/versions.md) holds the details of each case. Change the project, the tool, or
+this skill only with the user's approval.
 
 ## The problem CGP solves
 
