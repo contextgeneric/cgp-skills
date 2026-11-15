@@ -63,10 +63,14 @@ The skill is deployed on its own, so it links outside itself only by URL:
 
 ## Verification
 
-Each snippet and the version statement match the code the skill describes:
+Each snippet, the version statement, and the packaging match the code and release the skill
+describes:
 
 - Compile a representative snippet when syntax is uncertain.
 - Record the CGP version the skill describes, and update the statement when the library advances.
+- Bump `version` in `.claude-plugin/plugin.json` and `package.json` with each tag, so a plugin or
+  package install resolves the tag's copy.
+- Keep the README's installation paths and the website's installation page in agreement.
 
 ## Prose
 

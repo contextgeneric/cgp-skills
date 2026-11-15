@@ -1,0 +1,16 @@
+{
+  "name": "cgp-skills",
+  "owner": {
+    "name": "contextgeneric"
+  },
+  "metadata": {
+    "description": "Agent skills for Context-Generic Programming (CGP) in Rust."
+  },
+  "plugins": [
+    {
+      "name": "cgp",
+      "source": "./",
+      "description": "Read, write, debug, and explain Context-Generic Programming (CGP) code in Rust."
+    }
+  ]
+}

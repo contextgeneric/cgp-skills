@@ -1,0 +1,13 @@
+{
+  "name": "cgp",
+  "version": "0.8.0",
+  "description": "Read, write, debug, and explain Context-Generic Programming (CGP) code in Rust.",
+  "author": {
+    "name": "Soares Chen"
+  },
+  "homepage": "https://contextgeneric.dev/docs/ai/skills/",
+  "repository": "https://github.com/contextgeneric/cgp-skills",
+  "license": "Apache-2.0",
+  "keywords": ["rust", "cgp", "context-generic-programming"],
+  "skills": ["./cgp"]
+}
