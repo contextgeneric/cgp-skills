@@ -334,7 +334,7 @@ The return type determines the field type and read operation:
 | `&T` | `T` | Borrow directly |
 | `&str` | `String` | `.as_ref()` |
 | `Option<&T>` | `Option<T>` | `.as_ref()` |
-| `Option<&str>` | `Option<String>` | `.as_deref()` |
+| `Option<&str>` | `Option<String>` | `.option_as_ref()` |
 | `&[T]` | `AsRef<[T]>` | `.as_ref()` |
 | `MRef<'_, T>` | `T` | Wrap the borrow as `MRef::Ref(..)` |
 | Owned path, tuple, or array | Matching field type | `.clone()` |
