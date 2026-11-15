@@ -1,9 +1,9 @@
 # Versions: matching this skill to the project's CGP
 
-This skill is installed from the `main` branch of
+Compare the project's versions with this table before you write, change, or debug CGP code in it,
+and whenever the user asks. The skill is installed from the `main` branch of
 [cgp-skills](https://github.com/contextgeneric/cgp-skills), which is updated between CGP releases
-and keeps supporting every `cgp` release from the oldest one below. Compare the project's versions
-with this table before you write, change, or debug CGP code in it, and whenever the user asks:
+and supports every `cgp` release from the oldest one below:
 
 | Item | Version |
 | --- | --- |
@@ -11,18 +11,18 @@ with this table before you write, change, or debug CGP code in it, and whenever 
 | Newest `cgp` release described | v0.8.0 |
 | Newest `cargo-cgp` release described | v0.1.0 |
 
-Read the project's `cgp` version from its `Cargo.lock` entry, or from the requirement in
-`Cargo.toml` when there is no lock file, and the tool's from `cargo cgp --version`. Then follow the
-case that matches. Tell the user what you found and the command that would act on it, but run no
-update of the project, the tool, or this skill without the user's approval.
+Follow the section below that matches the project's versions, and tell the user what you found and
+the command that would act on it. Run no update of the project, the tool, or this skill without the
+user's approval. Read the project's `cgp` version from its `Cargo.lock` entry, or from the
+requirement in `Cargo.toml` when there is no lock file, and the tool's from `cargo cgp --version`.
 
 ## The project's `cgp` is older than v0.8.0
 
-This skill does not support it. Much of its syntax differs from what the older release accepts, so
-treat the skill's examples as unverified for that project. Read the CGP source at the project's
-version, the `cgp` crate on docs.rs for that version, or the
-[CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base) where the code needs
-them, and trust the source where they disagree with this skill.
+This skill does not support it. Older releases accept different syntax, so treat the skill's
+examples as unverified for that project. Where the code needs it, read the CGP source at the
+project's version, the `cgp` crate's documentation on docs.rs for that version, or the
+[CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base), and trust the source
+where it disagrees with this skill.
 
 ## The project's `cgp` is on a line a notice below drops
 
@@ -47,8 +47,10 @@ tag for this project, replacing the current install, with their route's form of 
 ## The project's `cgp` is older than the newest release described
 
 A newer `cgp` exists. Tell the user once in the session, at the start of your answer and naming the
-release, and not again once the user chooses to stay. A patch release within the same minor line
-updates with `cargo update -p cgp`; a newer minor release, such as v0.9.0 for a project on v0.8.x,
+release, and not again once the user chooses to stay.
+
+Give the user the command that matches the release. A patch release within the same minor line
+updates with `cargo update -p cgp`. A newer minor release, such as v0.9.0 for a project on v0.8.x,
 needs the requirement in `Cargo.toml` changed, for example with `cargo add cgp@0.9`, and may need
 code changes, which the changes listed below describe.
 
@@ -80,8 +82,8 @@ input. When the tool is newer, fetch this file from `main` as above.
 
 ## Updating the skill
 
-Tell which route installed the skill from where its `SKILL.md` sits, then from the tools' own lists,
-and ask the user when neither settles it:
+Give the update command for the route that installed the skill. Identify the route from where its
+`SKILL.md` sits, then from the tools' own lists, and ask the user when neither settles it:
 
 - **Claude Code plugin:** the skill sits under `plugins/cache/cgp-skills/` in Claude Code's
   configuration folder, `~/.claude` by default. Run

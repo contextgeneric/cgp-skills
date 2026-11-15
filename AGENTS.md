@@ -70,12 +70,11 @@ Each snippet matches the code the skill describes, and each installation path ma
 
 ## Versions
 
-Readers install the skill from `main`, so `main` supports every `cgp` release from the oldest that
-[cgp/references/versions.md](cgp/references/versions.md) names:
+Readers install the skill from `main`, so keep `main` correct for every `cgp` release from the
+oldest that [cgp/references/versions.md](cgp/references/versions.md) names:
 
-- Keep the guidance correct for every supported release. Where a release changes a form, mark the
-  newer form with the release that introduced it, as in "Since `cgp` v0.9.0:", keep the older form
-  beside it, and list the change in the reference.
+- Where a release changes a form, mark the newer form with the release that introduced it, as in
+  "Since `cgp` v0.9.0:", keep the older form beside it, and list the change in the reference.
 - At each `cgp` or `cargo-cgp` release, update the reference's table, the versions `SKILL.md`
   states, and the `cargo-cgp` tag in its Nix commands. At each `cgp` release, also tag the skill as
   `vX.Y.Z`.
