@@ -145,17 +145,19 @@ it.
 
 ### Versions and keeping this skill current
 
-This skill is written for **CGP v0.8.0** and **cargo-cgp v0.1.0**. Check both on the host and
-act on a mismatch:
+This skill supports `cgp` **v0.8.0** and later, and does not support an older `cgp`. The newest
+releases it describes are `cgp` **v0.8.0** and `cargo-cgp` **v0.1.0**. Read the project's `cgp`
+version from `Cargo.lock` and the tool's from `cargo cgp --version`, and load
+[versions](references/versions.md) when either differs from these:
 
-- Read the user's `cgp` version from its `Cargo.toml` or `Cargo.lock` entry, and run
-  `cargo cgp --version` for the tool.
-- **If either is older than recorded here**, recommend updating it so its behavior matches this
-  skill: `cargo update -p cgp` for the library, and `cargo cgp update` (or a Nix flake refresh) for
-  the tool.
-- **If the host's `cgp` is newer than v0.8.0**, this skill is behind the library. Tell the user the
-  **skill should be upgraded** to match their `cgp`, rather than changing their code to fit an older
-  skill. Treat the newer `cgp` as authoritative and flag the gap instead of guessing.
+- **Older than v0.8.0:** the skill does not cover it; read the CGP source and the knowledge base.
+- **Older than the newest release:** mention the newer release once, and write code for the
+  project's version.
+- **Newer than the newest release:** the skill may be behind; check `main` for a newer skill and
+  tell the user how to update it, as the reference describes.
+
+Change the project, the tool, or this skill only with the user's approval. Where the skill and a
+newer `cgp` disagree, trust the code.
 
 ## The problem CGP solves
 
@@ -346,10 +348,9 @@ its trait does not: `#[derive(ExtractField)]` needs no import, but calling `.ext
 `#[derive(BuildField)]` need no import, while a `HasField` bound, a `.get_field()` call, or a
 builder call needs its trait from `cgp::core::field::traits`.
 
-This skill describes CGP **v0.8.0** and cargo-cgp **v0.1.0**. See
-[Tooling](#tooling-use-cargo-cgp-for-readable-errors-and-expansions) for checking both versions on
-the host and reconciling a mismatch. Inside documentation code blocks you may omit the prelude
-import for brevity.
+[Versions and keeping this skill current](#versions-and-keeping-this-skill-current) gives the
+releases this skill describes and how to reconcile a mismatch with the project's. Inside
+documentation code blocks you may omit the prelude import for brevity.
 
 ---
 
@@ -1149,6 +1150,9 @@ Choose the remaining references by task:
 - **[Modularity hierarchy](references/modularity-hierarchy.md):** Load when deciding how much CGP
   a problem needs. Compares plain blanket traits through per-provider wiring and identifies the
   coherence restrictions each approach avoids.
+- **[Versions](references/versions.md):** Load when the project's `cgp` or `cargo-cgp` differs
+  from the releases this skill describes. Covers what to tell the user, how to check `main` for a
+  newer skill, each install route's update command, and the changes between supported releases.
 
 ### Exhaustive online reference
 

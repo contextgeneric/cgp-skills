@@ -100,6 +100,8 @@ errors. From there it sends the agent to the reference that owns the task at han
   [error extraction](cgp/references/error-extraction.md).
 - **Design choices:** the [modularity hierarchy](cgp/references/modularity-hierarchy.md), for
   deciding how much CGP a problem needs.
+- **Versions:** [versions](cgp/references/versions.md), for matching the skill to the project's
+  `cgp` and telling the user when the project or the skill needs an update.
 
 ## How the skill relates to the knowledge base
 
