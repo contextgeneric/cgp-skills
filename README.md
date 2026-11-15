@@ -29,15 +29,16 @@ If you are an agent installing this skill, follow these steps:
 
 1. Ask the user whether to install the skill for them in every project, or only in the current
    project, where it can be committed for the whole team.
-2. Use the harness's own installer when it has one, from the list below, pinned to `v0.8.0`. Use
-   only one route, since a plugin and a copy together give the harness two copies of the skill.
+2. Use the harness's own installer when it has one, from the list below, pinned to `v0.8.0`.
 3. Otherwise copy the `cgp/` directory at the `v0.8.0` tag into the harness's skills directory from
    the table further down. Copy it rather than linking a clone, and keep `SKILL.md` and
    `references/` together.
-4. Check that the harness now lists a skill named `cgp`, which may need a new session.
-5. Change no other setting without asking.
+4. Install through one route only, because a plugin and a copy together give the harness two
+   copies of the skill.
+5. Check that the harness now lists a skill named `cgp`, which may need a new session.
+6. Change no other setting without asking.
 
-Several harnesses can install the skill themselves, each pinned to the tag:
+These harnesses and tools have their own installers, and each command pins the tag:
 
 - **Claude Code:** run `/plugin marketplace add contextgeneric/cgp-skills#v0.8.0`, then
   `/plugin install cgp@cgp-skills`. The plugin's skill is `/cgp:cgp`.
@@ -47,7 +48,7 @@ Several harnesses can install the skill themselves, each pinned to the tag:
   it for the current project.
 - **Any agent the installers support:** run
   `npx skills add contextgeneric/cgp-skills#v0.8.0 --skill cgp`, adding `-g` to install it for
-  every project; it sends anonymous telemetry unless `DISABLE_TELEMETRY=1` is set. The GitHub CLI
+  every project. It sends anonymous telemetry unless `DISABLE_TELEMETRY=1` is set. The GitHub CLI
   does the same with `gh skill install contextgeneric/cgp-skills cgp --pin v0.8.0`, choosing the
   harness with `--agent` and the scope with `--scope`.
 
