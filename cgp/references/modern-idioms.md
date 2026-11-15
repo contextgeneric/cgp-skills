@@ -406,8 +406,9 @@ Pre-0.7 code may use names that current CGP has removed or renamed. Replace `#[c
 `delegate_components!` and the relevant derive or getter machinery. The abstract-type provider trait
 formerly named `ProvideType` is now `TypeProvider`.
 
-Check an unfamiliar name against the current exports and the online knowledge base's changelog or
-reference before copying it. A missing prelude export may require an explicit import; it does not by
+Check an unfamiliar name against the current exports, the online knowledge base's reference, and
+its [removal ledger](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/releases/README.md#the-removal-ledger),
+which says where each renamed or removed name went, before copying it. A missing prelude export may require an explicit import; it does not by
 itself prove that the name was removed.
 
 ## Related sub-skills
