@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
-"""Check the rules `AGENTS.md` states for the Markdown in this repository.
+"""Check the rules `AGENTS.md` and the Agent Skills specification set for this repository.
 
-Two rules are checked:
+These rules are checked:
 
-- Every file carries exactly one `#` heading, with `##` or deeper headings for
-  its sections. Fenced code blocks are skipped, so a `#` comment inside an
-  example does not count.
+- Every Markdown file carries exactly one `#` heading, with `##` or deeper
+  headings for its sections. Fenced code blocks are skipped, so a `#` comment
+  inside an example does not count.
 - Every relative link resolves, and a link in the skill directory stays inside
   `cgp/`, so the skill stays self-contained.
+- The skill's frontmatter names the skill after its directory, keeps its
+  `description` within the specification's 1024 characters, and sets `license`.
+- The plugin manifests and `package.json`, where they exist, parse as JSON.
 
 The script uses only the Python standard library, so a runner needs no install.
+It reads the frontmatter's simple `key: value` lines and folded `>` or `|`
+blocks itself rather than through a YAML library.
 Run it from the repository root or from anywhere: it locates the root itself.
 
 Usage: python3 scripts/check.py
 """
 
+import json
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKILL = ROOT / "cgp"
+MANIFESTS = [
+    ROOT / ".claude-plugin" / "plugin.json",
+    ROOT / ".claude-plugin" / "marketplace.json",
+    ROOT / "package.json",
+]
+MAX_DESCRIPTION = 1024
 
 FENCE = re.compile(r"^(\s*>?\s*)(```|~~~)")
 H1 = re.compile(r"^# ")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+KEY = re.compile(r"^([A-Za-z][\w-]*):\s*(.*)$")
 
 
 def prose_lines(text):
@@ -60,15 +73,94 @@ def check_links(path, failures):
                 failures.append(f"{where}: link leaves {inside.name}/: {target}")
 
 
+def frontmatter(text):
+    """Return the frontmatter's top-level keys and values, or None without one.
+
+    A folded block (`>`, `>-`) joins its lines with spaces and a literal block
+    (`|`, `|-`) with newlines, as YAML does for single-paragraph text.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
+        return None
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        return None
+    fields = {}
+    key = None
+    block = []
+    style = None
+
+    def close():
+        if key is not None and style is not None:
+            fields[key] = (" " if style == ">" else "\n").join(block)
+
+    for line in lines[1:end]:
+        if style is not None and (line.startswith((" ", "\t")) or not line.strip()):
+            if line.strip():
+                block.append(line.strip())
+            continue
+        close()
+        key, style, block = None, None, []
+        match = KEY.match(line)
+        if not match:
+            continue
+        key, value = match.groups()
+        if value[:1] in (">", "|"):
+            style = value[0]
+        else:
+            fields[key] = value.strip().strip("\"'")
+    close()
+    return fields
+
+
+def check_frontmatter(failures):
+    path = SKILL / "SKILL.md"
+    where = path.relative_to(ROOT)
+    fields = frontmatter(path.read_text())
+    if fields is None:
+        failures.append(f"{where}: no frontmatter")
+        return
+    if fields.get("name") != SKILL.name:
+        failures.append(
+            f"{where}: name {fields.get('name')!r} differs from its directory {SKILL.name!r}"
+        )
+    description = fields.get("description", "")
+    if not description:
+        failures.append(f"{where}: no description")
+    elif len(description) > MAX_DESCRIPTION:
+        failures.append(
+            f"{where}: description has {len(description)} characters, "
+            f"over the limit of {MAX_DESCRIPTION}"
+        )
+    if not fields.get("license"):
+        failures.append(f"{where}: no license")
+
+
+def check_manifests(failures):
+    for path in MANIFESTS:
+        if not path.exists():
+            continue
+        try:
+            json.loads(path.read_text())
+        except json.JSONDecodeError as error:
+            failures.append(f"{path.relative_to(ROOT)}: invalid JSON: {error}")
+
+
 def main():
     failures = []
     files = sorted(p for p in ROOT.rglob("*.md") if ".git" not in p.parts)
     for path in files:
         check_headings(path, failures)
         check_links(path, failures)
+    check_frontmatter(failures)
+    check_manifests(failures)
     for failure in failures:
         print(failure)
-    print(f"{len(files)} files checked, {len(failures)} problems")
+    print(
+        f"{len(files)} Markdown files and the skill's frontmatter checked, "
+        f"{len(failures)} problems"
+    )
     return 1 if failures else 0
 
 

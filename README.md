@@ -66,8 +66,11 @@ are written for agents.
 
 ## Checks
 
-CI runs `python3 scripts/check.py`, which checks that each file has exactly one `#` heading and that
-the relative links inside `cgp/` resolve.
+CI runs `python3 scripts/check.py`, which checks that each file has exactly one `#` heading, that
+the relative links inside `cgp/` resolve, and that the skill's frontmatter meets the
+[Agent Skills specification](https://agentskills.io/specification): its `name` matches its
+directory, its `description` stays within 1024 characters, and it sets a `license`. It also checks
+that the plugin manifests and `package.json`, where they exist, parse as JSON.
 
 ## Related repositories
 

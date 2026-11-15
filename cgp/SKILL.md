@@ -2,20 +2,17 @@
 name: cgp
 description: >-
   Read, write, debug, and explain Context-Generic Programming (CGP) code in Rust.
-  Use this skill whenever you encounter or are asked to work with CGP: any code that
-  uses `cgp::prelude::*`, the `#[cgp_component]`, `#[cgp_impl]`, `#[cgp_provider]`,
-  `#[cgp_fn]`, `#[cgp_type]`, `#[cgp_getter]`, `#[cgp_auto_getter]`, `#[cgp_computer]`,
-  `#[cgp_producer]`, or `cgp_namespace!` macros, the `delegate_components!`,
-  `check_components!`, or `delegate_and_check_components!` macros, the `Symbol!`,
-  `Product!`, `Sum!`, `Path!`, `Struct!`, or `Enum!` type-level macros, the `HasField`/`HasFields` traits or
-  their derives, providers such as `UseContext`/`UseDelegate`/`UseField`/`UseType`, the
-  handler family (`Computer`/`Producer`/`Handler`), the error backends
-  (`cgp-error-anyhow`, `cgp-error-eyre`, `cgp-error-std`, such as `UseAnyhowError` and
-  `RaiseAnyhowError`), or terms like consumer trait,
-  provider trait, provider, wiring, impl-side dependency, or context-generic. Trigger it
-  even when the user does not say "CGP" by name but is clearly working with these
-  constructs, when a Rust trait error mentions `IsProviderFor`/`DelegateComponent`, or
-  when someone wants modular, dependency-injected, multiple-implementation Rust traits.
+  Use it for code that imports `cgp::prelude::*` or uses CGP's macros: the
+  component, provider, function, type, and getter attributes (`#[cgp_component]`,
+  `#[cgp_impl]`, `#[cgp_fn]`, `#[cgp_type]`, `#[cgp_getter]`, and the other
+  `#[cgp_*]` attributes), `cgp_namespace!`, the wiring and checking macros such as
+  `delegate_components!` and `check_components!`, and the type-level macros such as
+  `Symbol!`, `Product!`, and `Struct!`. Use it too for CGP's field traits and
+  derives, its providers, handlers, and error backends; for terms such as consumer
+  trait, provider, wiring, or impl-side dependency; for a Rust error that mentions
+  `IsProviderFor` or `DelegateComponent`; and when someone wants modular,
+  dependency-injected traits with several implementations, even without naming CGP.
+license: Apache-2.0
 ---
 
 # Context-Generic Programming (CGP) in Rust

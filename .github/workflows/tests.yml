@@ -22,5 +22,5 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Check the headings and relative links
+      - name: Check the headings, links, frontmatter, and manifests
         run: python3 scripts/check.py
