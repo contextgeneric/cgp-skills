@@ -4,11 +4,11 @@
 # cgp-skills: agent skills for CGP
 
 A coding agent that meets [Context-Generic Programming (CGP)](https://contextgeneric.dev/) in a Rust
-project starts with little reliable knowledge of it. CGP's macros generate traits and impls the agent never sees, and
-what it learned in training may show syntax the library no longer accepts. This repository holds the
-`/cgp` skill, which teaches an agent to read, write, debug, and explain CGP code. The agent loads it
-when a task involves CGP, so you can ask about wiring or a confusing compile error and get an answer
-in CGP's own terms.
+project starts with little reliable knowledge of it. CGP's macros generate traits and impls the
+agent never sees, and what it learned in training may show syntax the library no longer accepts.
+This repository holds the `/cgp` skill, which teaches an agent to read, write, debug, and explain
+CGP code. The agent loads it when a task involves CGP, so you can ask about wiring or a confusing
+compile error and get an answer in CGP's own terms.
 
 The skill describes `cgp` v0.8.0 and `cargo-cgp` v0.1.0, and its tags follow `cgp`'s releases, so
 install the tag that matches the `cgp` your project uses. It is plain Markdown, with no scripts, and
@@ -29,7 +29,8 @@ If you are an agent installing this skill, follow these steps:
 
 1. Ask the user whether to install the skill for them in every project, or only in the current
    project, where it can be committed for the whole team.
-2. Use the harness's own installer when it has one, from the list below, pinned to `v0.8.0`.
+2. Use the harness's own installer when it has one, from the list below, pinned to `v0.8.0`. Use
+   only one route, since a plugin and a copy together give the harness two copies of the skill.
 3. Otherwise copy the `cgp/` directory at the `v0.8.0` tag into the harness's skills directory from
    the table further down. Copy it rather than linking a clone, and keep `SKILL.md` and
    `references/` together.
