@@ -10,7 +10,10 @@ These rules are checked:
   `cgp/`, so the skill stays self-contained.
 - The skill's frontmatter names the skill after its directory, keeps its
   `description` within the specification's 1024 characters, and sets `license`.
-- The plugin manifests and `package.json`, where they exist, parse as JSON.
+- The plugin manifests and `package.json`, where they exist, parse as JSON and
+  agree with the skill: `plugin.json` and `package.json` carry the same
+  `version`, each `skills` path names a directory holding a `SKILL.md`, and
+  each manifest's description is the first sentence of the skill's.
 
 The script uses only the Python standard library, so a runner needs no install.
 It reads the frontmatter's simple `key: value` lines and folded `>` or `|`
@@ -115,12 +118,13 @@ def frontmatter(text):
 
 
 def check_frontmatter(failures):
+    """Check the skill's frontmatter and return its fields, or None without any."""
     path = SKILL / "SKILL.md"
     where = path.relative_to(ROOT)
     fields = frontmatter(path.read_text())
     if fields is None:
         failures.append(f"{where}: no frontmatter")
-        return
+        return None
     if fields.get("name") != SKILL.name:
         failures.append(
             f"{where}: name {fields.get('name')!r} differs from its directory {SKILL.name!r}"
@@ -135,16 +139,61 @@ def check_frontmatter(failures):
         )
     if not fields.get("license"):
         failures.append(f"{where}: no license")
+    return fields
 
 
-def check_manifests(failures):
+def first_sentence(text):
+    end = text.find(". ")
+    return text if end < 0 else text[: end + 1]
+
+
+def check_manifests(fields, failures):
+    loaded = {}
     for path in MANIFESTS:
         if not path.exists():
             continue
         try:
-            json.loads(path.read_text())
+            loaded[path] = json.loads(path.read_text())
         except json.JSONDecodeError as error:
             failures.append(f"{path.relative_to(ROOT)}: invalid JSON: {error}")
+    plugin = loaded.get(MANIFESTS[0])
+    marketplace = loaded.get(MANIFESTS[1])
+    package = loaded.get(MANIFESTS[2])
+
+    if plugin and package and plugin.get("version") != package.get("version"):
+        failures.append(
+            f"version differs: plugin.json {plugin.get('version')!r}, "
+            f"package.json {package.get('version')!r}"
+        )
+
+    skill_paths = []
+    if plugin:
+        skill_paths += [("plugin.json", p) for p in plugin.get("skills", [])]
+    if package:
+        skill_paths += [("package.json", p) for p in package.get("pi", {}).get("skills", [])]
+    for name, target in skill_paths:
+        if not (ROOT / target / "SKILL.md").is_file():
+            failures.append(f"{name}: skills path {target!r} holds no SKILL.md")
+
+    if not fields or not fields.get("description"):
+        return
+    expected = first_sentence(fields["description"])
+    descriptions = []
+    if plugin:
+        descriptions.append(("plugin.json", plugin.get("description")))
+    if package:
+        descriptions.append(("package.json", package.get("description")))
+    if marketplace:
+        for entry in marketplace.get("plugins", []):
+            descriptions.append(
+                (f"marketplace.json plugin {entry.get('name')!r}", entry.get("description"))
+            )
+    for name, description in descriptions:
+        if description != expected:
+            failures.append(
+                f"{name}: description {description!r} differs from the skill's first "
+                f"sentence {expected!r}"
+            )
 
 
 def main():
@@ -153,8 +202,8 @@ def main():
     for path in files:
         check_headings(path, failures)
         check_links(path, failures)
-    check_frontmatter(failures)
-    check_manifests(failures)
+    fields = check_frontmatter(failures)
+    check_manifests(fields, failures)
     for failure in failures:
         print(failure)
     print(

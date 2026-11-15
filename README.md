@@ -119,7 +119,9 @@ CI runs `python3 scripts/check.py`, which checks that each file has exactly one 
 the relative links inside `cgp/` resolve, and that the skill's frontmatter meets the
 [Agent Skills specification](https://agentskills.io/specification): its `name` matches its
 directory, its `description` stays within 1024 characters, and it sets a `license`. It also checks
-that the plugin manifests and `package.json` parse as JSON.
+that the plugin manifests and `package.json` parse as JSON and agree with the skill: the same
+`version` in `plugin.json` and `package.json`, `skills` paths that hold a `SKILL.md`, and
+descriptions that match the skill's first sentence.
 
 ## Related repositories
 

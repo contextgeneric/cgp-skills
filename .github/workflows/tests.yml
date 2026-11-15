@@ -13,8 +13,8 @@ concurrency:
 permissions:
   contents: read
 
-# The repository holds Markdown only, so the check is a small script that needs
-# nothing but the runner's Python.
+# The repository holds Markdown and a few JSON manifests, so the check is a small
+# script that needs nothing but the runner's Python.
 jobs:
   markdown:
     name: Markdown checks
