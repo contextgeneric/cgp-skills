@@ -11,9 +11,11 @@ These rules are checked:
 - The skill's frontmatter names the skill after its directory, keeps its
   `description` within the specification's 1024 characters, and sets `license`.
 - The plugin manifests and `package.json`, where they exist, parse as JSON and
-  agree with the skill: `plugin.json` and `package.json` carry the same
-  `version`, each `skills` path names a directory holding a `SKILL.md`, and
-  each manifest's description is the first sentence of the skill's.
+  agree with the skill: neither `plugin.json` nor `package.json` sets
+  `version`, so a plugin install updates with every commit, each `skills` path
+  names a directory holding a `SKILL.md`, and each manifest's description is
+  the first sentence of the skill's.
+- The versions `SKILL.md` states match the table in `references/versions.md`.
 
 The script uses only the Python standard library, so a runner needs no install.
 It reads the frontmatter's simple `key: value` lines and folded `>` or `|`
@@ -36,6 +38,17 @@ MANIFESTS = [
     ROOT / "package.json",
 ]
 MAX_DESCRIPTION = 1024
+VERSIONS = SKILL / "references" / "versions.md"
+VERSION_ROWS = {
+    "oldest": "Oldest supported `cgp`",
+    "cgp": "Newest `cgp` release described",
+    "cargo-cgp": "Newest `cargo-cgp` release described",
+}
+SKILL_VERSIONS = re.compile(
+    r"supports `cgp` \*\*(v[\d.]+)\*\* and later.*?"
+    r"newest\s+releases it describes are `cgp` \*\*(v[\d.]+)\*\* and `cargo-cgp` \*\*(v[\d.]+)\*\*",
+    re.S,
+)
 
 FENCE = re.compile(r"^(\s*>?\s*)(```|~~~)")
 H1 = re.compile(r"^# ")
@@ -160,11 +173,12 @@ def check_manifests(fields, failures):
     marketplace = loaded.get(MANIFESTS[1])
     package = loaded.get(MANIFESTS[2])
 
-    if plugin and package and plugin.get("version") != package.get("version"):
-        failures.append(
-            f"version differs: plugin.json {plugin.get('version')!r}, "
-            f"package.json {package.get('version')!r}"
-        )
+    for name, manifest in (("plugin.json", plugin), ("package.json", package)):
+        if manifest and "version" in manifest:
+            failures.append(
+                f"{name}: sets version {manifest['version']!r}; leave it out so a plugin "
+                f"install updates with every commit on main"
+            )
 
     skill_paths = []
     if plugin:
@@ -196,6 +210,33 @@ def check_manifests(fields, failures):
             )
 
 
+def check_versions(failures):
+    """Check that SKILL.md states the versions the versions reference's table gives."""
+    if not VERSIONS.exists():
+        failures.append(f"{VERSIONS.relative_to(ROOT)}: missing")
+        return
+    table = {}
+    for line in VERSIONS.read_text().splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == 2:
+            table[cells[0]] = cells[1]
+    expected = {key: table.get(label) for key, label in VERSION_ROWS.items()}
+    for key, value in expected.items():
+        if not value:
+            failures.append(f"{VERSIONS.relative_to(ROOT)}: no row {VERSION_ROWS[key]!r}")
+    match = SKILL_VERSIONS.search((SKILL / "SKILL.md").read_text())
+    if not match:
+        failures.append("cgp/SKILL.md: no statement of the supported and newest versions")
+        return
+    stated = dict(zip(("oldest", "cgp", "cargo-cgp"), match.groups()))
+    for key, value in stated.items():
+        if expected[key] and value != expected[key]:
+            failures.append(
+                f"cgp/SKILL.md: states {VERSION_ROWS[key].lower()} {value}, "
+                f"but {VERSIONS.relative_to(ROOT)} gives {expected[key]}"
+            )
+
+
 def main():
     failures = []
     files = sorted(p for p in ROOT.rglob("*.md") if ".git" not in p.parts)
@@ -204,6 +245,7 @@ def main():
         check_links(path, failures)
     fields = check_frontmatter(failures)
     check_manifests(fields, failures)
+    check_versions(failures)
     for failure in failures:
         print(failure)
     print(
