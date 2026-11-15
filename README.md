@@ -10,10 +10,11 @@ This repository holds the `/cgp` skill, which teaches an agent to read, write, d
 CGP code. The agent loads it when a task involves CGP, so you can ask about wiring or a confusing
 compile error and get an answer in CGP's own terms.
 
-The skill describes `cgp` v0.8.0 and `cargo-cgp` v0.1.0, and its tags follow `cgp`'s releases, so
-install the tag that matches the `cgp` your project uses. It is plain Markdown, with no scripts, and
-it summarizes the [CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base), which it
-links for detail.
+The skill supports `cgp` v0.8.0 and every later release, though not an older `cgp`. Because it
+keeps improving between releases, you install it from this repository's `main` branch and update it
+from there. It is plain Markdown, with no scripts, and it summarizes the
+[CGP knowledge base](https://github.com/contextgeneric/cgp-knowledge-base), which it links for
+detail.
 
 **[Website](https://contextgeneric.dev/) · [Installation](https://contextgeneric.dev/docs/ai/skills/installation) · [Quickstart](https://contextgeneric.dev/docs/quickstart) · [Reference](https://contextgeneric.dev/docs/reference/)**
 
@@ -29,31 +30,31 @@ If you are an agent installing this skill, follow these steps:
 
 1. Ask the user whether to install the skill for them in every project, or only in the current
    project, where it can be committed for the whole team.
-2. Use the harness's own installer when it has one, from the list below, pinned to `v0.8.0`.
-3. Otherwise copy the `cgp/` directory at the `v0.8.0` tag into the harness's skills directory from
-   the table further down. Copy it rather than linking a clone, and keep `SKILL.md` and
+2. Use the harness's own installer when it has one, from the list below.
+3. Otherwise copy the `cgp/` directory from the `main` branch into the harness's skills directory
+   from the table further down. Copy it rather than linking a clone, and keep `SKILL.md` and
    `references/` together.
 4. Install through one route only, because a plugin and a copy together give the harness two
    copies of the skill.
 5. Check that the harness now lists a skill named `cgp`, which may need a new session.
 6. Change no other setting without asking.
 
-These harnesses and tools have their own installers, and each command pins the tag:
+These harnesses and tools have their own installers, and each one takes the skill from `main`:
 
-- **Claude Code:** run `/plugin marketplace add contextgeneric/cgp-skills#v0.8.0`, then
+- **Claude Code:** run `/plugin marketplace add contextgeneric/cgp-skills`, then
   `/plugin install cgp@cgp-skills`. The plugin's skill is `/cgp:cgp`.
-- **Codex:** run `codex plugin marketplace add contextgeneric/cgp-skills --ref v0.8.0`, then
+- **Codex:** run `codex plugin marketplace add contextgeneric/cgp-skills`, then
   `codex plugin add cgp@cgp-skills`. Codex lists the skill as `cgp:cgp`.
-- **Pi:** run `pi install git:github.com/contextgeneric/cgp-skills@v0.8.0`, adding `-l` to install
-  it for the current project.
-- **Any agent the installers support:** run
-  `npx skills add contextgeneric/cgp-skills#v0.8.0 --skill cgp`, adding `-g` to install it for
-  every project. It sends anonymous telemetry unless `DISABLE_TELEMETRY=1` is set. The GitHub CLI
-  does the same with `gh skill install contextgeneric/cgp-skills cgp --pin v0.8.0`, choosing the
-  harness with `--agent` and the scope with `--scope`.
+- **Pi:** run `pi install git:github.com/contextgeneric/cgp-skills`, adding `-l` to install it for
+  the current project.
+- **Any agent the installers support:** run `npx skills add contextgeneric/cgp-skills --skill cgp`,
+  adding `-g` to install it for every project. It sends anonymous telemetry unless
+  `DISABLE_TELEMETRY=1` is set. The GitHub CLI does the same with
+  `gh skill install contextgeneric/cgp-skills cgp`, choosing the harness with `--agent` and the
+  scope with `--scope`.
 
-To copy the skill by hand, clone the tag and copy `cgp/` into the directory this table gives for
-your harness:
+To copy the skill by hand, clone the repository and copy `cgp/` into the directory this table gives
+for your harness:
 
 | Harness | For you, in every project | For one project |
 | --- | --- | --- |
@@ -68,17 +69,31 @@ your harness:
 For Claude Code, installing for yourself, the commands are:
 
 ```sh
-git clone --depth 1 --branch v0.8.0 https://github.com/contextgeneric/cgp-skills.git
+git clone --depth 1 https://github.com/contextgeneric/cgp-skills.git
 mkdir -p ~/.claude/skills
 cp -R cgp-skills/cgp ~/.claude/skills/cgp
 ```
 
-Remove an older copy first, since `cp -R` puts the new one inside an existing directory. A copied
-skill is `/cgp` in Claude Code.
+A copied skill is `/cgp` in Claude Code.
 
-To update the skill when your project moves to a newer `cgp`, install the matching tag the same way.
-The skill itself asks the agent to compare the project's `cgp` version with the one it describes and
-to say when they differ.
+## Updating the skill
+
+Fixes and better explanations reach `main` between `cgp` releases, so update the skill from time to
+time, and whenever your project moves to a newer `cgp`. The skill helps with the second case: when
+the project's `cgp` is newer than the releases it describes, it has the agent check `main` and tell
+you when a newer skill is there. Each route updates with its own command:
+
+- **Claude Code:** run `claude plugin marketplace update cgp-skills`, then
+  `claude plugin update cgp@cgp-skills`, and start a new session. To have it update by itself, open
+  `/plugin`, select `cgp-skills` in the **Marketplaces** tab, and choose **Enable auto-update**,
+  which is off for marketplaces outside Anthropic's own.
+- **Codex:** run `codex plugin marketplace upgrade cgp-skills`, then
+  `codex plugin add cgp@cgp-skills`.
+- **Pi:** run `pi update --extensions`. A plain `pi update` updates only Pi itself.
+- **`npx skills` and the GitHub CLI:** run `npx skills update cgp`, adding `-g` for an install in
+  every project, or `gh skill update cgp`.
+- **A copy:** remove the old directory and copy `cgp/` again from a fresh clone, since `cp -R` puts
+  a new copy inside an existing directory.
 
 ## What the skill covers
 

@@ -84,6 +84,8 @@ and ask the user when neither settles it:
 - **`npx skills`:** `npx skills list`, or `npx skills list -g` for a global install, shows it. Run
   `npx skills update cgp`, adding `-g` for a global install.
 - **Pi package:** `pi list` shows `cgp-skills`. Run `pi update --extensions`.
+- **Gemini CLI:** `gemini skills list` shows it. It has no update command, so run
+  `gemini skills uninstall cgp`, then install it again with `gemini skills install`.
 - **A copy:** none of the above. Replace the skill's directory with a fresh copy of `cgp/` from
   `main`, removing the old directory first.
 
