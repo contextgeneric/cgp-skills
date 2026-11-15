@@ -56,12 +56,14 @@ Search error headlines to classify the failure. `rg -n '^error' /tmp/cgp-error.t
 error code and named trait, helping identify the [shape](#the-two-shapes-to-recognize) and [error
 class](macro-grammar.md).
 
-Search the class’s signature to test the suspected cause. These match raw output only. Use `help:` for a surfaced dependency,
-`conflicting implementation` for a duplicate key, `overflow evaluating` for a cycle,
-`DelegateComponent<` … `is not implemented` for absent wiring, `is not constrained` for an
-unconstrained generic, `__Context__` in a headline for a dependency a definition did not declare, or
-`E0107` on a trait name for the wrong half of a component in a `#[cgp_impl]` header. A `HasField<Symbol<…>>` line spells out the field name character by
-character.
+Search the class’s signature to test the suspected cause. These match raw output only. Use `help:`
+for a surfaced dependency, `conflicting implementation` for a duplicate key, `overflow evaluating`
+for a cycle, `DelegateComponent<` … `is not implemented` for absent wiring, `is not constrained` for
+an unconstrained generic, `__Context__` in a headline for a dependency a definition did not declare,
+or `E0107` on a trait name for the wrong half of a component in a `#[cgp_impl]` header. A
+`HasField<Symbol<…>>` line spells out the field name character by character. The
+[debugging guide’s search table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log)
+lists signatures for the full set of classes.
 
 An `E0425`, ``cannot find type `GreeterComponent` in this scope``, whose caret sits on the trait's
 name in a `#[cgp_impl]`, `#[cgp_provider]`, or `#[cgp_new_provider]` header is a component key the
@@ -71,9 +73,7 @@ another name, goes in the attribute, as `#[cgp_impl(new UnitArea: AreaComponent)
 names its trait through a module re-exporting the trait alone fails as
 ``cannot find type `GreeterComponent` in module `crate::facade` ``. `cargo cgp check` reports these
 as `[CGP-E041]` and `[CGP-E070]`, each with a fix an editor applies; see
-[components](components.md#importing-the-component-key). The [debugging guide’s search
-table](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cgp/guides/debugging.md#grep-for-the-suspected-line-instead-of-reading-the-whole-log)
-lists signatures for the full set of classes.
+[components](components.md#importing-the-component-key).
 
 Add a check before searching further when the error is hidden. An `E0599` headline without a nested
 dependency requires a new diagnostic, not a broader search.

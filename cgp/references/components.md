@@ -289,10 +289,10 @@ name. Its provider names the key after the provider in the attribute, as
 `#[cgp_impl(new SquareArea: AreaCalculatorComponent<Square>)]`. A trait imported under another name
 needs the same form, because the macro derives the key from the name the header writes.
 
-A key that does not resolve fails with `E0425`, ``cannot find type `GreeterComponent` in this
-scope``, on the trait's name in the header. `cargo cgp check` reports it as `[CGP-E041]` with the
-key's import path, and a derived name that is not the component's as `[CGP-E070]`, naming the key
-in the attribute form. Each comes with a fix, `help: import the component` or
+A key that does not resolve fails with `E0425` on the trait's name in the header:
+``cannot find type `GreeterComponent` in this scope``. `cargo cgp check` reports it as `[CGP-E041]`
+with the key's import path, and a derived name that is not the component's as `[CGP-E070]`, naming
+the key in the attribute form. Each comes with a fix, `help: import the component` or
 `help: name the component in the attribute`, which an editor running `cargo cgp check` offers on the
 trait's name.
 

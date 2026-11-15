@@ -470,7 +470,7 @@ the `use` line, or as `[CGP-E070]` when the derived name is not the component's,
 names the key in the attribute. An editor running `cargo cgp check` offers either fix on the trait's
 name. See [components](references/components.md#importing-the-component-key) for an example.
 
-The example expands to a provider-trait impl with an explicit context parameter:
+The `GreetHello` example expands to a provider-trait impl with an explicit context parameter:
 
 ```rust
 #[cgp_new_provider]
