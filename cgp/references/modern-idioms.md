@@ -408,8 +408,8 @@ formerly named `ProvideType` is now `TypeProvider`.
 
 Check an unfamiliar name against the current exports, the online knowledge base's reference, and
 its [removal ledger](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/releases/README.md#the-removal-ledger),
-which says where each renamed or removed name went, before copying it. A missing prelude export may require an explicit import; it does not by
-itself prove that the name was removed.
+which says where each renamed or removed name went, before copying it. A missing prelude export may
+require an explicit import; it does not by itself prove that the name was removed.
 
 ## Related sub-skills
 
