@@ -76,8 +76,9 @@ Readers install the skill from `main`, so `main` supports every `cgp` release fr
 - Keep the guidance correct for every supported release. Where a release changes a form, mark the
   newer form with the release that introduced it, as in "Since `cgp` v0.9.0:", keep the older form
   beside it, and list the change in the reference.
-- At each `cgp` or `cargo-cgp` release, update the reference's table and the versions `SKILL.md`
-  states, and tag the skill as `vX.Y.Z` for the `cgp` release.
+- At each `cgp` or `cargo-cgp` release, update the reference's table, the versions `SKILL.md`
+  states, and the `cargo-cgp` tag in its Nix commands. At each `cgp` release, also tag the skill as
+  `vX.Y.Z`.
 - Ask the user before dropping support for an older line. Then raise the oldest supported version,
   and add a notice row naming the tag of the last commit that supported that line.
 - Name `main` in every installation instruction, never a tag; only a notice row names one.

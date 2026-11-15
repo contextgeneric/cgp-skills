@@ -3,8 +3,7 @@
 This skill is installed from the `main` branch of
 [cgp-skills](https://github.com/contextgeneric/cgp-skills), which is updated between CGP releases
 and keeps supporting every `cgp` release from the oldest one below. Compare the project's versions
-with this table whenever version-specific guidance matters, such as when writing new code, when an
-example fails to compile, or when the user asks:
+with this table before you write, change, or debug CGP code in it, and whenever the user asks:
 
 | Item | Version |
 | --- | --- |
@@ -29,7 +28,17 @@ them, and trust the source where they disagree with this skill.
 
 A breaking change can end this skill's support for an older line. Each such line gets a row here,
 naming the tag of `cgp-skills` that last supported it. Tell the user to install the skill from that
-tag for this project, with their route's command and the tag in place of `main`.
+tag for this project, replacing the current install, with their route's form of the tag:
+
+- **Claude Code:** `/plugin marketplace add contextgeneric/cgp-skills#<tag>`, after removing the
+  plugin and the marketplace.
+- **Codex:** `codex plugin marketplace add contextgeneric/cgp-skills --ref <tag>`, after removing
+  them.
+- **Pi:** `pi install git:github.com/contextgeneric/cgp-skills@<tag>`.
+- **`npx skills` and `gh skill`:** `npx skills add contextgeneric/cgp-skills#<tag> --skill cgp`, or
+  `gh skill install contextgeneric/cgp-skills cgp --pin <tag>`.
+- **A copy, or Gemini CLI, which cannot pin a tag:** copy `cgp/` from
+  `git clone --depth 1 --branch <tag> https://github.com/contextgeneric/cgp-skills.git`.
 
 | `cgp` line | Install the skill from tag |
 | --- | --- |
@@ -37,11 +46,11 @@ tag for this project, with their route's command and the tag in place of `main`.
 
 ## The project's `cgp` is older than the newest release described
 
-A newer `cgp` exists. Mention it once in the session, in passing, and not again once the user
-chooses to stay. A patch release within the same minor line updates with `cargo update -p cgp`; a
-newer minor release, such as v0.9.0 for a project on v0.8.x, needs the requirement in `Cargo.toml`
-changed, for example with `cargo add cgp@0.9`, and may need code changes, which the changes listed
-below describe.
+A newer `cgp` exists. Tell the user once in the session, at the start of your answer and naming the
+release, and not again once the user chooses to stay. A patch release within the same minor line
+updates with `cargo update -p cgp`; a newer minor release, such as v0.9.0 for a project on v0.8.x,
+needs the requirement in `Cargo.toml` changed, for example with `cargo add cgp@0.9`, and may need
+code changes, which the changes listed below describe.
 
 Write code for the project's version, not the newest. Use no form that a change below marks as
 added after the project's version, and use the older form it replaces.
@@ -74,10 +83,12 @@ input. When the tool is newer, fetch this file from `main` as above.
 Tell which route installed the skill from where its `SKILL.md` sits, then from the tools' own lists,
 and ask the user when neither settles it:
 
-- **Claude Code plugin:** the skill sits under `~/.claude/plugins/cache/cgp-skills/`. Run
+- **Claude Code plugin:** the skill sits under `plugins/cache/cgp-skills/` in Claude Code's
+  configuration folder, `~/.claude` by default. Run
   `claude plugin marketplace update cgp-skills`, then `claude plugin update cgp@cgp-skills`, and
   start a new session.
-- **Codex plugin:** the skill sits under `~/.codex/plugins/cache/cgp-skills/`. Run
+- **Codex plugin:** the skill sits under `plugins/cache/cgp-skills/` in Codex's home, `~/.codex` by
+  default. Run
   `codex plugin marketplace upgrade cgp-skills`, then `codex plugin add cgp@cgp-skills`.
 - **`gh skill`:** `SKILL.md`'s frontmatter carries the metadata `gh skill` adds, and
   `gh skill list` shows it. Run `gh skill update cgp`.
