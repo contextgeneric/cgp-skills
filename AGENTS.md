@@ -63,14 +63,26 @@ The skill is deployed on its own, so it links outside itself only by URL:
 
 ## Verification
 
-Each snippet, the version statement, and the packaging match the code and release the skill
-describes:
+Each snippet matches the code the skill describes, and each installation path matches the website:
 
 - Compile a representative snippet when syntax is uncertain.
-- Record the CGP version the skill describes, and update the statement when the library advances.
-- Bump `version` in `.claude-plugin/plugin.json` and `package.json` with each tag, so a plugin or
-  package install resolves the tag's copy.
 - Keep the README's installation paths and the website's installation page in agreement.
+
+## Versions
+
+Readers install the skill from `main`, so `main` supports every `cgp` release from the oldest that
+[cgp/references/versions.md](cgp/references/versions.md) names:
+
+- Keep the guidance correct for every supported release. Where a release changes a form, mark the
+  newer form with the release that introduced it, as in "Since `cgp` v0.9.0:", keep the older form
+  beside it, and list the change in the reference.
+- At each `cgp` or `cargo-cgp` release, update the reference's table and the versions `SKILL.md`
+  states, and tag the skill as `vX.Y.Z` for the `cgp` release.
+- Ask the user before dropping support for an older line. Then raise the oldest supported version,
+  and add a notice row naming the tag of the last commit that supported that line.
+- Name `main` in every installation instruction, never a tag; only a notice row names one.
+- Leave `version` out of `.claude-plugin/plugin.json` and `package.json`, so a plugin install takes
+  every commit as an update.
 
 ## Prose
 
