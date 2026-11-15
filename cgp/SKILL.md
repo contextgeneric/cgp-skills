@@ -136,7 +136,7 @@ editor configuration only when they ask you to, and then put the setting in the 
 settings (`.vscode/settings.json` in VS Code) rather than their user settings, so the tool runs only on
 CGP projects. The override replaces Rust Analyzer's own check options, so write any `--features` flag
 into the array. The
-[editor integration page](https://contextgeneric.dev/docs/cargo-cgp/editor-integration) covers the
+[editor integration page](https://contextgeneric.dev/docs/tooling/cargo-cgp/editor-integration) covers the
 setup and its failure messages.
 
 When cargo-cgp is not available, or leaves an error unrewritten (a block with no `[CGP-` code),
