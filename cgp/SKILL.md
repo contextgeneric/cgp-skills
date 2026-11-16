@@ -76,14 +76,20 @@ as in `cargo cgp check --workspace`. The
 [error-code catalog](https://github.com/contextgeneric/cgp-knowledge-base/blob/main/cargo-cgp/error-code.md)
 explains the `[CGP-Exxx]` tags.
 
-If `cargo cgp check` hangs, or its errors change between runs, rerun it on one thread with
-`RUSTFLAGS="-Zunstable-options --jobs-frontend=1" cargo cgp check`. The pinned nightly type-checks
-on several threads, and the tool's output is meant to stay the same on any count, so a difference
-that disappears on one thread is a bug to report. Set the flags for that one command only: a
-project's `.cargo/config.toml` would pass them to its stable builds, which reject `-Z` flags. The
+Rerun a check that hangs, or whose errors change between runs, on one thread:
+
+```sh
+RUSTFLAGS="-Zunstable-options --jobs-frontend=1" cargo cgp check
+```
+
+The pinned nightly type-checks on several threads, and the tool is meant to print the same output
+under any thread count. So a difference that disappears on one thread is a bug, which the user can
+report; the one expected exception is a cycle error (`E0391`), whose text can start from a
+different item on each run. Set the flags in that command alone, never in the project's
+`.cargo/config.toml`, which would pass them to its stable builds, and stable Rust rejects `-Z`
+flags. The
 [troubleshooting page](https://contextgeneric.dev/docs/tooling/cargo-cgp/troubleshooting#a-check-hangs-or-prints-different-output-between-runs)
-says how to tell a compiler bug from a cargo-cgp one, and names the one expected variation, a cycle
-error's text.
+explains how to tell a compiler bug from a cargo-cgp one.
 
 ### Reading what a macro generated: `cargo cgp expand`
 
