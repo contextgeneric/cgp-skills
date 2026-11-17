@@ -30,8 +30,8 @@ type.
 
 Owning the context permits independent wiring choices even without a target parameter. A foreign
 value type has one wiring program-wide, but a crate can define `App` and `TestApp` and choose a
-different `CanSendEmail` provider for each. Tier 4 adds the ability to make those per-context
-choices about separate types, including types the crate does not own.
+different `CanFetchStorageObject` provider for each. Tier 4 adds the ability to make those
+per-context choices about separate types, including types the crate does not own.
 
 Ordinary Rust supports these arrangements, but reusable implementations can encounter coherence
 restrictions. Environmental contexts with overlapping blanket impls still conflict, and a
@@ -154,14 +154,13 @@ An owned environmental context allows per-application choices at this same tier.
 context types and wire the self-targeted component independently on each:
 
 ```rust
-delegate_components! { App     { EmailSenderComponent: SendViaSmtp } }
-delegate_components! { TestApp { EmailSenderComponent: RecordEmails } }
+delegate_components! { App     { StorageObjectFetcherComponent: FetchS3Object } }
+delegate_components! { TestApp { StorageObjectFetcherComponent: FetchLocalObject } }
 ```
 
-`App` sends email through SMTP, while `TestApp` records it. This common CGP arrangement does not
-need a target parameter: each context chooses an implementation of an operation about itself. Tier
-4 extends that choice
-to a separate target type.
+`App` fetches stored objects from Amazon S3, while `TestApp` reads them from a local folder. This
+common CGP arrangement does not need a target parameter: each context chooses an implementation of
+an operation about itself. Tier 4 extends that choice to a separate target type.
 
 ## Tier 4: unique wiring per type, per context
 
