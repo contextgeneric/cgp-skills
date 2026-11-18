@@ -59,15 +59,18 @@ added after the project's version, and use the older form it replaces.
 
 ## The project's `cgp` is newer than the newest release described
 
-The installed skill may be behind `main`. This also covers an unreleased `cgp`, such as a Git
-dependency. Fetch this file from `main`:
+The installed skill may be behind `main`. This case starts from the table in this file, the
+installed copy, not from `main`'s: the project has outgrown this copy, whatever `main` says. This
+also covers an unreleased `cgp`, such as a Git dependency. Fetch this file from `main`:
 
 ```text
 https://raw.githubusercontent.com/contextgeneric/cgp-skills/main/cgp/references/versions.md
 ```
 
-- **`main` describes the project's version:** tell the user that a newer skill exists, and give the
-  update command for the route that installed it, from [Updating the skill](#updating-the-skill).
+- **`main` describes the project's version:** the installed copy is behind `main`. Tell the user
+  that a newer skill exists, and give the update command for the route that installed it, from
+  [Updating the skill](#updating-the-skill). Never report the skill as current because `main`
+  matches the project.
 - **`main` does not describe it either:** say that the skill has not caught up with this `cgp` yet.
   Trust the code, and read the CGP source and the knowledge base where a construct behaves
   differently from what the skill says.

@@ -178,10 +178,12 @@ then act on the case that matches:
   naming it, and write code for the project's version.
 - **Newer than the newest release described,** or an unreleased `cgp` such as a Git dependency:
   fetch `https://raw.githubusercontent.com/contextgeneric/cgp-skills/main/cgp/references/versions.md`
-  and read its version table. If it describes the project's version, tell the user a newer skill is
-  available and give the update command for their install route, which
-  [versions](references/versions.md#updating-the-skill) lists. Otherwise tell the user the skill has
-  not caught up yet, and trust the code. If the fetch fails, say the check could not run.
+  and read its version table. If `main`'s table describes the project's version, this installed copy
+  is behind `main`: tell the user a newer skill is available and give the update command for their
+  install route, which [versions](references/versions.md#updating-the-skill) lists. A match on
+  `main` never means this copy is current, since this copy's own table, above, is the one the
+  project outgrew. Otherwise tell the user the skill has not caught up yet, and trust the code. If
+  the fetch fails, say the check could not run.
 
 [Versions](references/versions.md) holds the details of each case. Change the project, the tool, or
 this skill only with the user's approval.

@@ -44,7 +44,12 @@ These harnesses and tools have their own installers, and each one takes the skil
 - **Claude Code:** run `/plugin marketplace add contextgeneric/cgp-skills`, then
   `/plugin install cgp@cgp-skills`. The plugin's skill is `/cgp:cgp`.
 - **Codex:** run `codex plugin marketplace add contextgeneric/cgp-skills`, then
-  `codex plugin add cgp@cgp-skills`. Codex lists the skill as `cgp:cgp`.
+  `codex plugin add cgp@cgp-skills`. Codex lists the skill as `cgp:cgp`. Its built-in
+  `$skill-installer` can also install `https://github.com/contextgeneric/cgp-skills/tree/main/cgp`
+  when asked.
+- **Gemini CLI:** run
+  `gemini skills install https://github.com/contextgeneric/cgp-skills.git --path cgp`, which takes
+  the default branch, `main`.
 - **Pi:** run `pi install git:github.com/contextgeneric/cgp-skills`, adding `-l` to install it for
   the current project.
 - **Any agent the installers support:** run `npx skills add contextgeneric/cgp-skills --skill cgp`,
@@ -89,6 +94,8 @@ you when a newer skill is there. Each route updates with its own command:
   which is off for marketplaces outside Anthropic's own.
 - **Codex:** run `codex plugin marketplace upgrade cgp-skills`, then
   `codex plugin add cgp@cgp-skills`.
+- **Gemini CLI:** it has no update command, so run `gemini skills uninstall cgp`, then install the
+  skill again.
 - **Pi:** run `pi update --extensions`. A plain `pi update` updates only Pi itself.
 - **`npx skills` and the GitHub CLI:** run `npx skills update cgp`, adding `-g` for an install in
   every project, or `gh skill update cgp`.
